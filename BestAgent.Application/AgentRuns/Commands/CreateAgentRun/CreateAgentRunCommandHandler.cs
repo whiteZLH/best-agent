@@ -9,13 +9,16 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
 {
     private readonly IAgentDefinitionRepository _agentDefinitionRepository;
     private readonly IAgentRunRepository _agentRunRepository;
+    private readonly IAgentStepRepository _agentStepRepository;
 
     public CreateAgentRunCommandHandler(
         IAgentDefinitionRepository agentDefinitionRepository,
-        IAgentRunRepository agentRunRepository)
+        IAgentRunRepository agentRunRepository,
+        IAgentStepRepository agentStepRepository)
     {
         _agentDefinitionRepository = agentDefinitionRepository;
         _agentRunRepository = agentRunRepository;
+        _agentStepRepository = agentStepRepository;
     }
 
     public async Task<CreateAgentRunResult> Handle(CreateAgentRunCommand request, CancellationToken cancellationToken)
@@ -49,6 +52,26 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
         };
 
         await _agentRunRepository.AddAsync(agentRun, cancellationToken);
+        await _agentStepRepository.AddAsync(CreateStep(
+            runId,
+            1,
+            "created",
+            "Completed",
+            request.Input,
+            null,
+            null,
+            now,
+            now), cancellationToken);
+        await _agentStepRepository.AddAsync(CreateStep(
+            runId,
+            2,
+            "running",
+            "Completed",
+            request.Input,
+            null,
+            null,
+            now,
+            now), cancellationToken);
 
         try
         {
@@ -57,12 +80,23 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             agentRun = agentRun with
             {
                 Status = "Completed",
+                CurrentStepNo = 3,
                 OutputPayload = output,
                 EndedAt = completedAt,
                 LastModifyTime = completedAt
             };
 
             await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
+            await _agentStepRepository.AddAsync(CreateStep(
+                runId,
+                3,
+                "completed",
+                "Completed",
+                request.Input,
+                output,
+                null,
+                completedAt,
+                completedAt), cancellationToken);
 
             return new CreateAgentRunResult(
                 agentRun.RunId,
@@ -74,15 +108,27 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
         catch (Exception ex)
         {
             var failedAt = DateTime.UtcNow;
+            var error = ex.Message[..Math.Min(ex.Message.Length, 256)];
             agentRun = agentRun with
             {
                 Status = "Failed",
-                InterruptReason = ex.Message[..Math.Min(ex.Message.Length, 256)],
+                InterruptReason = error,
+                CurrentStepNo = 3,
                 EndedAt = failedAt,
                 LastModifyTime = failedAt
             };
 
             await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
+            await _agentStepRepository.AddAsync(CreateStep(
+                runId,
+                3,
+                "failed",
+                "Failed",
+                request.Input,
+                null,
+                error,
+                failedAt,
+                failedAt), cancellationToken);
             throw;
         }
     }
@@ -94,5 +140,39 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             : resolvedDefinition.Definition.Name;
 
         return $"{agentName} processed the request: {input}";
+    }
+
+    private static AgentStep CreateStep(
+        string runId,
+        int stepNo,
+        string stepType,
+        string status,
+        string? input,
+        string? output,
+        string? error,
+        DateTime startedAt,
+        DateTime endedAt)
+    {
+        return new AgentStep
+        {
+            StepId = Guid.NewGuid().ToString("N"),
+            RunId = runId,
+            StepNo = stepNo,
+            StepType = stepType,
+            Status = status,
+            InputPayload = input,
+            OutputPayload = output,
+            ErrorPayload = error,
+            StepKey = $"{runId}:{stepType}",
+            StartedAt = startedAt,
+            EndedAt = endedAt,
+            DurationMs = Math.Max(0, (long)(endedAt - startedAt).TotalMilliseconds),
+            Creator = "system",
+            CreatorName = "system",
+            LastModifier = "system",
+            LastModifierName = "system",
+            CreateTime = startedAt,
+            LastModifyTime = endedAt
+        };
     }
 }

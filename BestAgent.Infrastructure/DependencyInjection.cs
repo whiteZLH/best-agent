@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddDbContext<BestAgentDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
+        services.AddScoped<IAgentStepRepository, AgentStepRepository>();
         services.AddHostedService<DatabaseInitializationHostedService>();
 
         return services;

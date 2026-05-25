@@ -17,6 +17,8 @@ public class BestAgentDbContext : DbContext
 
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
 
+    public DbSet<AgentStep> AgentSteps => Set<AgentStep>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(BestAgentDbContext).Assembly);

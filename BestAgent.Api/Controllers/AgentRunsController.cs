@@ -2,6 +2,7 @@ using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -44,5 +45,14 @@ public class AgentRunsController : ControllerBase
         }
 
         return Ok(_mapper.Map<GetAgentRunResponse>(result));
+    }
+
+    [HttpGet("{runId}/steps")]
+    public async Task<ActionResult<IReadOnlyList<GetAgentRunStepResponse>>> GetSteps(
+        [FromRoute] string runId,
+        CancellationToken cancellationToken)
+    {
+        var steps = await _mediator.Send(new GetAgentRunStepsQuery(runId), cancellationToken);
+        return Ok(_mapper.Map<IReadOnlyList<GetAgentRunStepResponse>>(steps));
     }
 }

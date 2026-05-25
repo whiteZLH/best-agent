@@ -2,6 +2,7 @@ using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 
 namespace BestAgent.Api.Mappings;
 
@@ -12,5 +13,6 @@ public class ApiMappingProfile : Profile
         CreateMap<CreateAgentRunRequest, CreateAgentRunCommand>();
         CreateMap<CreateAgentRunResult, CreateAgentRunResponse>();
         CreateMap<GetAgentRunByIdResult, GetAgentRunResponse>();
+        CreateMap<GetAgentRunStepsItem, GetAgentRunStepResponse>();
     }
 }
