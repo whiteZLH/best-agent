@@ -1,6 +1,7 @@
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -29,5 +30,19 @@ public class AgentRunsController : ControllerBase
         var response = _mapper.Map<CreateAgentRunResponse>(result);
 
         return Created($"/agent-runs/{response.RunId}", response);
+    }
+
+    [HttpGet("{runId}")]
+    public async Task<ActionResult<GetAgentRunResponse>> GetById(
+        [FromRoute] string runId,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetAgentRunByIdQuery(runId), cancellationToken);
+        if (result is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(_mapper.Map<GetAgentRunResponse>(result));
     }
 }

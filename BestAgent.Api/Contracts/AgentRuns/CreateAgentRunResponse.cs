@@ -4,4 +4,5 @@ public record CreateAgentRunResponse(
     string RunId,
     string AgentCode,
     string? Input,
+    string? Output,
     string Status);

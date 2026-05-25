@@ -33,12 +33,13 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             RunId = runId,
             AgentCode = request.AgentCode,
             AgentDefinitionVersionId = resolvedDefinition.Version.Id,
-            Status = "Created",
+            Status = "Running",
             InputPayload = request.Input,
             RootRunId = runId,
             IdempotencyKey = runId,
             MaxTurns = resolvedDefinition.Version.MaxTurns,
             MaxCost = resolvedDefinition.Version.MaxCost,
+            StartedAt = now,
             Creator = "system",
             CreatorName = "system",
             LastModifier = "system",
@@ -49,10 +50,49 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
 
         await _agentRunRepository.AddAsync(agentRun, cancellationToken);
 
-        return new CreateAgentRunResult(
-            agentRun.RunId,
-            agentRun.AgentCode,
-            request.Input,
-            agentRun.Status);
+        try
+        {
+            var output = BuildOutput(request.Input, resolvedDefinition);
+            var completedAt = DateTime.UtcNow;
+            agentRun = agentRun with
+            {
+                Status = "Completed",
+                OutputPayload = output,
+                EndedAt = completedAt,
+                LastModifyTime = completedAt
+            };
+
+            await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
+
+            return new CreateAgentRunResult(
+                agentRun.RunId,
+                agentRun.AgentCode,
+                request.Input,
+                agentRun.OutputPayload,
+                agentRun.Status);
+        }
+        catch (Exception ex)
+        {
+            var failedAt = DateTime.UtcNow;
+            agentRun = agentRun with
+            {
+                Status = "Failed",
+                InterruptReason = ex.Message[..Math.Min(ex.Message.Length, 256)],
+                EndedAt = failedAt,
+                LastModifyTime = failedAt
+            };
+
+            await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
+            throw;
+        }
+    }
+
+    private static string BuildOutput(string input, ResolvedAgentDefinition resolvedDefinition)
+    {
+        var agentName = string.IsNullOrWhiteSpace(resolvedDefinition.Definition.Name)
+            ? resolvedDefinition.Definition.Code
+            : resolvedDefinition.Definition.Name;
+
+        return $"{agentName} processed the request: {input}";
     }
 }
