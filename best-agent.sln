@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BestAgent.Domain", "BestAge
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BestAgent.Infrastructure", "BestAgent.Infrastructure\BestAgent.Infrastructure.csproj", "{A960EE9D-AECE-4E31-BEC6-6152D88CE6F1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BestAgent.Api.Tests", "BestAgent.Api.Tests\BestAgent.Api.Tests.csproj", "{CDE0BFA0-8F5A-4B6A-9D11-0E8CE813A6F2}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,6 +34,10 @@ Global
 		{A960EE9D-AECE-4E31-BEC6-6152D88CE6F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A960EE9D-AECE-4E31-BEC6-6152D88CE6F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A960EE9D-AECE-4E31-BEC6-6152D88CE6F1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CDE0BFA0-8F5A-4B6A-9D11-0E8CE813A6F2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDE0BFA0-8F5A-4B6A-9D11-0E8CE813A6F2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDE0BFA0-8F5A-4B6A-9D11-0E8CE813A6F2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDE0BFA0-8F5A-4B6A-9D11-0E8CE813A6F2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

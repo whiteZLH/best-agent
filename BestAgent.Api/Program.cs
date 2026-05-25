@@ -9,6 +9,7 @@ builder.Services.AddControllers();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddAutoMapper(
+    _ => { },
     typeof(ApiMappingProfile).Assembly,
     typeof(CreateAgentRunMappingProfile).Assembly);
 
