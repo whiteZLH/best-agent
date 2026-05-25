@@ -1,6 +1,7 @@
 using AutoMapper;
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Application.Models;
 using MediatR;
 
 namespace BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
@@ -10,15 +11,18 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
     private readonly IAgentDefinitionRepository _agentDefinitionRepository;
     private readonly IAgentRunRepository _agentRunRepository;
     private readonly IAgentStepRepository _agentStepRepository;
+    private readonly IModelGateway _modelGateway;
 
     public CreateAgentRunCommandHandler(
         IAgentDefinitionRepository agentDefinitionRepository,
         IAgentRunRepository agentRunRepository,
-        IAgentStepRepository agentStepRepository)
+        IAgentStepRepository agentStepRepository,
+        IModelGateway modelGateway)
     {
         _agentDefinitionRepository = agentDefinitionRepository;
         _agentRunRepository = agentRunRepository;
         _agentStepRepository = agentStepRepository;
+        _modelGateway = modelGateway;
     }
 
     public async Task<CreateAgentRunResult> Handle(CreateAgentRunCommand request, CancellationToken cancellationToken)
@@ -75,12 +79,31 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
 
         try
         {
-            var output = BuildOutput(request.Input, resolvedDefinition);
+            var modelCallStartedAt = DateTime.UtcNow;
+            var modelResponse = await _modelGateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    resolvedDefinition.Version.DefaultModel,
+                    resolvedDefinition.Version.SystemPromptTemplate,
+                    request.Input),
+                cancellationToken);
+            var modelCallCompletedAt = DateTime.UtcNow;
+            await _agentStepRepository.AddAsync(CreateStep(
+                runId,
+                3,
+                "model_call",
+                "Completed",
+                request.Input,
+                modelResponse.Output,
+                null,
+                modelCallStartedAt,
+                modelCallCompletedAt), cancellationToken);
+
+            var output = modelResponse.Output;
             var completedAt = DateTime.UtcNow;
             agentRun = agentRun with
             {
                 Status = "Completed",
-                CurrentStepNo = 3,
+                CurrentStepNo = 4,
                 OutputPayload = output,
                 EndedAt = completedAt,
                 LastModifyTime = completedAt
@@ -89,7 +112,7 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
             await _agentStepRepository.AddAsync(CreateStep(
                 runId,
-                3,
+                4,
                 "completed",
                 "Completed",
                 request.Input,
@@ -109,11 +132,21 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
         {
             var failedAt = DateTime.UtcNow;
             var error = ex.Message[..Math.Min(ex.Message.Length, 256)];
+            await _agentStepRepository.AddAsync(CreateStep(
+                runId,
+                3,
+                "model_call",
+                "Failed",
+                request.Input,
+                null,
+                error,
+                failedAt,
+                failedAt), cancellationToken);
             agentRun = agentRun with
             {
                 Status = "Failed",
                 InterruptReason = error,
-                CurrentStepNo = 3,
+                CurrentStepNo = 4,
                 EndedAt = failedAt,
                 LastModifyTime = failedAt
             };
@@ -121,7 +154,7 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
             await _agentStepRepository.AddAsync(CreateStep(
                 runId,
-                3,
+                4,
                 "failed",
                 "Failed",
                 request.Input,
@@ -131,15 +164,6 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
                 failedAt), cancellationToken);
             throw;
         }
-    }
-
-    private static string BuildOutput(string input, ResolvedAgentDefinition resolvedDefinition)
-    {
-        var agentName = string.IsNullOrWhiteSpace(resolvedDefinition.Definition.Name)
-            ? resolvedDefinition.Definition.Code
-            : resolvedDefinition.Definition.Name;
-
-        return $"{agentName} processed the request: {input}";
     }
 
     private static AgentStep CreateStep(

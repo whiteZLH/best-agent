@@ -1,5 +1,7 @@
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Application.Models;
+using BestAgent.Infrastructure.Model;
 using BestAgent.Infrastructure.Persistence;
 using BestAgent.Infrastructure.Persistence.Repositories;
 using BestAgent.Infrastructure.Persistence.Seeding;
@@ -15,13 +17,44 @@ public static class DependencyInjection
     {
         var connectionString = configuration.GetConnectionString("Postgres")
             ?? "Host=localhost;Port=5432;Database=best_agent;Username=postgres;Password=postgres";
+        var openAiOptions = new OpenAiOptions
+        {
+            BaseUrl = configuration["OpenAI:BaseUrl"] ?? string.Empty,
+            ApiKey = configuration["OpenAI:ApiKey"] ?? string.Empty,
+            Model = configuration["OpenAI:Model"] ?? string.Empty,
+            TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
+                ? timeoutSeconds
+                : 60
+        };
 
         services.AddDbContext<BestAgentDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddSingleton(openAiOptions);
+        services.AddSingleton(sp =>
+        {
+            var options = sp.GetRequiredService<OpenAiOptions>();
+            var httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds > 0 ? options.TimeoutSeconds : 60)
+            };
+
+            if (!string.IsNullOrWhiteSpace(options.BaseUrl))
+            {
+                httpClient.BaseAddress = new Uri(EnsureTrailingSlash(options.BaseUrl));
+            }
+
+            return httpClient;
+        });
+        services.AddSingleton<IModelGateway, OpenAiCompatibleModelGateway>();
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IAgentStepRepository, AgentStepRepository>();
         services.AddHostedService<DatabaseInitializationHostedService>();
 
         return services;
+    }
+
+    private static string EnsureTrailingSlash(string value)
+    {
+        return value.EndsWith("/", StringComparison.Ordinal) ? value : $"{value}/";
     }
 }
