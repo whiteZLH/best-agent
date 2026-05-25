@@ -1,574 +1,639 @@
-SET NAMES utf8mb4;
-
 -- Agent platform database schema
--- Assumption: MySQL 8.0+
+-- Assumption: PostgreSQL 16+
 -- Convention:
 -- 1. String IDs are used to align with runtime-generated identifiers such as run_123 / step_456.
--- 2. JSON fields are used for policy, payload, and schema-like content.
+-- 2. JSONB fields are used for policy, payload, and schema-like content.
 -- 3. Logical deletion is implemented through deleted.
 -- 4. Every table includes the required audit columns:
 --    last_modifier, last_modify_time, last_modifier_name,
 --    create_time, creator_name, creator, deleted
 
+CREATE OR REPLACE FUNCTION set_last_modify_time()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    NEW.last_modify_time = CURRENT_TIMESTAMP(3);
+    RETURN NEW;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS agent_definition (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    code VARCHAR(128) NOT NULL COMMENT 'Stable agent code',
-    name VARCHAR(256) NOT NULL COMMENT 'Agent name',
-    description TEXT NULL COMMENT 'Agent description',
-    enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether current record is enabled',
-    current_version INT NOT NULL DEFAULT 1 COMMENT 'Current published version',
-    last_modifier VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Last modifier id',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT 'Last modify time',
-    last_modifier_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Last modifier name',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Create time',
-    creator_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Creator name',
-    creator VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Creator id',
-    deleted TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Logical delete flag',
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_agent_definition_code (code),
-    KEY idx_agent_definition_enabled (enabled),
-    KEY idx_agent_definition_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Agent definition master table';
+    id VARCHAR(64) PRIMARY KEY,
+    code VARCHAR(128) NOT NULL,
+    name VARCHAR(256) NOT NULL,
+    description TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    current_version INT NOT NULL DEFAULT 1,
+    last_modifier VARCHAR(64) NOT NULL DEFAULT '',
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    creator_name VARCHAR(128) NOT NULL DEFAULT '',
+    creator VARCHAR(64) NOT NULL DEFAULT '',
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS agent_definition_version (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    agent_definition_id VARCHAR(64) NOT NULL COMMENT 'Reference to agent_definition.id',
-    version INT NOT NULL COMMENT 'Version number',
-    status VARCHAR(32) NOT NULL DEFAULT 'draft' COMMENT 'draft/published/offline',
-    name VARCHAR(256) NOT NULL COMMENT 'Snapshot name',
-    description TEXT NULL COMMENT 'Snapshot description',
-    instruction TEXT NULL COMMENT 'Agent instruction',
-    system_prompt_template LONGTEXT NULL COMMENT 'System prompt template',
-    default_model VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Default model name',
-    allowed_tools JSON NULL COMMENT 'Allowed tool names',
-    knowledge_sources JSON NULL COMMENT 'Bound knowledge sources',
-    memory_policy JSON NULL COMMENT 'Memory strategy',
-    routing_policy JSON NULL COMMENT 'Routing strategy',
-    approval_policy JSON NULL COMMENT 'Approval strategy',
-    execution_policy JSON NULL COMMENT 'Execution strategy',
-    planner_policy JSON NULL COMMENT 'Planner strategy',
-    context_policy JSON NULL COMMENT 'Context assembly strategy',
-    allowed_handoffs JSON NULL COMMENT 'Allowed target agents',
-    output_schema JSON NULL COMMENT 'Expected response schema',
-    max_turns INT NOT NULL DEFAULT 8 COMMENT 'Max turns',
-    max_cost DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT 'Max cost limit',
-    published_at DATETIME(3) NULL COMMENT 'Publish time',
+    id VARCHAR(64) PRIMARY KEY,
+    agent_definition_id VARCHAR(64) NOT NULL,
+    version INT NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+    name VARCHAR(256) NOT NULL,
+    description TEXT,
+    instruction TEXT,
+    system_prompt_template TEXT,
+    default_model VARCHAR(128) NOT NULL DEFAULT '',
+    allowed_tools JSONB,
+    knowledge_sources JSONB,
+    memory_policy JSONB,
+    routing_policy JSONB,
+    approval_policy JSONB,
+    execution_policy JSONB,
+    planner_policy JSONB,
+    context_policy JSONB,
+    allowed_handoffs JSONB,
+    output_schema JSONB,
+    max_turns INT NOT NULL DEFAULT 8,
+    max_cost DECIMAL(18, 6) NOT NULL DEFAULT 0,
+    published_at TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_agent_def_ver (agent_definition_id, version),
-    KEY idx_agent_def_ver_status (status),
-    KEY idx_agent_def_ver_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Versioned snapshot of an agent definition';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS tool_definition (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    tool_name VARCHAR(128) NOT NULL COMMENT 'Tool unique name',
-    display_name VARCHAR(256) NOT NULL DEFAULT '' COMMENT 'Display name',
-    description TEXT NULL COMMENT 'Tool description',
-    input_schema JSON NULL COMMENT 'Input JSON schema',
-    output_schema JSON NULL COMMENT 'Output JSON schema',
-    side_effect_level VARCHAR(32) NOT NULL DEFAULT 'read_only' COMMENT 'read_only/internal_write/external_write/destructive',
-    timeout_ms INT NOT NULL DEFAULT 30000 COMMENT 'Timeout in milliseconds',
-    retry_policy JSON NULL COMMENT 'Retry policy',
-    auth_policy JSON NULL COMMENT 'Authorization policy',
-    idempotency_policy JSON NULL COMMENT 'Idempotency policy',
-    async_supported TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Whether async mode is supported',
-    consistency_mode VARCHAR(32) NOT NULL DEFAULT 'eventual' COMMENT 'Consistency mode',
-    compensation_policy JSON NULL COMMENT 'Compensation policy for side effects',
-    enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether tool is enabled',
+    id VARCHAR(64) PRIMARY KEY,
+    tool_name VARCHAR(128) NOT NULL,
+    display_name VARCHAR(256) NOT NULL DEFAULT '',
+    description TEXT,
+    input_schema JSONB,
+    output_schema JSONB,
+    side_effect_level VARCHAR(32) NOT NULL DEFAULT 'read_only',
+    timeout_ms INT NOT NULL DEFAULT 30000,
+    retry_policy JSONB,
+    auth_policy JSONB,
+    idempotency_policy JSONB,
+    async_supported BOOLEAN NOT NULL DEFAULT FALSE,
+    consistency_mode VARCHAR(32) NOT NULL DEFAULT 'eventual',
+    compensation_policy JSONB,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_tool_definition_name (tool_name),
-    KEY idx_tool_definition_effect (side_effect_level),
-    KEY idx_tool_definition_enabled (enabled),
-    KEY idx_tool_definition_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tool registry metadata';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS route_rule (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    agent_definition_version_id VARCHAR(64) NOT NULL COMMENT 'Source agent definition version',
-    source_agent_code VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Source agent code',
-    target_agent_code VARCHAR(128) NOT NULL COMMENT 'Target agent code',
-    rule_name VARCHAR(128) NOT NULL COMMENT 'Rule name',
-    priority INT NOT NULL DEFAULT 100 COMMENT 'Rule priority, smaller means higher',
-    match_type VARCHAR(64) NOT NULL DEFAULT 'intent' COMMENT 'intent/tag/schema/manual',
-    match_expression JSON NULL COMMENT 'Structured route condition',
-    handoff_mode VARCHAR(32) NOT NULL DEFAULT 'route_only' COMMENT 'route_only/delegate_and_wait/delegate_and_merge',
-    context_scope JSON NULL COMMENT 'Context scope override',
-    tool_scope JSON NULL COMMENT 'Tool scope override',
-    knowledge_scope JSON NULL COMMENT 'Knowledge scope override',
-    approval_required TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Whether route requires approval',
-    enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether rule is enabled',
+    id VARCHAR(64) PRIMARY KEY,
+    agent_definition_version_id VARCHAR(64) NOT NULL,
+    source_agent_code VARCHAR(128) NOT NULL DEFAULT '',
+    target_agent_code VARCHAR(128) NOT NULL,
+    rule_name VARCHAR(128) NOT NULL,
+    priority INT NOT NULL DEFAULT 100,
+    match_type VARCHAR(64) NOT NULL DEFAULT 'intent',
+    match_expression JSONB,
+    handoff_mode VARCHAR(32) NOT NULL DEFAULT 'route_only',
+    context_scope JSONB,
+    tool_scope JSONB,
+    knowledge_scope JSONB,
+    approval_required BOOLEAN NOT NULL DEFAULT FALSE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_route_rule_source (source_agent_code),
-    KEY idx_route_rule_target (target_agent_code),
-    KEY idx_route_rule_priority (priority),
-    KEY idx_route_rule_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Routing and handoff rules';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS agent_run (
-    run_id VARCHAR(64) NOT NULL COMMENT 'Run id',
-    agent_code VARCHAR(128) NOT NULL COMMENT 'Agent code',
-    agent_definition_version_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Bound definition version',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    user_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'End user id',
-    session_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Session id',
-    status VARCHAR(32) NOT NULL COMMENT 'Created/Running/WaitingTool/WaitingApproval/WaitingHuman/Suspended/Completed/Failed/Cancelled/TimedOut',
-    input_payload JSON NULL COMMENT 'Original input',
-    output_payload JSON NULL COMMENT 'Final output',
-    current_step_no INT NOT NULL DEFAULT 0 COMMENT 'Current step number',
-    parent_run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Parent run id',
-    root_run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Root run id',
-    delegated_by_run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Delegating parent run id',
-    delegated_by_agent VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Delegating agent code',
-    status_version BIGINT NOT NULL DEFAULT 0 COMMENT 'Optimistic lock version',
-    idempotency_key VARCHAR(128) NOT NULL COMMENT 'Client idempotency key',
-    current_wait_token VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Current wait token',
-    interrupt_reason VARCHAR(256) NOT NULL DEFAULT '' COMMENT 'Interrupt reason',
-    max_turns INT NOT NULL DEFAULT 0 COMMENT 'Execution turn cap snapshot',
-    max_cost DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT 'Execution cost cap snapshot',
-    total_cost DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT 'Accumulated cost',
-    started_at DATETIME(3) NULL COMMENT 'Run start time',
-    ended_at DATETIME(3) NULL COMMENT 'Run end time',
-    last_heartbeat_at DATETIME(3) NULL COMMENT 'Last heartbeat time',
+    run_id VARCHAR(64) PRIMARY KEY,
+    agent_code VARCHAR(128) NOT NULL,
+    agent_definition_version_id VARCHAR(64) NOT NULL DEFAULT '',
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    user_id VARCHAR(64) NOT NULL DEFAULT '',
+    session_id VARCHAR(64) NOT NULL DEFAULT '',
+    status VARCHAR(32) NOT NULL,
+    input_payload JSONB,
+    output_payload JSONB,
+    current_step_no INT NOT NULL DEFAULT 0,
+    parent_run_id VARCHAR(64) NOT NULL DEFAULT '',
+    root_run_id VARCHAR(64) NOT NULL DEFAULT '',
+    delegated_by_run_id VARCHAR(64) NOT NULL DEFAULT '',
+    delegated_by_agent VARCHAR(128) NOT NULL DEFAULT '',
+    status_version BIGINT NOT NULL DEFAULT 0,
+    idempotency_key VARCHAR(128) NOT NULL,
+    current_wait_token VARCHAR(128) NOT NULL DEFAULT '',
+    interrupt_reason VARCHAR(256) NOT NULL DEFAULT '',
+    max_turns INT NOT NULL DEFAULT 0,
+    max_cost DECIMAL(18, 6) NOT NULL DEFAULT 0,
+    total_cost DECIMAL(18, 6) NOT NULL DEFAULT 0,
+    started_at TIMESTAMP(3),
+    ended_at TIMESTAMP(3),
+    last_heartbeat_at TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (run_id),
-    UNIQUE KEY uk_agent_run_idempotency (idempotency_key),
-    KEY idx_agent_run_root_run (root_run_id),
-    KEY idx_agent_run_parent_run (parent_run_id),
-    KEY idx_agent_run_status (status),
-    KEY idx_agent_run_tenant_session (tenant_id, session_id),
-    KEY idx_agent_run_user (user_id),
-    KEY idx_agent_run_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Runtime run instance';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS agent_step (
-    step_id VARCHAR(64) NOT NULL COMMENT 'Step id',
-    run_id VARCHAR(64) NOT NULL COMMENT 'Run id',
-    step_no INT NOT NULL COMMENT 'Step number',
-    step_type VARCHAR(32) NOT NULL COMMENT 'Input/Plan/Reason/ToolCall/ToolResult/Retrieve/Handoff/ApprovalRequest/ApprovalResult/Summarize/Respond/Interrupt',
-    status VARCHAR(32) NOT NULL COMMENT 'Pending/Running/Succeeded/Failed/Skipped/Cancelled/TimedOut',
-    input_payload JSON NULL COMMENT 'Input payload',
-    output_payload JSON NULL COMMENT 'Output payload',
-    error_payload JSON NULL COMMENT 'Error payload',
-    step_key VARCHAR(128) NOT NULL COMMENT 'Idempotent step key',
-    retry_count INT NOT NULL DEFAULT 0 COMMENT 'Retry count',
-    depends_on_step_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Dependency step id',
-    decision_payload JSON NULL COMMENT 'Structured decision payload',
-    status_version BIGINT NOT NULL DEFAULT 0 COMMENT 'Optimistic lock version',
-    started_at DATETIME(3) NULL COMMENT 'Start time',
-    ended_at DATETIME(3) NULL COMMENT 'End time',
-    duration_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'Duration in ms',
+    step_id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    step_no INT NOT NULL,
+    step_type VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    input_payload JSONB,
+    output_payload JSONB,
+    error_payload JSONB,
+    step_key VARCHAR(128) NOT NULL,
+    retry_count INT NOT NULL DEFAULT 0,
+    depends_on_step_id VARCHAR(64) NOT NULL DEFAULT '',
+    decision_payload JSONB,
+    status_version BIGINT NOT NULL DEFAULT 0,
+    started_at TIMESTAMP(3),
+    ended_at TIMESTAMP(3),
+    duration_ms BIGINT NOT NULL DEFAULT 0,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (step_id),
-    UNIQUE KEY uk_agent_step_run_key (run_id, step_key),
-    UNIQUE KEY uk_agent_step_run_no (run_id, step_no),
-    KEY idx_agent_step_type (step_type),
-    KEY idx_agent_step_status (status),
-    KEY idx_agent_step_depends (depends_on_step_id),
-    KEY idx_agent_step_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Atomic step inside a run';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS agent_message (
-    message_id VARCHAR(64) NOT NULL COMMENT 'Message id',
-    run_id VARCHAR(64) NOT NULL COMMENT 'Run id',
-    step_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Related step id',
-    role VARCHAR(32) NOT NULL COMMENT 'system/developer/user/assistant/tool_call/tool_result/handoff/approval_request/approval_result/summary',
-    message_type VARCHAR(32) NOT NULL DEFAULT 'normal' COMMENT 'normal/stream_delta/summary/citation',
-    seq_no BIGINT NOT NULL DEFAULT 0 COMMENT 'Message sequence inside run',
-    content LONGTEXT NULL COMMENT 'Text content',
-    content_json JSON NULL COMMENT 'Structured message content',
-    source_ref VARCHAR(256) NOT NULL DEFAULT '' COMMENT 'Source reference',
-    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Business message time',
+    message_id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    step_id VARCHAR(64) NOT NULL DEFAULT '',
+    role VARCHAR(32) NOT NULL,
+    message_type VARCHAR(32) NOT NULL DEFAULT 'normal',
+    seq_no BIGINT NOT NULL DEFAULT 0,
+    content TEXT,
+    content_json JSONB,
+    source_ref VARCHAR(256) NOT NULL DEFAULT '',
+    created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (message_id),
-    UNIQUE KEY uk_agent_message_run_seq (run_id, seq_no),
-    KEY idx_agent_message_run_created (run_id, created_at),
-    KEY idx_agent_message_step (step_id),
-    KEY idx_agent_message_role (role),
-    KEY idx_agent_message_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Conversation and runtime message log';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS agent_approval (
-    approval_id VARCHAR(64) NOT NULL COMMENT 'Approval id',
-    run_id VARCHAR(64) NOT NULL COMMENT 'Run id',
-    step_id VARCHAR(64) NOT NULL COMMENT 'Approval request step id',
-    requested_action VARCHAR(256) NOT NULL COMMENT 'Action to approve',
-    risk_level VARCHAR(32) NOT NULL DEFAULT 'medium' COMMENT 'low/medium/high/critical',
-    request_payload JSON NULL COMMENT 'Approval request content',
-    decision VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected/expired/cancelled',
-    approver_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Approver id',
-    approver_role VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Approver role',
-    approver_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Approver name',
-    comment VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Approval comment',
-    wait_token VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Resume token',
-    expires_at DATETIME(3) NULL COMMENT 'Expire time',
-    decided_at DATETIME(3) NULL COMMENT 'Decision time',
+    approval_id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    step_id VARCHAR(64) NOT NULL,
+    requested_action VARCHAR(256) NOT NULL,
+    risk_level VARCHAR(32) NOT NULL DEFAULT 'medium',
+    request_payload JSONB,
+    decision VARCHAR(32) NOT NULL DEFAULT 'pending',
+    approver_id VARCHAR(64) NOT NULL DEFAULT '',
+    approver_role VARCHAR(64) NOT NULL DEFAULT '',
+    approver_name VARCHAR(128) NOT NULL DEFAULT '',
+    "comment" VARCHAR(512) NOT NULL DEFAULT '',
+    wait_token VARCHAR(128) NOT NULL DEFAULT '',
+    expires_at TIMESTAMP(3),
+    decided_at TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (approval_id),
-    KEY idx_agent_approval_run (run_id),
-    KEY idx_agent_approval_step (step_id),
-    KEY idx_agent_approval_decision (decision),
-    KEY idx_agent_approval_expires (expires_at),
-    KEY idx_agent_approval_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Approval and human-in-the-loop records';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS tool_invocation (
-    invocation_id VARCHAR(64) NOT NULL COMMENT 'Invocation id',
-    run_id VARCHAR(64) NOT NULL COMMENT 'Run id',
-    step_id VARCHAR(64) NOT NULL COMMENT 'Step id',
-    tool_name VARCHAR(128) NOT NULL COMMENT 'Tool name',
-    mode VARCHAR(16) NOT NULL DEFAULT 'sync' COMMENT 'sync/async',
-    status VARCHAR(32) NOT NULL COMMENT 'Pending/Running/Succeeded/Failed/Expired/Cancelled',
-    input_payload JSON NULL COMMENT 'Invocation input',
-    output_payload JSON NULL COMMENT 'Invocation output',
-    error_payload JSON NULL COMMENT 'Invocation error',
-    idempotency_key VARCHAR(128) NOT NULL COMMENT 'Idempotency key',
-    callback_token VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Async callback token',
-    executor_node VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Executor node',
-    started_at DATETIME(3) NULL COMMENT 'Start time',
-    ended_at DATETIME(3) NULL COMMENT 'End time',
-    duration_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'Duration in ms',
+    invocation_id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    step_id VARCHAR(64) NOT NULL,
+    tool_name VARCHAR(128) NOT NULL,
+    mode VARCHAR(16) NOT NULL DEFAULT 'sync',
+    status VARCHAR(32) NOT NULL,
+    input_payload JSONB,
+    output_payload JSONB,
+    error_payload JSONB,
+    idempotency_key VARCHAR(128) NOT NULL,
+    callback_token VARCHAR(128) NOT NULL DEFAULT '',
+    executor_node VARCHAR(128) NOT NULL DEFAULT '',
+    started_at TIMESTAMP(3),
+    ended_at TIMESTAMP(3),
+    duration_ms BIGINT NOT NULL DEFAULT 0,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (invocation_id),
-    UNIQUE KEY uk_tool_invocation_idempotency (idempotency_key),
-    KEY idx_tool_invocation_run (run_id),
-    KEY idx_tool_invocation_step (step_id),
-    KEY idx_tool_invocation_tool_status (tool_name, status),
-    KEY idx_tool_invocation_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tool invocation record';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS idempotency_record (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    scope_type VARCHAR(32) NOT NULL COMMENT 'run/step/tool/callback/api',
-    scope_key VARCHAR(128) NOT NULL COMMENT 'Business unique scope key',
-    request_hash VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Request hash',
-    target_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Bound target id',
-    status VARCHAR(32) NOT NULL DEFAULT 'created' COMMENT 'created/processed/failed',
-    expire_at DATETIME(3) NULL COMMENT 'Record expiration time',
-    extra_payload JSON NULL COMMENT 'Additional context',
+    id VARCHAR(64) PRIMARY KEY,
+    scope_type VARCHAR(32) NOT NULL,
+    scope_key VARCHAR(128) NOT NULL,
+    request_hash VARCHAR(128) NOT NULL DEFAULT '',
+    target_id VARCHAR(64) NOT NULL DEFAULT '',
+    status VARCHAR(32) NOT NULL DEFAULT 'created',
+    expire_at TIMESTAMP(3),
+    extra_payload JSONB,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_idempotency_scope (scope_type, scope_key),
-    KEY idx_idempotency_target (target_id),
-    KEY idx_idempotency_expire (expire_at),
-    KEY idx_idempotency_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Reusable idempotency registry';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS run_outbox_event (
-    event_id VARCHAR(64) NOT NULL COMMENT 'Event id',
-    run_id VARCHAR(64) NOT NULL COMMENT 'Run id',
-    seq_no BIGINT NOT NULL COMMENT 'Strictly increasing sequence inside run',
-    event_type VARCHAR(64) NOT NULL COMMENT 'run.created/message.delta/step.started/step.completed/tool.called/tool.completed/approval.requested/approval.resolved/run.completed/run.failed',
-    run_status VARCHAR(32) NOT NULL COMMENT 'Run status snapshot',
-    payload JSON NULL COMMENT 'Event payload',
-    publish_status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending/published/failed',
-    published_at DATETIME(3) NULL COMMENT 'Publish time',
-    retry_count INT NOT NULL DEFAULT 0 COMMENT 'Publish retry count',
-    occurred_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Business occurrence time',
+    event_id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL,
+    seq_no BIGINT NOT NULL,
+    event_type VARCHAR(64) NOT NULL,
+    run_status VARCHAR(32) NOT NULL,
+    payload JSONB,
+    publish_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    published_at TIMESTAMP(3),
+    retry_count INT NOT NULL DEFAULT 0,
+    occurred_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (event_id),
-    UNIQUE KEY uk_outbox_run_seq (run_id, seq_no),
-    KEY idx_outbox_publish_status (publish_status),
-    KEY idx_outbox_event_type (event_type),
-    KEY idx_outbox_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Transactional outbox for run events';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS model_call_log (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Run id',
-    step_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Step id',
-    model_name VARCHAR(128) NOT NULL COMMENT 'Model name',
-    provider_name VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Model provider',
-    request_mode VARCHAR(32) NOT NULL DEFAULT 'chat' COMMENT 'chat/json/tool_call/planner',
-    request_payload JSON NULL COMMENT 'Sanitized request payload',
-    response_payload JSON NULL COMMENT 'Sanitized response payload',
-    prompt_tokens INT NOT NULL DEFAULT 0 COMMENT 'Prompt tokens',
-    completion_tokens INT NOT NULL DEFAULT 0 COMMENT 'Completion tokens',
-    total_tokens INT NOT NULL DEFAULT 0 COMMENT 'Total tokens',
-    latency_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'Latency in ms',
-    cost_amount DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT 'Cost',
-    finish_reason VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'completed/tool_call/handoff/max_turns',
-    success_flag TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether successful',
-    error_code VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Error code',
-    error_message VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Error message',
+    id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL DEFAULT '',
+    step_id VARCHAR(64) NOT NULL DEFAULT '',
+    model_name VARCHAR(128) NOT NULL,
+    provider_name VARCHAR(64) NOT NULL DEFAULT '',
+    request_mode VARCHAR(32) NOT NULL DEFAULT 'chat',
+    request_payload JSONB,
+    response_payload JSONB,
+    prompt_tokens INT NOT NULL DEFAULT 0,
+    completion_tokens INT NOT NULL DEFAULT 0,
+    total_tokens INT NOT NULL DEFAULT 0,
+    latency_ms BIGINT NOT NULL DEFAULT 0,
+    cost_amount DECIMAL(18, 6) NOT NULL DEFAULT 0,
+    finish_reason VARCHAR(64) NOT NULL DEFAULT '',
+    success_flag BOOLEAN NOT NULL DEFAULT TRUE,
+    error_code VARCHAR(64) NOT NULL DEFAULT '',
+    error_message VARCHAR(512) NOT NULL DEFAULT '',
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_model_call_run (run_id),
-    KEY idx_model_call_step (step_id),
-    KEY idx_model_call_model (model_name),
-    KEY idx_model_call_provider (provider_name),
-    KEY idx_model_call_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Model invocation audit log';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS tool_execution_log (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    invocation_id VARCHAR(64) NOT NULL COMMENT 'Reference tool_invocation.invocation_id',
-    run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Run id',
-    step_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Step id',
-    tool_name VARCHAR(128) NOT NULL COMMENT 'Tool name',
-    request_payload JSON NULL COMMENT 'Sanitized request payload',
-    response_payload JSON NULL COMMENT 'Sanitized response payload',
-    latency_ms BIGINT NOT NULL DEFAULT 0 COMMENT 'Latency in ms',
-    success_flag TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'Whether successful',
-    error_code VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Error code',
-    error_message VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Error message',
+    id VARCHAR(64) PRIMARY KEY,
+    invocation_id VARCHAR(64) NOT NULL,
+    run_id VARCHAR(64) NOT NULL DEFAULT '',
+    step_id VARCHAR(64) NOT NULL DEFAULT '',
+    tool_name VARCHAR(128) NOT NULL,
+    request_payload JSONB,
+    response_payload JSONB,
+    latency_ms BIGINT NOT NULL DEFAULT 0,
+    success_flag BOOLEAN NOT NULL DEFAULT TRUE,
+    error_code VARCHAR(64) NOT NULL DEFAULT '',
+    error_message VARCHAR(512) NOT NULL DEFAULT '',
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_tool_execution_invocation (invocation_id),
-    KEY idx_tool_execution_run (run_id),
-    KEY idx_tool_execution_step (step_id),
-    KEY idx_tool_execution_tool (tool_name),
-    KEY idx_tool_execution_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tool execution audit log';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS policy_audit_log (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Run id',
-    step_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Step id',
-    policy_type VARCHAR(64) NOT NULL COMMENT 'tenant/agent/tool/approval/security',
-    policy_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Policy name',
-    decision VARCHAR(32) NOT NULL COMMENT 'allow/deny/review/degrade',
-    input_payload JSON NULL COMMENT 'Policy evaluation input',
-    result_payload JSON NULL COMMENT 'Policy evaluation result',
-    reason VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Reason summary',
+    id VARCHAR(64) PRIMARY KEY,
+    run_id VARCHAR(64) NOT NULL DEFAULT '',
+    step_id VARCHAR(64) NOT NULL DEFAULT '',
+    policy_type VARCHAR(64) NOT NULL,
+    policy_name VARCHAR(128) NOT NULL DEFAULT '',
+    decision VARCHAR(32) NOT NULL,
+    input_payload JSONB,
+    result_payload JSONB,
+    reason VARCHAR(512) NOT NULL DEFAULT '',
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_policy_audit_run (run_id),
-    KEY idx_policy_audit_step (step_id),
-    KEY idx_policy_audit_type (policy_type),
-    KEY idx_policy_audit_decision (decision),
-    KEY idx_policy_audit_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Policy evaluation audit log';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS knowledge_document (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    knowledge_source_code VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Knowledge source code',
-    document_code VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'External document code',
-    title VARCHAR(512) NOT NULL COMMENT 'Document title',
-    source_uri VARCHAR(1024) NOT NULL DEFAULT '' COMMENT 'Source uri',
-    content_type VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'file/web/faq/sop/ticket',
-    metadata JSON NULL COMMENT 'Document metadata',
-    parse_status VARCHAR(32) NOT NULL DEFAULT 'pending' COMMENT 'pending/parsed/failed',
-    version_no INT NOT NULL DEFAULT 1 COMMENT 'Document version',
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    knowledge_source_code VARCHAR(128) NOT NULL DEFAULT '',
+    document_code VARCHAR(128) NOT NULL DEFAULT '',
+    title VARCHAR(512) NOT NULL,
+    source_uri VARCHAR(1024) NOT NULL DEFAULT '',
+    content_type VARCHAR(64) NOT NULL DEFAULT '',
+    metadata JSONB,
+    parse_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    version_no INT NOT NULL DEFAULT 1,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_knowledge_document_tenant (tenant_id),
-    KEY idx_knowledge_document_source (knowledge_source_code),
-    KEY idx_knowledge_document_code (document_code),
-    KEY idx_knowledge_document_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Knowledge document metadata';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS knowledge_chunk (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    document_id VARCHAR(64) NOT NULL COMMENT 'Document id',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    chunk_no INT NOT NULL COMMENT 'Chunk sequence',
-    content MEDIUMTEXT NOT NULL COMMENT 'Chunk content',
-    token_count INT NOT NULL DEFAULT 0 COMMENT 'Token count',
-    source VARCHAR(512) NOT NULL DEFAULT '' COMMENT 'Source marker',
-    metadata JSON NULL COMMENT 'Chunk metadata',
+    id VARCHAR(64) PRIMARY KEY,
+    document_id VARCHAR(64) NOT NULL,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    chunk_no INT NOT NULL,
+    content TEXT NOT NULL,
+    token_count INT NOT NULL DEFAULT 0,
+    source VARCHAR(512) NOT NULL DEFAULT '',
+    metadata JSONB,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_knowledge_chunk_doc_no (document_id, chunk_no),
-    KEY idx_knowledge_chunk_tenant (tenant_id),
-    KEY idx_knowledge_chunk_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Chunked knowledge content';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS embedding_index (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    source_type VARCHAR(32) NOT NULL COMMENT 'knowledge_chunk/session_memory/user_memory/summary_memory',
-    source_id VARCHAR(64) NOT NULL COMMENT 'Source record id',
-    model_name VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Embedding model',
-    vector_ref VARCHAR(256) NOT NULL DEFAULT '' COMMENT 'Reference to external vector store entry',
-    vector_payload JSON NULL COMMENT 'Optional inline vector payload',
-    metadata JSON NULL COMMENT 'Embedding metadata',
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    source_type VARCHAR(32) NOT NULL,
+    source_id VARCHAR(64) NOT NULL,
+    model_name VARCHAR(128) NOT NULL DEFAULT '',
+    vector_ref VARCHAR(256) NOT NULL DEFAULT '',
+    vector_payload JSONB,
+    metadata JSONB,
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_embedding_source (source_type, source_id),
-    KEY idx_embedding_tenant (tenant_id),
-    KEY idx_embedding_model (model_name),
-    KEY idx_embedding_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Embedding index metadata';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS session_memory (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    user_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'User id',
-    session_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Session id',
-    run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Related run id',
-    memory_type VARCHAR(32) NOT NULL DEFAULT 'recent_context' COMMENT 'recent_context/tool_result/summary',
-    content_json JSON NULL COMMENT 'Structured memory content',
-    source_type VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'user/tool/system/human',
-    source_ref VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Source reference',
-    confidence DECIMAL(5,4) NOT NULL DEFAULT 1.0000 COMMENT 'Confidence score',
-    expires_at DATETIME(3) NULL COMMENT 'Expiration time',
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    user_id VARCHAR(64) NOT NULL DEFAULT '',
+    session_id VARCHAR(64) NOT NULL DEFAULT '',
+    run_id VARCHAR(64) NOT NULL DEFAULT '',
+    memory_type VARCHAR(32) NOT NULL DEFAULT 'recent_context',
+    content_json JSONB,
+    source_type VARCHAR(32) NOT NULL DEFAULT '',
+    source_ref VARCHAR(128) NOT NULL DEFAULT '',
+    confidence DECIMAL(5, 4) NOT NULL DEFAULT 1.0000,
+    expires_at TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_session_memory_session (tenant_id, session_id),
-    KEY idx_session_memory_user (tenant_id, user_id),
-    KEY idx_session_memory_run (run_id),
-    KEY idx_session_memory_expires (expires_at),
-    KEY idx_session_memory_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Short-term session memory';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS user_memory (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    user_id VARCHAR(64) NOT NULL COMMENT 'User id',
-    memory_key VARCHAR(128) NOT NULL COMMENT 'Business memory key',
-    memory_scope VARCHAR(64) NOT NULL DEFAULT 'user' COMMENT 'user/account/tenant',
-    memory_type VARCHAR(32) NOT NULL DEFAULT 'preference' COMMENT 'preference/fact/profile',
-    memory_value JSON NULL COMMENT 'Memory value',
-    source_type VARCHAR(32) NOT NULL DEFAULT '' COMMENT 'human/tool/user',
-    source_ref VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Source reference',
-    confidence DECIMAL(5,4) NOT NULL DEFAULT 1.0000 COMMENT 'Confidence score',
-    effective_at DATETIME(3) NULL COMMENT 'Effective time',
-    expires_at DATETIME(3) NULL COMMENT 'Expiration time',
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    user_id VARCHAR(64) NOT NULL,
+    memory_key VARCHAR(128) NOT NULL,
+    memory_scope VARCHAR(64) NOT NULL DEFAULT 'user',
+    memory_type VARCHAR(32) NOT NULL DEFAULT 'preference',
+    memory_value JSONB,
+    source_type VARCHAR(32) NOT NULL DEFAULT '',
+    source_ref VARCHAR(128) NOT NULL DEFAULT '',
+    confidence DECIMAL(5, 4) NOT NULL DEFAULT 1.0000,
+    effective_at TIMESTAMP(3),
+    expires_at TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    UNIQUE KEY uk_user_memory_key (tenant_id, user_id, memory_key),
-    KEY idx_user_memory_scope (memory_scope),
-    KEY idx_user_memory_type (memory_type),
-    KEY idx_user_memory_expires (expires_at),
-    KEY idx_user_memory_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Long-term user memory';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
 
 CREATE TABLE IF NOT EXISTS summary_memory (
-    id VARCHAR(64) NOT NULL COMMENT 'Primary key',
-    tenant_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Tenant id',
-    run_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Run id',
-    session_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Session id',
-    summary_type VARCHAR(32) NOT NULL DEFAULT 'conversation' COMMENT 'conversation/task/progress',
-    source_start_seq BIGINT NOT NULL DEFAULT 0 COMMENT 'Source start sequence',
-    source_end_seq BIGINT NOT NULL DEFAULT 0 COMMENT 'Source end sequence',
-    summary_text MEDIUMTEXT NOT NULL COMMENT 'Summary text',
-    summary_json JSON NULL COMMENT 'Structured summary',
-    generated_by_model VARCHAR(128) NOT NULL DEFAULT '' COMMENT 'Model used to generate summary',
-    generated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT 'Generation time',
-    expires_at DATETIME(3) NULL COMMENT 'Expiration time',
+    id VARCHAR(64) PRIMARY KEY,
+    tenant_id VARCHAR(64) NOT NULL DEFAULT '',
+    run_id VARCHAR(64) NOT NULL DEFAULT '',
+    session_id VARCHAR(64) NOT NULL DEFAULT '',
+    summary_type VARCHAR(32) NOT NULL DEFAULT 'conversation',
+    source_start_seq BIGINT NOT NULL DEFAULT 0,
+    source_end_seq BIGINT NOT NULL DEFAULT 0,
+    summary_text TEXT NOT NULL,
+    summary_json JSONB,
+    generated_by_model VARCHAR(128) NOT NULL DEFAULT '',
+    generated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    expires_at TIMESTAMP(3),
     last_modifier VARCHAR(64) NOT NULL DEFAULT '',
-    last_modify_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    last_modify_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     last_modifier_name VARCHAR(128) NOT NULL DEFAULT '',
-    create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    create_time TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     creator_name VARCHAR(128) NOT NULL DEFAULT '',
     creator VARCHAR(64) NOT NULL DEFAULT '',
-    deleted TINYINT(1) NOT NULL DEFAULT 0,
-    PRIMARY KEY (id),
-    KEY idx_summary_memory_run (run_id),
-    KEY idx_summary_memory_session (tenant_id, session_id),
-    KEY idx_summary_memory_range (source_start_seq, source_end_seq),
-    KEY idx_summary_memory_expires (expires_at),
-    KEY idx_summary_memory_deleted (deleted)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Summary memory for long context compression';
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_definition_code ON agent_definition (code);
+CREATE INDEX IF NOT EXISTS idx_agent_definition_enabled ON agent_definition (enabled);
+CREATE INDEX IF NOT EXISTS idx_agent_definition_deleted ON agent_definition (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_def_ver ON agent_definition_version (agent_definition_id, version);
+CREATE INDEX IF NOT EXISTS idx_agent_def_ver_status ON agent_definition_version (status);
+CREATE INDEX IF NOT EXISTS idx_agent_def_ver_deleted ON agent_definition_version (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_tool_definition_name ON tool_definition (tool_name);
+CREATE INDEX IF NOT EXISTS idx_tool_definition_effect ON tool_definition (side_effect_level);
+CREATE INDEX IF NOT EXISTS idx_tool_definition_enabled ON tool_definition (enabled);
+CREATE INDEX IF NOT EXISTS idx_tool_definition_deleted ON tool_definition (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_route_rule_source ON route_rule (source_agent_code);
+CREATE INDEX IF NOT EXISTS idx_route_rule_target ON route_rule (target_agent_code);
+CREATE INDEX IF NOT EXISTS idx_route_rule_priority ON route_rule (priority);
+CREATE INDEX IF NOT EXISTS idx_route_rule_deleted ON route_rule (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_run_idempotency ON agent_run (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_agent_run_root_run ON agent_run (root_run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_parent_run ON agent_run (parent_run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_status ON agent_run (status);
+CREATE INDEX IF NOT EXISTS idx_agent_run_tenant_session ON agent_run (tenant_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_user ON agent_run (user_id);
+CREATE INDEX IF NOT EXISTS idx_agent_run_deleted ON agent_run (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_step_run_key ON agent_step (run_id, step_key);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_step_run_no ON agent_step (run_id, step_no);
+CREATE INDEX IF NOT EXISTS idx_agent_step_type ON agent_step (step_type);
+CREATE INDEX IF NOT EXISTS idx_agent_step_status ON agent_step (status);
+CREATE INDEX IF NOT EXISTS idx_agent_step_depends ON agent_step (depends_on_step_id);
+CREATE INDEX IF NOT EXISTS idx_agent_step_deleted ON agent_step (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_agent_message_run_seq ON agent_message (run_id, seq_no);
+CREATE INDEX IF NOT EXISTS idx_agent_message_run_created ON agent_message (run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_message_step ON agent_message (step_id);
+CREATE INDEX IF NOT EXISTS idx_agent_message_role ON agent_message (role);
+CREATE INDEX IF NOT EXISTS idx_agent_message_deleted ON agent_message (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_agent_approval_run ON agent_approval (run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_approval_step ON agent_approval (step_id);
+CREATE INDEX IF NOT EXISTS idx_agent_approval_decision ON agent_approval (decision);
+CREATE INDEX IF NOT EXISTS idx_agent_approval_expires ON agent_approval (expires_at);
+CREATE INDEX IF NOT EXISTS idx_agent_approval_deleted ON agent_approval (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_tool_invocation_idempotency ON tool_invocation (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_tool_invocation_run ON tool_invocation (run_id);
+CREATE INDEX IF NOT EXISTS idx_tool_invocation_step ON tool_invocation (step_id);
+CREATE INDEX IF NOT EXISTS idx_tool_invocation_tool_status ON tool_invocation (tool_name, status);
+CREATE INDEX IF NOT EXISTS idx_tool_invocation_deleted ON tool_invocation (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_idempotency_scope ON idempotency_record (scope_type, scope_key);
+CREATE INDEX IF NOT EXISTS idx_idempotency_target ON idempotency_record (target_id);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expire ON idempotency_record (expire_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_deleted ON idempotency_record (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_outbox_run_seq ON run_outbox_event (run_id, seq_no);
+CREATE INDEX IF NOT EXISTS idx_outbox_publish_status ON run_outbox_event (publish_status);
+CREATE INDEX IF NOT EXISTS idx_outbox_event_type ON run_outbox_event (event_type);
+CREATE INDEX IF NOT EXISTS idx_outbox_deleted ON run_outbox_event (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_model_call_run ON model_call_log (run_id);
+CREATE INDEX IF NOT EXISTS idx_model_call_step ON model_call_log (step_id);
+CREATE INDEX IF NOT EXISTS idx_model_call_model ON model_call_log (model_name);
+CREATE INDEX IF NOT EXISTS idx_model_call_provider ON model_call_log (provider_name);
+CREATE INDEX IF NOT EXISTS idx_model_call_deleted ON model_call_log (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_tool_execution_invocation ON tool_execution_log (invocation_id);
+CREATE INDEX IF NOT EXISTS idx_tool_execution_run ON tool_execution_log (run_id);
+CREATE INDEX IF NOT EXISTS idx_tool_execution_step ON tool_execution_log (step_id);
+CREATE INDEX IF NOT EXISTS idx_tool_execution_tool ON tool_execution_log (tool_name);
+CREATE INDEX IF NOT EXISTS idx_tool_execution_deleted ON tool_execution_log (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_policy_audit_run ON policy_audit_log (run_id);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_step ON policy_audit_log (step_id);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_type ON policy_audit_log (policy_type);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_decision ON policy_audit_log (decision);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_deleted ON policy_audit_log (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_tenant ON knowledge_document (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_source ON knowledge_document (knowledge_source_code);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_code ON knowledge_document (document_code);
+CREATE INDEX IF NOT EXISTS idx_knowledge_document_deleted ON knowledge_document (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_knowledge_chunk_doc_no ON knowledge_chunk (document_id, chunk_no);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_tenant ON knowledge_chunk (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_deleted ON knowledge_chunk (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_embedding_source ON embedding_index (source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_embedding_tenant ON embedding_index (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_embedding_model ON embedding_index (model_name);
+CREATE INDEX IF NOT EXISTS idx_embedding_deleted ON embedding_index (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_session_memory_session ON session_memory (tenant_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_session_memory_user ON session_memory (tenant_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_session_memory_run ON session_memory (run_id);
+CREATE INDEX IF NOT EXISTS idx_session_memory_expires ON session_memory (expires_at);
+CREATE INDEX IF NOT EXISTS idx_session_memory_deleted ON session_memory (deleted);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_user_memory_key ON user_memory (tenant_id, user_id, memory_key);
+CREATE INDEX IF NOT EXISTS idx_user_memory_scope ON user_memory (memory_scope);
+CREATE INDEX IF NOT EXISTS idx_user_memory_type ON user_memory (memory_type);
+CREATE INDEX IF NOT EXISTS idx_user_memory_expires ON user_memory (expires_at);
+CREATE INDEX IF NOT EXISTS idx_user_memory_deleted ON user_memory (deleted);
+
+CREATE INDEX IF NOT EXISTS idx_summary_memory_run ON summary_memory (run_id);
+CREATE INDEX IF NOT EXISTS idx_summary_memory_session ON summary_memory (tenant_id, session_id);
+CREATE INDEX IF NOT EXISTS idx_summary_memory_range ON summary_memory (source_start_seq, source_end_seq);
+CREATE INDEX IF NOT EXISTS idx_summary_memory_expires ON summary_memory (expires_at);
+CREATE INDEX IF NOT EXISTS idx_summary_memory_deleted ON summary_memory (deleted);
+
+COMMENT ON TABLE agent_definition IS 'Agent definition master table';
+COMMENT ON TABLE agent_definition_version IS 'Versioned snapshot of an agent definition';
+COMMENT ON TABLE tool_definition IS 'Tool registry metadata';
+COMMENT ON TABLE route_rule IS 'Routing and handoff rules';
+COMMENT ON TABLE agent_run IS 'Runtime run instance';
+COMMENT ON TABLE agent_step IS 'Atomic step inside a run';
+COMMENT ON TABLE agent_message IS 'Conversation and runtime message log';
+COMMENT ON TABLE agent_approval IS 'Approval and human-in-the-loop records';
+COMMENT ON TABLE tool_invocation IS 'Tool invocation record';
+COMMENT ON TABLE idempotency_record IS 'Reusable idempotency registry';
+COMMENT ON TABLE run_outbox_event IS 'Transactional outbox for run events';
+COMMENT ON TABLE model_call_log IS 'Model invocation audit log';
+COMMENT ON TABLE tool_execution_log IS 'Tool execution audit log';
+COMMENT ON TABLE policy_audit_log IS 'Policy evaluation audit log';
+COMMENT ON TABLE knowledge_document IS 'Knowledge document metadata';
+COMMENT ON TABLE knowledge_chunk IS 'Chunked knowledge content';
+COMMENT ON TABLE embedding_index IS 'Embedding index metadata';
+COMMENT ON TABLE session_memory IS 'Short-term session memory';
+COMMENT ON TABLE user_memory IS 'Long-term user memory';
+COMMENT ON TABLE summary_memory IS 'Summary memory for long context compression';
+
+DO $$
+DECLARE
+    table_name TEXT;
+BEGIN
+    FOREACH table_name IN ARRAY ARRAY[
+        'agent_definition',
+        'agent_definition_version',
+        'tool_definition',
+        'route_rule',
+        'agent_run',
+        'agent_step',
+        'agent_message',
+        'agent_approval',
+        'tool_invocation',
+        'idempotency_record',
+        'run_outbox_event',
+        'model_call_log',
+        'tool_execution_log',
+        'policy_audit_log',
+        'knowledge_document',
+        'knowledge_chunk',
+        'embedding_index',
+        'session_memory',
+        'user_memory',
+        'summary_memory'
+    ]
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS trg_set_last_modify_time ON %I', table_name);
+        EXECUTE format(
+            'CREATE TRIGGER trg_set_last_modify_time BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION set_last_modify_time()',
+            table_name
+        );
+    END LOOP;
+END;
+$$;
