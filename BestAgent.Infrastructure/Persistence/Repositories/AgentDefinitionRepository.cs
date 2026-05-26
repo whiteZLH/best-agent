@@ -24,6 +24,75 @@ public class AgentDefinitionRepository : IAgentDefinitionRepository
             return null;
         }
 
+        return await ResolveDefinitionAsync(definition, cancellationToken);
+    }
+
+    public async Task<ResolvedAgentDefinition?> GetByCodeAsync(string agentCode, CancellationToken cancellationToken)
+    {
+        var definition = await _dbContext.AgentDefinitions
+            .AsNoTracking()
+            .Where(x => x.Code == agentCode && !x.Deleted)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (definition is null)
+        {
+            return null;
+        }
+
+        return await ResolveDefinitionAsync(definition, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ResolvedAgentDefinition>> GetAllAsync(CancellationToken cancellationToken)
+    {
+        var definitions = await _dbContext.AgentDefinitions
+            .AsNoTracking()
+            .Where(x => !x.Deleted)
+            .OrderBy(x => x.Code)
+            .ToListAsync(cancellationToken);
+
+        if (definitions.Count == 0)
+        {
+            return Array.Empty<ResolvedAgentDefinition>();
+        }
+
+        var definitionIds = definitions.Select(x => x.Id).ToArray();
+        var versions = await _dbContext.AgentDefinitionVersions
+            .AsNoTracking()
+            .Where(x => definitionIds.Contains(x.AgentDefinitionId) && !x.Deleted)
+            .ToListAsync(cancellationToken);
+
+        var versionLookup = versions.ToLookup(x => (x.AgentDefinitionId, x.Version));
+
+        return definitions
+            .Select(definition =>
+            {
+                var version = versionLookup[(definition.Id, definition.CurrentVersion)].SingleOrDefault();
+                return version is null ? null : new ResolvedAgentDefinition(definition, version);
+            })
+            .Where(x => x is not null)
+            .Cast<ResolvedAgentDefinition>()
+            .ToArray();
+    }
+
+    public Task<bool> AnyAsync(CancellationToken cancellationToken)
+    {
+        return _dbContext.AgentDefinitions.AnyAsync(cancellationToken);
+    }
+
+    public Task<bool> ExistsByCodeAsync(string agentCode, CancellationToken cancellationToken)
+    {
+        return _dbContext.AgentDefinitions.AnyAsync(x => x.Code == agentCode && !x.Deleted, cancellationToken);
+    }
+
+    public async Task AddAsync(ResolvedAgentDefinition definition, CancellationToken cancellationToken)
+    {
+        await _dbContext.AgentDefinitions.AddAsync(definition.Definition, cancellationToken);
+        await _dbContext.AgentDefinitionVersions.AddAsync(definition.Version, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task<ResolvedAgentDefinition?> ResolveDefinitionAsync(AgentDefinition definition, CancellationToken cancellationToken)
+    {
         var version = await _dbContext.AgentDefinitionVersions
             .AsNoTracking()
             .Where(x =>
@@ -33,17 +102,5 @@ public class AgentDefinitionRepository : IAgentDefinitionRepository
             .SingleOrDefaultAsync(cancellationToken);
 
         return version is null ? null : new ResolvedAgentDefinition(definition, version);
-    }
-
-    public Task<bool> AnyAsync(CancellationToken cancellationToken)
-    {
-        return _dbContext.AgentDefinitions.AnyAsync(cancellationToken);
-    }
-
-    public async Task AddAsync(ResolvedAgentDefinition definition, CancellationToken cancellationToken)
-    {
-        await _dbContext.AgentDefinitions.AddAsync(definition.Definition, cancellationToken);
-        await _dbContext.AgentDefinitionVersions.AddAsync(definition.Version, cancellationToken);
-        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 }

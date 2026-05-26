@@ -1,6 +1,31 @@
 @BestAgent.Api_HostAddress = http://localhost:5046
 
-GET {{BestAgent.Api_HostAddress}}/weatherforecast/
+GET {{BestAgent.Api_HostAddress}}/agent-definitions
+Accept: application/json
+
+###
+
+POST {{BestAgent.Api_HostAddress}}/agent-definitions
+Content-Type: application/json
+
+{
+  "code": "writer",
+  "name": "Writer",
+  "description": "A simple writing assistant.",
+  "instruction": "Keep answers concise and structured.",
+  "systemPromptTemplate": "You are a helpful writing assistant.",
+  "defaultModel": "gpt-4o-mini",
+  "allowedTools": [
+    "echo_context"
+  ],
+  "maxTurns": 5,
+  "maxCost": 10,
+  "enabled": true
+}
+
+###
+
+GET {{BestAgent.Api_HostAddress}}/agent-definitions/writer
 Accept: application/json
 
 ###
