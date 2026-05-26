@@ -51,7 +51,7 @@ public class DatabaseInitializationHostedService : IHostedService
             Id = versionId,
             AgentDefinitionId = definitionId,
             Version = 1,
-            Status = "published",
+            Status = AgentDefinitionVersionStatuses.Published,
             Name = "Default Agent v1",
             Description = "Default runtime definition.",
             Instruction = "You are the default agent for local development.",

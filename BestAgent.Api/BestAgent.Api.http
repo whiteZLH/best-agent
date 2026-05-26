@@ -29,3 +29,35 @@ GET {{BestAgent.Api_HostAddress}}/agent-definitions/writer
 Accept: application/json
 
 ###
+
+GET {{BestAgent.Api_HostAddress}}/agent-definitions/writer/versions
+Accept: application/json
+
+###
+
+POST {{BestAgent.Api_HostAddress}}/agent-definitions/writer/versions
+Content-Type: application/json
+
+{
+  "name": "Writer v2",
+  "description": "A more structured writer.",
+  "instruction": "Prefer headings and short paragraphs.",
+  "systemPromptTemplate": "You are a helpful writing assistant that answers with concise structure.",
+  "defaultModel": "gpt-4o",
+  "allowedTools": [
+    "echo_context"
+  ],
+  "maxTurns": 6,
+  "maxCost": 12
+}
+
+###
+
+POST {{BestAgent.Api_HostAddress}}/agent-definitions/writer:activate-version
+Content-Type: application/json
+
+{
+  "version": 2
+}
+
+###

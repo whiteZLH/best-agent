@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace BestAgent.Application.AgentDefinitions;
 
 public record AgentDefinitionViewModel(
@@ -39,28 +37,11 @@ public record AgentDefinitionViewModel(
             definition.Version.Instruction,
             definition.Version.SystemPromptTemplate,
             definition.Version.DefaultModel,
-            ParseAllowedTools(definition.Version.AllowedTools),
+            AgentDefinitionToolListSerializer.Parse(definition.Version.AllowedTools),
             definition.Version.MaxTurns,
             definition.Version.MaxCost,
             definition.Definition.CreateTime,
             definition.Definition.LastModifyTime,
             definition.Version.PublishedAt);
-    }
-
-    private static IReadOnlyList<string> ParseAllowedTools(string? allowedTools)
-    {
-        if (string.IsNullOrWhiteSpace(allowedTools))
-        {
-            return Array.Empty<string>();
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize<string[]>(allowedTools) ?? Array.Empty<string>();
-        }
-        catch (JsonException)
-        {
-            return Array.Empty<string>();
-        }
     }
 }

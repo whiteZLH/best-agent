@@ -74,6 +74,43 @@ public class AgentDefinitionRepository : IAgentDefinitionRepository
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<AgentDefinitionVersion>> GetVersionsAsync(string agentCode, CancellationToken cancellationToken)
+    {
+        var definition = await _dbContext.AgentDefinitions
+            .AsNoTracking()
+            .Where(x => x.Code == agentCode && !x.Deleted)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (definition is null)
+        {
+            return Array.Empty<AgentDefinitionVersion>();
+        }
+
+        return await _dbContext.AgentDefinitionVersions
+            .AsNoTracking()
+            .Where(x => x.AgentDefinitionId == definition.Id && !x.Deleted)
+            .OrderByDescending(x => x.Version)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<AgentDefinitionVersion?> GetVersionByCodeAsync(string agentCode, int version, CancellationToken cancellationToken)
+    {
+        var definition = await _dbContext.AgentDefinitions
+            .AsNoTracking()
+            .Where(x => x.Code == agentCode && !x.Deleted)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (definition is null)
+        {
+            return null;
+        }
+
+        return await _dbContext.AgentDefinitionVersions
+            .AsNoTracking()
+            .Where(x => x.AgentDefinitionId == definition.Id && x.Version == version && !x.Deleted)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     public Task<bool> AnyAsync(CancellationToken cancellationToken)
     {
         return _dbContext.AgentDefinitions.AnyAsync(cancellationToken);
@@ -88,6 +125,29 @@ public class AgentDefinitionRepository : IAgentDefinitionRepository
     {
         await _dbContext.AgentDefinitions.AddAsync(definition.Definition, cancellationToken);
         await _dbContext.AgentDefinitionVersions.AddAsync(definition.Version, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task AddVersionAsync(AgentDefinitionVersion version, CancellationToken cancellationToken)
+    {
+        await _dbContext.AgentDefinitionVersions.AddAsync(version, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task ActivateVersionAsync(
+        AgentDefinition definition,
+        AgentDefinitionVersion targetVersion,
+        AgentDefinitionVersion? previousVersion,
+        CancellationToken cancellationToken)
+    {
+        _dbContext.AgentDefinitions.Update(definition);
+        _dbContext.AgentDefinitionVersions.Update(targetVersion);
+
+        if (previousVersion is not null)
+        {
+            _dbContext.AgentDefinitionVersions.Update(previousVersion);
+        }
+
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 

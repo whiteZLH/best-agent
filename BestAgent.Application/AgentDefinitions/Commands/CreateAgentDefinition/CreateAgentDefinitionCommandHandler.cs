@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BestAgent.Domain.AgentDefinitions;
 using MediatR;
 
@@ -58,12 +57,7 @@ public class CreateAgentDefinitionCommandHandler : IRequestHandler<CreateAgentDe
         var now = DateTime.UtcNow;
         var definitionId = Guid.NewGuid().ToString("N");
         var versionId = Guid.NewGuid().ToString("N");
-        var versionStatus = request.Enabled ? "Published" : "Draft";
-        var allowedTools = request.AllowedTools?
-            .Where(x => !string.IsNullOrWhiteSpace(x))
-            .Select(x => x.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var versionStatus = request.Enabled ? AgentDefinitionVersionStatuses.Published : AgentDefinitionVersionStatuses.Draft;
 
         var resolvedDefinition = new ResolvedAgentDefinition(
             new AgentDefinition
@@ -92,7 +86,7 @@ public class CreateAgentDefinitionCommandHandler : IRequestHandler<CreateAgentDe
                 Instruction = request.Instruction?.Trim(),
                 SystemPromptTemplate = systemPromptTemplate,
                 DefaultModel = defaultModel,
-                AllowedTools = allowedTools is { Length: > 0 } ? JsonSerializer.Serialize(allowedTools) : null,
+                AllowedTools = AgentDefinitionToolListSerializer.Serialize(request.AllowedTools),
                 MaxTurns = request.MaxTurns,
                 MaxCost = request.MaxCost,
                 PublishedAt = request.Enabled ? now : null,
