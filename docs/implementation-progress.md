@@ -1,6 +1,6 @@
 # BestAgent MVP 实现进度
 
-更新日期：2026-05-25
+更新日期：2026-05-27
 
 ## 1. 当前状态
 
@@ -12,6 +12,7 @@
 - `EF Core + PostgreSQL` 持久化模型
 - 初始 `EF Core Migration`
 - 单 Agent 同步工具调用主链路
+- `AgentDefinition` 管理与版本发布接口
 - OpenAI 兼容模型网关抽象与实现
 - 单元测试与 HTTP 级集成测试
 
@@ -45,16 +46,28 @@
 
 ### 3.1 API
 
-已实现 4 个核心接口：
+已实现两组核心接口。
+
+`AgentRun` 接口：
 
 - `POST /agent-runs`
 - `GET /agent-runs/{runId}`
 - `GET /agent-runs/{runId}/steps`
 - `POST /agent-runs/{runId}:resume`
 
+`AgentDefinition` 管理接口：
+
+- `GET /agent-definitions`
+- `GET /agent-definitions/{agentCode}`
+- `POST /agent-definitions`
+- `GET /agent-definitions/{agentCode}/versions`
+- `POST /agent-definitions/{agentCode}/versions`
+- `POST /agent-definitions/{agentCode}:activate-version`
+
 入口控制器：
 
 - `src/BestAgent.Api/Controllers/AgentRunsController.cs`
+- `src/BestAgent.Api/Controllers/AgentDefinitionsController.cs`
 
 异常统一映射为 `ProblemDetails`，并在 `Program.cs` 中注册全局异常处理。
 
@@ -66,6 +79,12 @@
 - `ResumeAgentRunCommand`
 - `GetAgentRunByIdQuery`
 - `GetAgentRunStepsQuery`
+- `CreateAgentDefinitionCommand`
+- `CreateAgentDefinitionVersionCommand`
+- `ActivateAgentDefinitionVersionCommand`
+- `GetAgentDefinitionsQuery`
+- `GetAgentDefinitionByCodeQuery`
+- `GetAgentDefinitionVersionsQuery`
 
 已实现的管道行为：
 
@@ -257,14 +276,14 @@ dotnet run --project src/BestAgent.Api
 - 成本治理
 - 鉴权与租户隔离
 - 实际 outbox 投递 worker
-- 管理后台与 AgentDefinition 管理界面
+- 管理后台界面
 
 ## 7. 建议的下一步
 
 推荐按下面顺序继续推进：
 
 1. 增加真实 PostgreSQL 本地运行说明或容器编排
-2. 为 `AgentDefinition` 增加管理接口
+2. 为 `AgentDefinition` 管理接口补充测试与使用说明
 3. 抽出更清晰的状态机与策略层
 4. 引入异步工具与 `WaitingTool` 恢复语义
 5. 接入审批流
