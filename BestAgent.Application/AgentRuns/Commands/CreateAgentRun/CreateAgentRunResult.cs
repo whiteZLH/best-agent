@@ -5,4 +5,5 @@ public record CreateAgentRunResult(
     string AgentCode,
     string? Input,
     string? Output,
-    string Status);
+    string Status,
+    string? WaitToken = null);

@@ -1,6 +1,7 @@
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
+using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using MediatR;
@@ -54,5 +55,18 @@ public class AgentRunsController : ControllerBase
     {
         var steps = await _mediator.Send(new GetAgentRunStepsQuery(runId), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunStepResponse>>(steps));
+    }
+
+    [HttpPost("{runId}:resume")]
+    public async Task<ActionResult<ResumeAgentRunResponse>> Resume(
+        [FromRoute] string runId,
+        [FromBody] ResumeAgentRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = new ResumeAgentRunCommand(runId, request.WaitToken, request.ToolResult);
+        var result = await _mediator.Send(command, cancellationToken);
+        var response = _mapper.Map<ResumeAgentRunResponse>(result);
+
+        return Ok(response);
     }
 }

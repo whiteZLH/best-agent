@@ -1,4 +1,3 @@
-using BestAgent.Application.AgentDefinitions;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Exceptions;
 using BestAgent.Application.Models;
@@ -11,13 +10,6 @@ namespace BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 
 public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunCommand, CreateAgentRunResult>
 {
-    private const string RuntimeInstruction =
-        """
-        Return JSON only.
-        Use {"action":"respond","response":"..."} for a final answer.
-        Use {"action":"tool_call","toolName":"...","toolInput":"..."} to call one tool.
-        """;
-
     private readonly IAgentDefinitionRepository _agentDefinitionRepository;
     private readonly IAgentRunRepository _agentRunRepository;
     private readonly IAgentStepRepository _agentStepRepository;
@@ -61,6 +53,7 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             MaxTurns = resolvedDefinition.Version.MaxTurns,
             MaxCost = resolvedDefinition.Version.MaxCost,
             StartedAt = now,
+            StatusVersion = 1,
             Creator = "system",
             CreatorName = "system",
             LastModifier = "system",
@@ -70,51 +63,29 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
         };
 
         await _agentRunRepository.AddAsync(agentRun, cancellationToken);
-        await _agentStepRepository.AddAsync(CreateStep(runId, 1, "created", "Completed", request.Input, null, null, now, now), cancellationToken);
-        await _agentStepRepository.AddAsync(CreateStep(runId, 2, "running", "Completed", request.Input, null, null, now, now), cancellationToken);
+        await _agentStepRepository.AddAsync(AgentRunLoop.CreateStep(runId, 1, "created", "Completed", request.Input, null, null, now, now), cancellationToken);
+        await _agentStepRepository.AddAsync(AgentRunLoop.CreateStep(runId, 2, "running", "Completed", request.Input, null, null, now, now), cancellationToken);
 
-        var nextStepNo = 3;
-        var currentInput = request.Input;
+        var loopContext = new AgentLoopContext(agentRun, resolvedDefinition.Version, request.Input, 3, 0);
 
         try
         {
-            for (var turn = 0; turn < agentRun.MaxTurns; turn++)
+            var loopResult = await AgentRunLoop.ExecuteAsync(
+                loopContext, resolvedDefinition,
+                _modelGateway, _stepDecisionParser, _toolExecutor, _agentStepRepository,
+                cancellationToken);
+
+            switch (loopResult)
             {
-                var decisionResult = await GenerateDecisionAsync(resolvedDefinition.Version, currentInput, cancellationToken);
-                await _agentStepRepository.AddAsync(CreateStep(
-                    runId, nextStepNo++, "model_call", "Completed",
-                    currentInput, decisionResult.RawOutput, null,
-                    decisionResult.StartedAt, decisionResult.EndedAt), cancellationToken);
+                case AgentLoopCompleted completed:
+                    return await CompleteRun(agentRun, completed.Output, request.Input, cancellationToken);
 
-                if (string.Equals(decisionResult.Decision.Action, "respond", StringComparison.OrdinalIgnoreCase))
-                {
-                    var output = GetResponse(decisionResult.Decision);
-                    return await CompleteRun(agentRun, nextStepNo, request.Input, output, cancellationToken);
-                }
+                case AgentLoopSuspended suspended:
+                    return await SuspendRun(agentRun, suspended.WaitToken, suspended.SuspendedAtStepNo, request.Input, cancellationToken);
 
-                if (!string.Equals(decisionResult.Decision.Action, "tool_call", StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidOperationException($"Unsupported decision action '{decisionResult.Decision.Action}'.");
-
-                var toolName = decisionResult.Decision.ToolName!;
-                EnsureToolAllowed(toolName, resolvedDefinition, request.AgentCode);
-
-                var toolStartedAt = DateTime.UtcNow;
-                var toolResult = await _toolExecutor.ExecuteAsync(
-                    toolName,
-                    decisionResult.Decision.ToolInput,
-                    new ToolExecutionContext(runId, request.AgentCode, request.Input),
-                    cancellationToken);
-                var toolEndedAt = DateTime.UtcNow;
-
-                await _agentStepRepository.AddAsync(CreateStep(
-                    runId, nextStepNo++, "tool_call", "Completed",
-                    decisionResult.Decision.ToolInput, toolResult.Output, null,
-                    toolStartedAt, toolEndedAt), cancellationToken);
-
-                currentInput = BuildToolFollowUpInput(request.Input, toolResult);
+                default:
+                    throw new InvalidOperationException("Unexpected loop result.");
             }
-
-            throw new InvalidOperationException("Max turns exceeded.");
         }
         catch (Exception ex)
         {
@@ -124,129 +95,53 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
             {
                 Status = "Failed",
                 InterruptReason = error,
-                CurrentStepNo = nextStepNo,
                 EndedAt = failedAt,
                 LastModifyTime = failedAt
             };
 
             await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
-            await _agentStepRepository.AddAsync(CreateStep(
-                runId, nextStepNo, "failed", "Failed",
+            await _agentStepRepository.AddAsync(AgentRunLoop.CreateStep(
+                runId, loopContext.StartStepNo, "failed", "Failed",
                 request.Input, null, error, failedAt, failedAt), cancellationToken);
             throw;
         }
     }
 
     private async Task<CreateAgentRunResult> CompleteRun(
-        AgentRun agentRun, int nextStepNo, string input, string output, CancellationToken cancellationToken)
+        AgentRun agentRun, string output, string input, CancellationToken cancellationToken)
     {
         var completedAt = DateTime.UtcNow;
         agentRun = agentRun with
         {
             Status = "Completed",
-            CurrentStepNo = nextStepNo,
             OutputPayload = output,
             EndedAt = completedAt,
             LastModifyTime = completedAt
         };
 
         await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
-        await _agentStepRepository.AddAsync(CreateStep(
-            agentRun.RunId, nextStepNo, "completed", "Completed",
+        await _agentStepRepository.AddAsync(AgentRunLoop.CreateStep(
+            agentRun.RunId, 0, "completed", "Completed",
             input, output, null, completedAt, completedAt), cancellationToken);
 
-        return new CreateAgentRunResult(
-            agentRun.RunId,
-            agentRun.AgentCode,
-            input,
-            output,
-            agentRun.Status);
+        return new CreateAgentRunResult(agentRun.RunId, agentRun.AgentCode, input, output, agentRun.Status);
     }
 
-    private async Task<DecisionResult> GenerateDecisionAsync(
-        AgentDefinitionVersion version, string input, CancellationToken cancellationToken)
+    private async Task<CreateAgentRunResult> SuspendRun(
+        AgentRun agentRun, string waitToken, int stepNo, string input, CancellationToken cancellationToken)
     {
-        var startedAt = DateTime.UtcNow;
-        var modelResponse = await _modelGateway.GenerateTextAsync(
-            new GenerateTextRequest(version.DefaultModel, BuildRuntimePrompt(version.SystemPromptTemplate), input),
-            cancellationToken);
-        var endedAt = DateTime.UtcNow;
-
-        return new DecisionResult(
-            _stepDecisionParser.Parse(modelResponse.Output),
-            modelResponse.Output,
-            startedAt,
-            endedAt);
-    }
-
-    private static string BuildRuntimePrompt(string? systemPromptTemplate)
-    {
-        if (string.IsNullOrWhiteSpace(systemPromptTemplate))
-            return RuntimeInstruction;
-
-        return $"{systemPromptTemplate.Trim()}\n\n{RuntimeInstruction}";
-    }
-
-    private static string BuildToolFollowUpInput(string originalInput, ToolExecutionResult toolResult)
-    {
-        return
-            $"""
-            Original user input:
-            {originalInput}
-
-            Tool called:
-            {toolResult.ToolName}
-
-            Tool result:
-            {toolResult.Output}
-
-            Produce the final user-facing answer now.
-            """;
-    }
-
-    private static string GetResponse(StepDecision decision)
-    {
-        if (string.IsNullOrWhiteSpace(decision.Response))
-            throw new InvalidOperationException("Respond decision did not include a response.");
-
-        return decision.Response.Trim();
-    }
-
-    private static void EnsureToolAllowed(string toolName, ResolvedAgentDefinition resolvedDefinition, string agentCode)
-    {
-        var allowedTools = AgentDefinitionToolListSerializer.Parse(resolvedDefinition.Version.AllowedTools);
-        if (!allowedTools.Contains(toolName, StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Tool '{toolName}' is not allowed for agent definition '{agentCode}'.");
-    }
-
-    private static AgentStep CreateStep(
-        string runId, int stepNo, string stepType, string status,
-        string? input, string? output, string? error,
-        DateTime startedAt, DateTime endedAt)
-    {
-        return new AgentStep
+        var suspendedAt = DateTime.UtcNow;
+        agentRun = agentRun with
         {
-            StepId = Guid.NewGuid().ToString("N"),
-            RunId = runId,
-            StepNo = stepNo,
-            StepType = stepType,
-            Status = status,
-            InputPayload = input,
-            OutputPayload = output,
-            ErrorPayload = error,
-            StepKey = $"{runId}:{stepType}:{stepNo}",
-            StartedAt = startedAt,
-            EndedAt = endedAt,
-            DurationMs = Math.Max(0, (long)(endedAt - startedAt).TotalMilliseconds),
-            Creator = "system",
-            CreatorName = "system",
-            LastModifier = "system",
-            LastModifierName = "system",
-            CreateTime = startedAt,
-            LastModifyTime = endedAt
+            Status = "WaitingTool",
+            CurrentWaitToken = waitToken,
+            CurrentStepNo = stepNo,
+            StatusVersion = agentRun.StatusVersion + 1,
+            LastModifyTime = suspendedAt
         };
-    }
 
-    private sealed record DecisionResult(
-        StepDecision Decision, string RawOutput, DateTime StartedAt, DateTime EndedAt);
+        await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
+
+        return new CreateAgentRunResult(agentRun.RunId, agentRun.AgentCode, input, null, agentRun.Status, waitToken);
+    }
 }

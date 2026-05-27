@@ -1,6 +1,6 @@
-namespace BestAgent.Api.Contracts.AgentRuns;
+namespace BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
 
-public record CreateAgentRunResponse(
+public record ResumeAgentRunResult(
     string RunId,
     string AgentCode,
     string? Input,

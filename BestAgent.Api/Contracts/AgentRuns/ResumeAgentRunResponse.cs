@@ -1,6 +1,6 @@
 namespace BestAgent.Api.Contracts.AgentRuns;
 
-public record CreateAgentRunResponse(
+public record ResumeAgentRunResponse(
     string RunId,
     string AgentCode,
     string? Input,

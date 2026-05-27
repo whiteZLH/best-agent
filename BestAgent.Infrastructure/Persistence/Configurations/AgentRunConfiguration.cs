@@ -31,7 +31,7 @@ public class AgentRunConfiguration : IEntityTypeConfiguration<AgentRun>
         builder.Property(x => x.RootRunId).HasColumnName("root_run_id").HasMaxLength(64);
         builder.Property(x => x.DelegatedByRunId).HasColumnName("delegated_by_run_id").HasMaxLength(64);
         builder.Property(x => x.DelegatedByAgent).HasColumnName("delegated_by_agent").HasMaxLength(128);
-        builder.Property(x => x.StatusVersion).HasColumnName("status_version");
+        builder.Property(x => x.StatusVersion).HasColumnName("status_version").IsConcurrencyToken();
         builder.Property(x => x.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(128);
         builder.Property(x => x.CurrentWaitToken).HasColumnName("current_wait_token").HasMaxLength(128);
         builder.Property(x => x.InterruptReason).HasColumnName("interrupt_reason").HasMaxLength(256);

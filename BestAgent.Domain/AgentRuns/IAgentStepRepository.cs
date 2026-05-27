@@ -5,4 +5,8 @@ public interface IAgentStepRepository
     Task AddAsync(AgentStep agentStep, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<AgentStep>> ListByRunIdAsync(string runId, CancellationToken cancellationToken);
+
+    Task<AgentStep?> GetLastByRunIdAsync(string runId, CancellationToken cancellationToken);
+
+    Task UpdateAsync(AgentStep agentStep, CancellationToken cancellationToken);
 }

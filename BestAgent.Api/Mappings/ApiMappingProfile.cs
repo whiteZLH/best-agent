@@ -6,6 +6,7 @@ using BestAgent.Application.AgentDefinitions.Commands.ActivateAgentDefinitionVer
 using BestAgent.Application.AgentDefinitions.Commands.CreateAgentDefinition;
 using BestAgent.Application.AgentDefinitions.Commands.CreateAgentDefinitionVersion;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
+using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 
@@ -32,6 +33,7 @@ public class ApiMappingProfile : Profile
         CreateMap<AgentDefinitionVersionViewModel, GetAgentDefinitionVersionResponse>();
         CreateMap<CreateAgentRunRequest, CreateAgentRunCommand>();
         CreateMap<CreateAgentRunResult, CreateAgentRunResponse>();
+        CreateMap<ResumeAgentRunResult, ResumeAgentRunResponse>();
         CreateMap<GetAgentRunByIdResult, GetAgentRunResponse>();
         CreateMap<GetAgentRunStepsItem, GetAgentRunStepResponse>();
     }

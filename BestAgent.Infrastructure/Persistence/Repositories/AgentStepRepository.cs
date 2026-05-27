@@ -26,4 +26,18 @@ public class AgentStepRepository : IAgentStepRepository
             .OrderBy(x => x.StepNo)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<AgentStep?> GetLastByRunIdAsync(string runId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.AgentSteps
+            .Where(x => x.RunId == runId && !x.Deleted)
+            .OrderByDescending(x => x.StepNo)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task UpdateAsync(AgentStep agentStep, CancellationToken cancellationToken)
+    {
+        _dbContext.AgentSteps.Update(agentStep);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
 }
