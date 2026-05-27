@@ -4,58 +4,53 @@
 
 ## 1. 当前状态
 
-当前仓库已经从纯设计文档阶段推进到可运行的 MVP 脚手架阶段，已完成：
+当前仓库已经从纯设计文档阶段推进到可运行的单体式 MVP 原型，代码现状以仓库实现为准，已完成：
 
-- `.NET 9` 分层解决方案搭建
+- `.NET 8` 分层解决方案搭建
 - `ASP.NET Core Controller` 风格 API
-- 官方 `MediatR` 命令、查询与管道行为
-- `EF Core + PostgreSQL` 持久化模型
-- 初始 `EF Core Migration`
-- 单 Agent 同步工具调用主链路
-- `AgentDefinition` 管理与版本发布接口
+- `MediatR` 命令与查询处理
+- `EF Core + PostgreSQL` 持久化接入
+- `AgentDefinition` 管理与版本切换接口
+- 单次模型调用驱动的 `AgentRun` 创建主链路
 - OpenAI 兼容模型网关抽象与实现
-- 单元测试与 HTTP 级集成测试
+- 基础单元测试与控制器测试
 
-当前实现目标是单体式 MVP，不是完整平台版本。
+当前实现目标仍然是验证主链路和数据模型的 MVP，不是完整平台版本。
 
-## 2. 已完成的项目结构
+## 2. 当前项目结构
 
 解决方案文件：
 
-- `BestAgent.sln`
+- `best-agent.sln`
 
 项目结构：
 
-- `src/BestAgent.Api`
-- `src/BestAgent.Application`
-- `src/BestAgent.Domain`
-- `src/BestAgent.Infrastructure`
-- `src/BestAgent.Contracts`
-- `tests/BestAgent.UnitTests`
-- `tests/BestAgent.IntegrationTests`
+- `BestAgent.Api`
+- `BestAgent.Application`
+- `BestAgent.Domain`
+- `BestAgent.Infrastructure`
+- `BestAgent.Api.Tests`
 
-关键基础文件：
+当前仓库同时包含以下辅助文件：
 
-- `global.json`
-- `Directory.Build.props`
-- `NuGet.Config`
 - `.gitignore`
-- `.config/dotnet-tools.json`
+- `docker-compose.yml`
+- `table.sql`
+- `docs/agent-modules/*`
 
 ## 3. 已实现的核心能力
 
 ### 3.1 API
 
-已实现两组核心接口。
+当前已实现两组 Controller 接口。
 
 `AgentRun` 接口：
 
 - `POST /agent-runs`
 - `GET /agent-runs/{runId}`
 - `GET /agent-runs/{runId}/steps`
-- `POST /agent-runs/{runId}:resume`
 
-`AgentDefinition` 管理接口：
+`AgentDefinition` 接口：
 
 - `GET /agent-definitions`
 - `GET /agent-definitions/{agentCode}`
@@ -64,19 +59,19 @@
 - `POST /agent-definitions/{agentCode}/versions`
 - `POST /agent-definitions/{agentCode}:activate-version`
 
-入口控制器：
+入口文件：
 
-- `src/BestAgent.Api/Controllers/AgentRunsController.cs`
-- `src/BestAgent.Api/Controllers/AgentDefinitionsController.cs`
+- `BestAgent.Api/Program.cs`
+- `BestAgent.Api/Controllers/AgentRunsController.cs`
+- `BestAgent.Api/Controllers/AgentDefinitionsController.cs`
 
-异常统一映射为 `ProblemDetails`，并在 `Program.cs` 中注册全局异常处理。
+当前 `Program.cs` 仅完成基础服务注册、AutoMapper 注册、`UseHttpsRedirection` 和 Controller 映射，尚未接入统一异常处理中间件或 `ProblemDetails` 输出规范。
 
-### 3.2 应用层与 MediatR
+### 3.2 应用层
 
-已实现的命令与查询：
+当前已实现的命令与查询：
 
 - `CreateAgentRunCommand`
-- `ResumeAgentRunCommand`
 - `GetAgentRunByIdQuery`
 - `GetAgentRunStepsQuery`
 - `CreateAgentDefinitionCommand`
@@ -86,52 +81,45 @@
 - `GetAgentDefinitionByCodeQuery`
 - `GetAgentDefinitionVersionsQuery`
 
-已实现的管道行为：
+当前应用层的实际结构比较直接：
 
-- `ValidationBehavior`
-- `RequestLoggingBehavior`
+- 通过 `AddMediatR` 自动注册 handler
+- 未看到单独的 `ValidationBehavior`
+- 未看到单独的 `RequestLoggingBehavior`
+- 未看到独立的 `AgentRuntimeService`
 
-运行时编排核心：
+`CreateAgentRunCommandHandler` 当前主链路为：
 
-- `src/BestAgent.Application/AgentRuns/Services/AgentRuntimeService.cs`
+1. 按 `AgentCode` 加载已启用版本
+2. 创建 `AgentRun`
+3. 写入 `created`、`running` 步骤
+4. 通过 `IModelGateway` 调用一次模型
+5. 写入 `model_call` 步骤
+6. 成功时更新 `AgentRun` 为 `Completed`
+7. 失败时更新 `AgentRun` 为 `Failed`
 
-当前主链路支持：
+当前实现约束：
 
-1. 创建 Run
-2. 写入输入消息与输入步骤
-3. 加载默认 AgentDefinition
-4. 组装上下文
-5. 调用模型网关生成 `PlanDecision`
-6. 若为 `respond`，直接完成 Run
-7. 若为 `tool_call`，执行同步工具并再规划一次
-8. 第二次规划要求收敛到最终回答
-
-当前约束：
-
-- 单 Run 最多 2 次规划循环
-- 不支持并行工具
-- 不支持异步工具
-- 不支持审批
-- 不支持 handoff
-- 不支持长期记忆与检索增强
+- 仅支持单次模型调用，不存在规划循环
+- 未实现 `resume`
+- 未实现工具调度执行
+- 未实现审批、人机协同、handoff
+- 未实现记忆、检索和多 Agent 编排
 
 ### 3.3 领域模型
 
-已实现的核心实体：
+当前核心持久化实体为：
 
 - `AgentDefinition`
+- `AgentDefinitionVersion`
 - `AgentRun`
 - `AgentStep`
-- `AgentMessage`
-- `ToolInvocation`
-- `OutboxEvent`
-- `IdempotencyRecord`
 
 统一审计基类：
 
 - `AuditedEntity`
 
-所有实际落库实体均包含以下字段：
+审计基类字段：
 
 - `last_modifier`
 - `last_modify_time`
@@ -145,49 +133,40 @@
 
 - 审计字段由应用层手工赋值
 - 默认操作者为 `system`
-- 查询默认过滤 `deleted = false`
-- 首版不提供删除接口
+- Repository 查询默认过滤 `deleted = false`
+- 首版未提供删除接口
 
 ### 3.4 持久化
 
 数据库上下文：
 
-- `src/BestAgent.Infrastructure/Persistence/BestAgentDbContext.cs`
+- `BestAgent.Infrastructure/Persistence/BestAgentDbContext.cs`
 
-已建模并迁移的表：
+当前 `DbSet`：
 
-- `agent_definition`
-- `agent_run`
-- `agent_step`
-- `agent_message`
-- `tool_invocation`
-- `idempotency_record`
-- `run_outbox_event`
+- `AgentDefinitions`
+- `AgentDefinitionVersions`
+- `AgentRuns`
+- `AgentSteps`
 
-迁移文件：
+当前持久化特点：
 
-- `src/BestAgent.Infrastructure/Persistence/Migrations/20260525011941_InitialCreate.cs`
-- `src/BestAgent.Infrastructure/Persistence/Migrations/20260525011941_InitialCreate.Designer.cs`
-- `src/BestAgent.Infrastructure/Persistence/Migrations/BestAgentDbContextModelSnapshot.cs`
+- 使用 `Npgsql` 连接 PostgreSQL
+- 通过 `ApplyConfigurationsFromAssembly` 应用实体配置
+- 启动时由 `DatabaseInitializationHostedService` 调用 `EnsureCreatedAsync`
+- 空库时自动 seed 一个 `default-agent`
 
-数据库规则：
+当前仓库里尚未看到 EF Core Migration 文件，数据库初始化策略以 `EnsureCreated` 为主，而不是 migration 驱动。
 
-- PostgreSQL
-- snake_case 表名
-- JSON 字段使用 `jsonb`
-- 时间字段使用 `timestamp with time zone`
-- 启动时自动迁移数据库
-- 空库自动 seed 默认 AgentDefinition
-
-### 3.5 模型网关与工具
+### 3.5 模型网关
 
 模型抽象：
 
-- `IModelGateway`
+- `BestAgent.Application/Models/IModelGateway.cs`
 
-当前基础设施实现：
+当前实现：
 
-- `OpenAiCompatibleModelGateway`
+- `BestAgent.Infrastructure/Model/OpenAiCompatibleModelGateway.cs`
 
 配置项：
 
@@ -197,115 +176,103 @@
 - `OpenAI:Model`
 - `OpenAI:TimeoutSeconds`
 
-工具体系：
+当前网关行为：
 
-- `IToolRegistry`
-- `IToolExecutor`
+- 调用 `chat/completions`
+- 支持 `system + user` 或仅 `user` 两种消息组合
+- 对 HTTP 失败和空响应抛出 `InvalidOperationException`
 
-当前示例工具：
+### 3.6 测试
 
-- `echo_context`
+当前测试项目：
 
-### 3.6 Outbox
+- `BestAgent.Api.Tests`
 
-当前已落库记录基础事件，但未实现外部投递：
+当前仓库可见测试用例共 `5` 个：
 
-- `run.created`
-- `step.completed`
-- `run.completed`
-- `run.failed`
+- `AgentRunsControllerTests` 中 `3` 个
+- `CreateAgentRunCommandHandlerTests` 中 `1` 个
+- `CreateAgentRunCommandHandlerIntegrationTests` 中 `1` 个
 
-## 4. 测试状态
+当前覆盖重点集中在：
 
-已完成测试：
+- `AgentRun` 创建接口映射
+- `GetAgentRunById` 查询返回
+- `GetAgentRunSteps` 查询返回
+- `CreateAgentRunCommandHandler` 成功流转
+- 外部模型联调用例骨架
 
-- 单元测试 8 个
-- 集成测试 8 个
+`AgentDefinition` 相关接口和 handler 目前尚未看到对应测试。
 
-已验证通过的命令：
+截至 2026-05-27，已实际验证 `dotnet test best-agent.sln` 可通过，结果为 `5/5` 通过。
 
-```powershell
-dotnet build BestAgent.sln
-dotnet test tests/BestAgent.UnitTests/BestAgent.UnitTests.csproj
-dotnet test tests/BestAgent.IntegrationTests/BestAgent.IntegrationTests.csproj
-```
-
-当前覆盖的典型场景：
-
-- `AgentRun` 状态流转
-- `PlanDecision` 解析
-- 幂等请求复用同一 Run
-- 软删过滤
-- 审计字段写入
-- 纯 `respond` 流程
-- `tool_call -> respond` 流程
-- 模型规划异常失败
-- 工具不在 allowlist 时失败
-- 已完成 Run 的 `resume` 拒绝
-
-## 5. 当前配置与启动方式
+## 4. 当前配置与启动方式
 
 主配置文件：
 
-- `src/BestAgent.Api/appsettings.json`
-- `src/BestAgent.Api/appsettings.Development.json`
+- `BestAgent.Api/appsettings.json`
+- `BestAgent.Api/appsettings.Development.json`
 
 本地启动前需准备：
 
 1. PostgreSQL 数据库
-2. OpenAI 兼容接口配置
-3. 正确填写 `appsettings.json` 中的连接串与模型参数
+2. 可用的 OpenAI 兼容接口
+3. 正确填写 `ConnectionStrings:Postgres` 与 `OpenAI` 配置
+
+仓库已提供本地 PostgreSQL 容器编排：
+
+- `docker-compose.yml`
 
 推荐启动命令：
 
 ```powershell
-dotnet tool restore
-dotnet build BestAgent.sln
-dotnet run --project src/BestAgent.Api
+dotnet build best-agent.sln
+dotnet run --project BestAgent.Api
 ```
 
-## 6. 当前未实现项
+## 5. 当前未实现项
 
-以下能力仍停留在设计层，尚未落地：
+以下能力仍停留在设计层，尚未在当前代码中落地：
 
+- `POST /agent-runs/{runId}:resume`
+- 统一异常处理与 `ProblemDetails`
+- 规划器与显式状态机
+- 工具注册、工具执行和工具回填链路
 - 多 Agent / Router / handoff
 - 审批与人工协同
-- 异步工具与回调恢复
-- 检索增强
-- 长期记忆
-- 成本治理
-- 鉴权与租户隔离
-- 实际 outbox 投递 worker
-- 管理后台界面
+- 记忆、检索与长期知识库
+- Outbox 事件落库与投递
+- 鉴权、租户隔离与后台管理界面
 
-## 7. 建议的下一步
+## 6. 建议的下一步
 
 推荐按下面顺序继续推进：
 
-1. 增加真实 PostgreSQL 本地运行说明或容器编排
-2. 为 `AgentDefinition` 管理接口补充测试与使用说明
-3. 抽出更清晰的状态机与策略层
-4. 引入异步工具与 `WaitingTool` 恢复语义
-5. 接入审批流
-6. 增加检索与记忆模块
+1. 为 `AgentDefinition` 补齐控制器和 handler 测试，形成第二条稳定主链路
+2. 为 `Program.cs` 增加统一异常映射和 `ProblemDetails` 输出
+3. 抽出 `CreateAgentRun` 的运行时编排服务，避免 handler 继续膨胀
+4. 设计并实现最小可用的 `resume / waiting` 状态语义
+5. 在具备可恢复状态后，再引入异步工具、审批流和多 Agent 能力
 
-## 8. 关键文件索引
+## 7. 关键文件索引
 
 关键实现文件：
 
-- `src/BestAgent.Api/Program.cs`
-- `src/BestAgent.Api/Controllers/AgentRunsController.cs`
-- `src/BestAgent.Application/DependencyInjection.cs`
-- `src/BestAgent.Application/AgentRuns/Services/AgentRuntimeService.cs`
-- `src/BestAgent.Application/Planning/PlanDecision.cs`
-- `src/BestAgent.Domain/Common/AuditedEntity.cs`
-- `src/BestAgent.Infrastructure/DependencyInjection.cs`
-- `src/BestAgent.Infrastructure/Persistence/BestAgentDbContext.cs`
-- `src/BestAgent.Infrastructure/Model/OpenAiCompatibleModelGateway.cs`
-- `src/BestAgent.Infrastructure/Tools/ToolExecutor.cs`
+- `BestAgent.Api/Program.cs`
+- `BestAgent.Api/Controllers/AgentRunsController.cs`
+- `BestAgent.Api/Controllers/AgentDefinitionsController.cs`
+- `BestAgent.Application/DependencyInjection.cs`
+- `BestAgent.Application/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandler.cs`
+- `BestAgent.Application/AgentDefinitions/Commands/CreateAgentDefinition/CreateAgentDefinitionCommandHandler.cs`
+- `BestAgent.Application/AgentDefinitions/Commands/CreateAgentDefinitionVersion/CreateAgentDefinitionVersionCommandHandler.cs`
+- `BestAgent.Application/AgentDefinitions/Commands/ActivateAgentDefinitionVersion/ActivateAgentDefinitionVersionCommandHandler.cs`
+- `BestAgent.Infrastructure/DependencyInjection.cs`
+- `BestAgent.Infrastructure/Persistence/BestAgentDbContext.cs`
+- `BestAgent.Infrastructure/Persistence/Seeding/DatabaseInitializationHostedService.cs`
+- `BestAgent.Infrastructure/Model/OpenAiCompatibleModelGateway.cs`
 
 测试文件：
 
-- `tests/BestAgent.UnitTests/Application/AgentRuntimeServiceTests.cs`
-- `tests/BestAgent.UnitTests/Domain/QueryFilterTests.cs`
-- `tests/BestAgent.IntegrationTests/Api/AgentRunsApiTests.cs`
+- `BestAgent.Api.Tests/Controllers/AgentRunsControllerTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandlerTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandlerIntegrationTests.cs`

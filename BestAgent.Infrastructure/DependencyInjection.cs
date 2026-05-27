@@ -1,10 +1,12 @@
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Application.Models;
+using BestAgent.Application.Tools;
 using BestAgent.Infrastructure.Model;
 using BestAgent.Infrastructure.Persistence;
 using BestAgent.Infrastructure.Persistence.Repositories;
 using BestAgent.Infrastructure.Persistence.Seeding;
+using BestAgent.Infrastructure.Tools;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -45,6 +47,8 @@ public static class DependencyInjection
             return httpClient;
         });
         services.AddSingleton<IModelGateway, OpenAiCompatibleModelGateway>();
+        services.AddSingleton<ToolRegistry>();
+        services.AddScoped<IToolExecutor, ToolExecutor>();
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IAgentStepRepository, AgentStepRepository>();
