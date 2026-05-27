@@ -84,25 +84,36 @@
 当前应用层的实际结构比较直接：
 
 - 通过 `AddMediatR` 自动注册 handler
+- Handler 直接依赖基础设施接口，无中间 Service 层
+- `IStepDecisionParser` 负责解析模型 JSON 输出为 `StepDecision`
 - 未看到单独的 `ValidationBehavior`
 - 未看到单独的 `RequestLoggingBehavior`
-- 未看到独立的 `AgentRuntimeService`
 
 `CreateAgentRunCommandHandler` 当前主链路为：
 
 1. 按 `AgentCode` 加载已启用版本
 2. 创建 `AgentRun`
 3. 写入 `created`、`running` 步骤
-4. 通过 `IModelGateway` 调用一次模型
-5. 写入 `model_call` 步骤
-6. 成功时更新 `AgentRun` 为 `Completed`
-7. 失败时更新 `AgentRun` 为 `Failed`
+4. 进入循环（最多 `MaxTurns` 轮）：
+   - 通过 `IModelGateway` 调用模型
+   - 写入 `model_call` 步骤
+   - 若模型返回 `respond`，完成 Run
+   - 若模型返回 `tool_call`，校验权限后通过 `IToolExecutor` 执行工具
+   - 写入 `tool_call` 步骤
+   - 将工具结果拼入下一轮输入，继续循环
+5. 成功时更新 `AgentRun` 为 `Completed`
+6. 失败时更新 `AgentRun` 为 `Failed`
+
+当前架构特点：
+
+- 无 Service 层，Handler 直接编排基础设施接口（`IModelGateway`、`IStepDecisionParser`、`IToolExecutor`、Repositories）
+- `StepDecision` 为模型输出的结构化解析结果，支持 `respond` 和 `tool_call` 两种动作
+- 支持多轮 tool call 循环（受 `MaxTurns` 限制）
 
 当前实现约束：
 
-- 仅支持单次模型调用，不存在规划循环
 - 未实现 `resume`
-- 未实现工具调度执行
+- 未实现异步工具（当前工具执行为同步阻塞）
 - 未实现审批、人机协同、handoff
 - 未实现记忆、检索和多 Agent 编排
 
@@ -188,10 +199,10 @@
 
 - `BestAgent.Api.Tests`
 
-当前仓库可见测试用例共 `5` 个：
+当前仓库可见测试用例共 `6` 个：
 
 - `AgentRunsControllerTests` 中 `3` 个
-- `CreateAgentRunCommandHandlerTests` 中 `1` 个
+- `CreateAgentRunCommandHandlerTests` 中 `2` 个（直接响应 + 工具调用后响应）
 - `CreateAgentRunCommandHandlerIntegrationTests` 中 `1` 个
 
 当前覆盖重点集中在：
@@ -236,8 +247,7 @@ dotnet run --project BestAgent.Api
 
 - `POST /agent-runs/{runId}:resume`
 - 统一异常处理与 `ProblemDetails`
-- 规划器与显式状态机
-- 工具注册、工具执行和工具回填链路
+- 异步工具执行（当前仅同步）
 - 多 Agent / Router / handoff
 - 审批与人工协同
 - 记忆、检索与长期知识库
@@ -250,9 +260,8 @@ dotnet run --project BestAgent.Api
 
 1. 为 `AgentDefinition` 补齐控制器和 handler 测试，形成第二条稳定主链路
 2. 为 `Program.cs` 增加统一异常映射和 `ProblemDetails` 输出
-3. 抽出 `CreateAgentRun` 的运行时编排服务，避免 handler 继续膨胀
-4. 设计并实现最小可用的 `resume / waiting` 状态语义
-5. 在具备可恢复状态后，再引入异步工具、审批流和多 Agent 能力
+3. 设计并实现最小可用的 `resume / waiting` 状态语义
+4. 在具备可恢复状态后，再引入异步工具、审批流和多 Agent 能力
 
 ## 7. 关键文件索引
 

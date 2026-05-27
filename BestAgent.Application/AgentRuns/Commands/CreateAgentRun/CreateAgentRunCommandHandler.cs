@@ -1,5 +1,6 @@
 using BestAgent.Application.AgentDefinitions;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Exceptions;
 using BestAgent.Application.Models;
 using BestAgent.Application.Tools;
 using BestAgent.Domain.AgentDefinitions;
@@ -44,7 +45,7 @@ public class CreateAgentRunCommandHandler : IRequestHandler<CreateAgentRunComman
     {
         var resolvedDefinition = await _agentDefinitionRepository.GetEnabledByCodeAsync(request.AgentCode, cancellationToken);
         if (resolvedDefinition is null)
-            throw new InvalidOperationException($"Enabled agent definition was not found for code '{request.AgentCode}'.");
+            throw new NotFoundException("AgentDefinition", request.AgentCode);
 
         var now = DateTime.UtcNow;
         var runId = Guid.NewGuid().ToString("N");
