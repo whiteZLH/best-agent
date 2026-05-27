@@ -10,6 +10,8 @@ public static class DependencyInjection
     {
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly));
         services.AddSingleton<IStepDecisionParser, StepDecisionParser>();
+        services.AddSingleton<IAgentRunChannel, AgentRunChannel>();
+        services.AddSingleton<IAgentRunEventBus, AgentRunEventBus>();
         return services;
     }
 }

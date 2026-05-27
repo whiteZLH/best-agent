@@ -11,7 +11,8 @@ public class ToolRegistry
         _handlers = new Dictionary<string, Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>>>(
             StringComparer.OrdinalIgnoreCase)
         {
-            ["echo_context"] = ExecuteEchoContextAsync
+            ["echo_context"] = ExecuteEchoContextAsync,
+            ["async_task"] = ExecuteAsyncTaskAsync
         };
     }
 
@@ -38,6 +39,15 @@ public class ToolRegistry
             """;
 
         return Task.FromResult(new ToolExecutionResult("echo_context", output));
+    }
+
+    private static Task<ToolExecutionResult> ExecuteAsyncTaskAsync(
+        string? input,
+        ToolExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        var waitToken = Guid.NewGuid().ToString("N");
+        return Task.FromResult(ToolExecutionResult.Pending("async_task", waitToken));
     }
 
     private static string EscapeJson(string value)

@@ -5,6 +5,7 @@ using BestAgent.Api.Mappings;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+using BestAgent.Application.AgentRuns.Runtime;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -37,7 +38,7 @@ public class AgentRunsControllerTests
 
             return new CreateAgentRunResult("run-001", command.AgentCode, command.Input, "done", "Succeeded");
         });
-        var controller = new AgentRunsController(mediator, _mapper);
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
         var actionResult = await controller.Create(request, CancellationToken.None);
 
@@ -70,7 +71,7 @@ public class AgentRunsControllerTests
                 now,
                 now,
                 now));
-        var controller = new AgentRunsController(mediator, _mapper);
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
         var actionResult = await controller.GetById("run-001", CancellationToken.None);
 
@@ -108,7 +109,7 @@ public class AgentRunsControllerTests
                     now,
                     1200)
             ]);
-        var controller = new AgentRunsController(mediator, _mapper);
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
         var actionResult = await controller.GetSteps("run-001", CancellationToken.None);
 
@@ -123,6 +124,18 @@ public class AgentRunsControllerTests
         Assert.Equal("output", step.Output);
         Assert.Equal("plan", step.StepKey);
         Assert.Equal(1200, step.DurationMs);
+    }
+
+    private sealed class NullEventBus : IAgentRunEventBus
+    {
+        public void Publish(AgentRunEvent evt) { }
+
+        public async IAsyncEnumerable<AgentRunEvent> SubscribeAsync(
+            string runId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
     }
 
     private sealed class FakeMediator : IMediator

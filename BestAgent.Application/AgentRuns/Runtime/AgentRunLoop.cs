@@ -6,7 +6,7 @@ using BestAgent.Domain.AgentRuns;
 
 namespace BestAgent.Application.AgentRuns.Runtime;
 
-internal static class AgentRunLoop
+public static class AgentRunLoop
 {
     private const string RuntimeInstruction =
         """
@@ -22,7 +22,8 @@ internal static class AgentRunLoop
         IStepDecisionParser stepDecisionParser,
         IToolExecutor toolExecutor,
         IAgentStepRepository agentStepRepository,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<AgentRunEvent>? onEvent = null)
     {
         var run = context.Run;
         var version = context.Version;
@@ -43,6 +44,7 @@ internal static class AgentRunLoop
                 run.RunId, nextStepNo++, "model_call", "Completed",
                 currentInput, modelResponse.Output, null,
                 startedAt, endedAt), cancellationToken);
+            onEvent?.Invoke(new AgentRunEvent(run.RunId, "step", new AgentRunEventData(nextStepNo - 1, "model_call", "Completed", modelResponse.Output)));
 
             if (string.Equals(decision.Action, "respond", StringComparison.OrdinalIgnoreCase))
             {
@@ -118,7 +120,7 @@ internal static class AgentRunLoop
             throw new InvalidOperationException($"Tool '{toolName}' is not allowed for agent definition '{agentCode}'.");
     }
 
-    internal static AgentStep CreateStep(
+    public static AgentStep CreateStep(
         string runId, int stepNo, string stepType, string status,
         string? input, string? output, string? error,
         DateTime startedAt, DateTime endedAt)

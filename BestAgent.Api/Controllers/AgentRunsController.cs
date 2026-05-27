@@ -1,9 +1,11 @@
+using System.Text.Json;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+using BestAgent.Application.AgentRuns.Runtime;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,11 +17,13 @@ public class AgentRunsController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly IAgentRunEventBus _eventBus;
 
-    public AgentRunsController(IMediator mediator, IMapper mapper)
+    public AgentRunsController(IMediator mediator, IMapper mapper, IAgentRunEventBus eventBus)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _eventBus = eventBus;
     }
 
     [HttpPost]
@@ -68,5 +72,20 @@ public class AgentRunsController : ControllerBase
         var response = _mapper.Map<ResumeAgentRunResponse>(result);
 
         return Ok(response);
+    }
+
+    [HttpGet("{runId}/stream")]
+    public async Task Stream([FromRoute] string runId, CancellationToken cancellationToken)
+    {
+        Response.Headers["Content-Type"] = "text/event-stream";
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["Connection"] = "keep-alive";
+
+        await foreach (var evt in _eventBus.SubscribeAsync(runId, cancellationToken))
+        {
+            var data = JsonSerializer.Serialize(evt.Data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            await Response.WriteAsync($"event: {evt.EventType}\ndata: {data}\n\n", cancellationToken);
+            await Response.Body.FlushAsync(cancellationToken);
+        }
     }
 }

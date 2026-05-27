@@ -6,6 +6,7 @@ using BestAgent.Infrastructure.Model;
 using BestAgent.Infrastructure.Persistence;
 using BestAgent.Infrastructure.Persistence.Repositories;
 using BestAgent.Infrastructure.Persistence.Seeding;
+using BestAgent.Infrastructure.Runtime;
 using BestAgent.Infrastructure.Tools;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -53,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IAgentStepRepository, AgentStepRepository>();
         services.AddHostedService<DatabaseInitializationHostedService>();
+        services.AddHostedService<AgentRunWorker>();
 
         return services;
     }
