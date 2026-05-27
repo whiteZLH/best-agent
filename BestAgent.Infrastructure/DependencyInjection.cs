@@ -1,5 +1,6 @@
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 using BestAgent.Application.Models;
 using BestAgent.Application.Tools;
 using BestAgent.Infrastructure.Model;
@@ -49,10 +50,12 @@ public static class DependencyInjection
         });
         services.AddSingleton<IModelGateway, OpenAiCompatibleModelGateway>();
         services.AddSingleton<ToolRegistry>();
+        services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
         services.AddScoped<IToolExecutor, ToolExecutor>();
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IAgentStepRepository, AgentStepRepository>();
+        services.AddScoped<IToolDefinitionRepository, ToolDefinitionRepository>();
         services.AddHostedService<DatabaseInitializationHostedService>();
         services.AddHostedService<AgentRunWorker>();
 

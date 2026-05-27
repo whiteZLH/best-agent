@@ -1,5 +1,6 @@
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.AgentDefinitions;
+using BestAgent.Domain.Tools;
 using Microsoft.EntityFrameworkCore;
 
 namespace BestAgent.Infrastructure.Persistence;
@@ -18,6 +19,8 @@ public class BestAgentDbContext : DbContext
     public DbSet<AgentRun> AgentRuns => Set<AgentRun>();
 
     public DbSet<AgentStep> AgentSteps => Set<AgentStep>();
+
+    public DbSet<ToolDefinition> ToolDefinitions => Set<ToolDefinition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

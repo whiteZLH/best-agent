@@ -2,7 +2,7 @@ using BestAgent.Application.Tools;
 
 namespace BestAgent.Infrastructure.Tools;
 
-public class ToolRegistry
+public class ToolRegistry : IToolHandlerRegistry
 {
     private readonly Dictionary<string, Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>>> _handlers;
 
@@ -21,6 +21,23 @@ public class ToolRegistry
         out Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>>? handler)
     {
         return _handlers.TryGetValue(toolName, out handler);
+    }
+
+    public bool HasHandler(string toolName)
+    {
+        return _handlers.ContainsKey(toolName);
+    }
+
+    public IReadOnlyCollection<string> GetRegisteredHandlerNames()
+    {
+        return _handlers.Keys;
+    }
+
+    public void RegisterHandler(
+        string toolName,
+        Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>> handler)
+    {
+        _handlers[toolName] = handler;
     }
 
     private static Task<ToolExecutionResult> ExecuteEchoContextAsync(
