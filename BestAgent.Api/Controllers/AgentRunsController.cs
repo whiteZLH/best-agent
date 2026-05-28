@@ -1,7 +1,9 @@
 using System.Text.Json;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
+using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
+using BestAgent.Application.AgentRuns.Commands.RejectAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
@@ -70,6 +72,32 @@ public class AgentRunsController : ControllerBase
         var command = new ResumeAgentRunCommand(runId, request.WaitToken, request.ToolResult);
         var result = await _mediator.Send(command, cancellationToken);
         var response = _mapper.Map<ResumeAgentRunResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}/steps/{stepId}:approve")]
+    public async Task<ActionResult<ApproveAgentRunStepResponse>> Approve(
+        [FromRoute] string runId,
+        [FromRoute] string stepId,
+        [FromBody] ApproveAgentRunStepRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new ApproveAgentRunStepCommand(runId, stepId), cancellationToken);
+        var response = _mapper.Map<ApproveAgentRunStepResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}/steps/{stepId}:reject")]
+    public async Task<ActionResult<RejectAgentRunStepResponse>> Reject(
+        [FromRoute] string runId,
+        [FromRoute] string stepId,
+        [FromBody] RejectAgentRunStepRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new RejectAgentRunStepCommand(runId, stepId, request.Comment), cancellationToken);
+        var response = _mapper.Map<RejectAgentRunStepResponse>(result);
 
         return Ok(response);
     }

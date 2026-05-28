@@ -3,7 +3,9 @@ using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Api.Controllers;
 using BestAgent.Api.Mappings;
+using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
+using BestAgent.Application.AgentRuns.Commands.RejectAgentRunStep;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Runtime;
@@ -105,6 +107,7 @@ public class AgentRunsControllerTests
                     "output",
                     null,
                     "plan",
+                    new ApprovalInfo("approval", "weather", "{}", "internal_write", "Pending", null, null),
                     now,
                     now,
                     now,
@@ -125,7 +128,53 @@ public class AgentRunsControllerTests
         Assert.Equal("input:run-001", step.Input);
         Assert.Equal("output", step.Output);
         Assert.Equal("plan", step.StepKey);
+        Assert.Equal("approval", step.Approval!.WaitType);
+        Assert.Equal("weather", step.Approval.ToolName);
+        Assert.Equal("Pending", step.Approval.Decision);
         Assert.Equal(1200, step.DurationMs);
+    }
+
+    [Fact]
+    public async Task Reject()
+    {
+        var mediator = new FakeMediator((RejectAgentRunStepCommand command) =>
+        {
+            Assert.Equal("run-001", command.RunId);
+            Assert.Equal("step-001", command.StepId);
+            Assert.Equal("Denied", command.Comment);
+
+            return new RejectAgentRunStepResult("run-001", "writer", "hello", null, "Failed");
+        });
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
+
+        var actionResult = await controller.Reject("run-001", "step-001", new RejectAgentRunStepRequest("Denied"), CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var response = Assert.IsType<RejectAgentRunStepResponse>(okResult.Value);
+        Assert.Equal("run-001", response.RunId);
+        Assert.Equal("writer", response.AgentCode);
+        Assert.Equal("Failed", response.Status);
+    }
+
+    [Fact]
+    public async Task Approve()
+    {
+        var mediator = new FakeMediator((ApproveAgentRunStepCommand command) =>
+        {
+            Assert.Equal("run-001", command.RunId);
+            Assert.Equal("step-001", command.StepId);
+
+            return new ApproveAgentRunStepResult("run-001", "writer", "hello", null, "Running");
+        });
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
+
+        var actionResult = await controller.Approve("run-001", "step-001", new ApproveAgentRunStepRequest(), CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var response = Assert.IsType<ApproveAgentRunStepResponse>(okResult.Value);
+        Assert.Equal("run-001", response.RunId);
+        Assert.Equal("writer", response.AgentCode);
+        Assert.Equal("Running", response.Status);
     }
 
     [Fact]
@@ -206,6 +255,20 @@ public class AgentRunsControllerTests
     private sealed class FakeMediator : IMediator
     {
         private readonly Func<object, object?> _handler;
+
+        public FakeMediator(Func<RejectAgentRunStepCommand, RejectAgentRunStepResult> handler)
+        {
+            _handler = request => request is RejectAgentRunStepCommand command
+                ? handler(command)
+                : throw new InvalidOperationException($"Unexpected request type: {request.GetType().Name}");
+        }
+
+        public FakeMediator(Func<ApproveAgentRunStepCommand, ApproveAgentRunStepResult> handler)
+        {
+            _handler = request => request is ApproveAgentRunStepCommand command
+                ? handler(command)
+                : throw new InvalidOperationException($"Unexpected request type: {request.GetType().Name}");
+        }
 
         public FakeMediator(Func<CreateAgentRunCommand, CreateAgentRunResult> handler)
         {

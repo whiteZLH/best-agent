@@ -3,6 +3,7 @@ using BestAgent.Application.Models;
 using BestAgent.Application.Tools;
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 
 namespace BestAgent.Application.AgentRuns.Runtime;
 
@@ -22,6 +23,7 @@ public static class AgentRunLoop
         IStepDecisionParser stepDecisionParser,
         IToolExecutor toolExecutor,
         IAgentStepRepository agentStepRepository,
+        IToolDefinitionRepository toolDefinitionRepository,
         CancellationToken cancellationToken,
         Action<AgentRunEvent>? onEvent = null)
     {
@@ -58,6 +60,23 @@ public static class AgentRunLoop
 
             var toolName = decision.ToolName!;
             EnsureToolAllowed(toolName, resolvedDefinition, run.AgentCode);
+
+            var toolDefinition = await toolDefinitionRepository.GetByToolNameAsync(toolName, cancellationToken);
+            if (RequiresApproval(toolDefinition))
+            {
+                var waitToken = Guid.NewGuid().ToString("N");
+                var approvalPayload = ApprovalPayloadSerializer.CreatePending(toolName, decision.ToolInput, toolDefinition!.SideEffectLevel);
+                var pendingStep = CreateStep(
+                    run.RunId, nextStepNo, "tool_call", "Pending",
+                    decision.ToolInput, null, null,
+                    DateTime.UtcNow, DateTime.UtcNow) with
+                {
+                    DecisionPayload = ApprovalPayloadSerializer.Serialize(approvalPayload)
+                };
+
+                await agentStepRepository.AddAsync(pendingStep, cancellationToken);
+                return new AgentLoopWaitingApproval(waitToken, nextStepNo, toolName, decision.ToolInput, toolDefinition.SideEffectLevel);
+            }
 
             var toolStartedAt = DateTime.UtcNow;
             var toolResult = await toolExecutor.ExecuteAsync(
@@ -111,6 +130,17 @@ public static class AgentRunLoop
 
             Produce the final user-facing answer now.
             """;
+    }
+
+    private static bool RequiresApproval(ToolDefinition? toolDefinition)
+    {
+        if (toolDefinition is null)
+        {
+            return false;
+        }
+
+        return string.Equals(toolDefinition.SideEffectLevel, "internal_write", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(toolDefinition.SideEffectLevel, "external_write", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsureToolAllowed(string toolName, ResolvedAgentDefinition resolvedDefinition, string agentCode)

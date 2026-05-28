@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Models;
 using BestAgent.Application.Tools;
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 using BestAgent.Infrastructure.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,6 +27,7 @@ public class AgentRunWorkerTests
         var stepDecisionParser = Substitute.For<IStepDecisionParser>();
         var toolExecutor = Substitute.For<IToolExecutor>();
         var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
         var run = CreateWaitingRun();
         var pendingStep = AgentRunLoop.CreateStep(
             run.RunId,
@@ -52,7 +55,8 @@ public class AgentRunWorkerTests
             agentDefinitionRepo,
             stepDecisionParser,
             toolExecutor,
-            modelGateway);
+            modelGateway,
+            toolDefinitionRepository);
         var worker = new AgentRunWorker(channel, eventBus, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentRunWorker>.Instance);
         using var cts = new CancellationTokenSource();
 
@@ -92,6 +96,134 @@ public class AgentRunWorkerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldApprovePendingStep_RunTool_AndPublishDoneEvent()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var run = CreateApprovalWaitingRun();
+        var pendingStep = AgentRunLoop.CreateStep(
+            run.RunId,
+            4,
+            "tool_call",
+            "Pending",
+            "{\"city\":\"Shanghai\"}",
+            null,
+            null,
+            DateTime.UtcNow,
+            DateTime.UtcNow) with
+        {
+            DecisionPayload = ApprovalPayloadSerializer.Serialize(ApprovalPayloadSerializer.CreatePending("weather", "{\"city\":\"Shanghai\"}", "internal_write"))
+        };
+        var resolvedDefinition = CreateResolvedDefinition();
+
+        agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        agentStepRepo.GetLastByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(pendingStep);
+        agentDefinitionRepo.GetEnabledByCodeAsync(run.AgentCode, Arg.Any<CancellationToken>()).Returns(resolvedDefinition);
+        toolExecutor.ExecuteAsync("weather", "{\"city\":\"Shanghai\"}", Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(ToolExecutionResult.Completed("weather", "sunny"));
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("final-answer"));
+        stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("All done"));
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository);
+        var worker = new AgentRunWorker(channel, eventBus, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new ApproveAgentRunStepMessage(run.RunId, pendingStep.StepId), cts.Token);
+
+        var completedRun = await WaitForUpdatedRunAsync(agentRunRepo, expectedStatus: "Completed");
+        var completedPendingStep = await WaitForUpdatedStepAsync(agentStepRepo, expectedStatus: "Completed");
+        await WaitForEventAsync(eventBus, eventType: "done");
+
+        Assert.Equal("Completed", completedRun.Status);
+        Assert.Equal("All done", completedRun.OutputPayload);
+        Assert.Equal("Completed", completedPendingStep.Status);
+        Assert.Equal("sunny", completedPendingStep.OutputPayload);
+        var approvedPayload = ApprovalPayloadSerializer.Parse(completedPendingStep.DecisionPayload);
+        Assert.Equal(ApprovalDecisions.Approved, approvedPayload.Decision);
+        Assert.Contains(eventBus.Events, evt => evt.EventType == "step" && evt.Data.Output == "sunny");
+        Assert.Contains(eventBus.Events, evt => evt.EventType == "done" && evt.Data.Output == "All done");
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldRejectPendingApproval_AndPublishErrorEvent()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var run = CreateApprovalWaitingRun();
+        var pendingStep = AgentRunLoop.CreateStep(
+            run.RunId,
+            4,
+            "tool_call",
+            "Pending",
+            "{\"city\":\"Shanghai\"}",
+            null,
+            null,
+            DateTime.UtcNow,
+            DateTime.UtcNow) with
+        {
+            DecisionPayload = ApprovalPayloadSerializer.Serialize(ApprovalPayloadSerializer.CreatePending("weather", "{\"city\":\"Shanghai\"}", "internal_write"))
+        };
+
+        agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        agentStepRepo.GetLastByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(pendingStep);
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository);
+        var worker = new AgentRunWorker(channel, eventBus, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new RejectAgentRunStepMessage(run.RunId, pendingStep.StepId, "Denied"), cts.Token);
+
+        var failedRun = await WaitForUpdatedRunAsync(agentRunRepo, expectedStatus: "Failed");
+        var failedStep = await WaitForUpdatedStepAsync(agentStepRepo, expectedStatus: "Failed");
+        await WaitForEventAsync(eventBus, eventType: "error");
+
+        Assert.Equal("Denied", failedRun.InterruptReason);
+        Assert.Equal("Failed", failedStep.Status);
+        Assert.Equal("Denied", failedStep.ErrorPayload);
+        var rejectedPayload = ApprovalPayloadSerializer.Parse(failedStep.DecisionPayload);
+        Assert.Equal(ApprovalDecisions.Rejected, rejectedPayload.Decision);
+        await toolExecutor.DidNotReceive().ExecuteAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldFailRunAndPublishError_WhenModelExecutionThrows()
     {
         var channel = new AgentRunChannel();
@@ -102,6 +234,7 @@ public class AgentRunWorkerTests
         var stepDecisionParser = Substitute.For<IStepDecisionParser>();
         var toolExecutor = Substitute.For<IToolExecutor>();
         var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
         var run = CreateRunningRun();
         var resolvedDefinition = CreateResolvedDefinition();
 
@@ -116,7 +249,8 @@ public class AgentRunWorkerTests
             agentDefinitionRepo,
             stepDecisionParser,
             toolExecutor,
-            modelGateway);
+            modelGateway,
+            toolDefinitionRepository);
         var worker = new AgentRunWorker(channel, eventBus, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentRunWorker>.Instance);
         using var cts = new CancellationTokenSource();
 
@@ -230,7 +364,8 @@ public class AgentRunWorkerTests
         IAgentDefinitionRepository agentDefinitionRepo,
         IStepDecisionParser stepDecisionParser,
         IToolExecutor toolExecutor,
-        IModelGateway modelGateway)
+        IModelGateway modelGateway,
+        IToolDefinitionRepository toolDefinitionRepository)
     {
         var services = new ServiceCollection();
         services.AddSingleton(agentRunRepo);
@@ -239,6 +374,7 @@ public class AgentRunWorkerTests
         services.AddSingleton(stepDecisionParser);
         services.AddSingleton(toolExecutor);
         services.AddSingleton(modelGateway);
+        services.AddSingleton(toolDefinitionRepository);
         return services.BuildServiceProvider();
     }
 
@@ -252,6 +388,21 @@ public class AgentRunWorkerTests
             InputPayload = "hello",
             CurrentStepNo = 4,
             CurrentWaitToken = "wait-123",
+            StatusVersion = 2,
+            MaxTurns = 5
+        };
+    }
+
+    private static AgentRun CreateApprovalWaitingRun()
+    {
+        return new AgentRun
+        {
+            RunId = "run-001",
+            AgentCode = "writer",
+            Status = "WaitingApproval",
+            InputPayload = "hello",
+            CurrentStepNo = 4,
+            CurrentWaitToken = "approval-123",
             StatusVersion = 2,
             MaxTurns = 5
         };

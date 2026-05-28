@@ -9,6 +9,7 @@ public record GetAgentRunStepsItem(
     string? Output,
     string? Error,
     string StepKey,
+    ApprovalInfo? Approval,
     DateTime CreateTime,
     DateTime LastModifyTime,
     DateTime? StartedAt,

@@ -1,6 +1,6 @@
 # BestAgent MVP 实现进度
 
-更新日期：2026-05-28
+更新日期：2026-05-29
 
 ## 1. 当前状态
 
@@ -51,6 +51,8 @@
 
 - `POST /agent-runs`
 - `POST /agent-runs/{runId}:resume`
+- `POST /agent-runs/{runId}/steps/{stepId}:approve`
+- `POST /agent-runs/{runId}/steps/{stepId}:reject`
 - `GET /agent-runs/{runId}`
 - `GET /agent-runs/{runId}/steps`
 - `GET /agent-runs/{runId}/stream`
@@ -92,6 +94,8 @@
 
 - `CreateAgentRunCommand`
 - `ResumeAgentRunCommand`
+- `ApproveAgentRunStepCommand`
+- `RejectAgentRunStepCommand`
 - `GetAgentRunByIdQuery`
 - `GetAgentRunStepsQuery`
 - `CreateAgentDefinitionCommand`
@@ -124,10 +128,12 @@
    - 通过 `IModelGateway` 调用模型
    - 写入 `model_call` 步骤
    - 若模型返回 `respond`，返回 `AgentLoopCompleted`
-   - 若模型返回 `tool_call`，校验权限后通过 `IToolExecutor` 执行工具
+   - 若模型返回 `tool_call`，先校验权限，再按 `ToolDefinition.SideEffectLevel` 判断是否需要审批
+   - 若命中高风险工具，写入带审批 payload 的 Pending `tool_call` 步骤，并返回 `AgentLoopWaitingApproval`
+   - 若无需审批，则通过 `IToolExecutor` 执行工具
    - 若工具返回 `IsPending=true`，写入 Pending 步骤，返回 `AgentLoopSuspended`
    - 若工具同步完成，写入 `tool_call` 步骤，继续循环
-6. 根据循环结果：完成 Run 或挂起为 `WaitingTool`
+6. 根据循环结果：完成 Run、挂起为 `WaitingTool`，或挂起为 `WaitingApproval`
 7. 失败时更新 `AgentRun` 为 `Failed`
 
 `ResumeAgentRunCommandHandler` 恢复链路：
@@ -138,6 +144,22 @@
 4. 由后台 `AgentRunWorker` 完成 Pending 步骤并携带工具结果继续循环
 5. 根据循环结果：完成 Run 或再次挂起
 
+`ApproveAgentRunStepCommandHandler` 审批通过链路：
+
+1. 加载 `AgentRun`，验证 `Status == WaitingApproval`
+2. 校验最后一个 Pending step 与 `stepId` 匹配，且审批 payload `Decision == Pending`
+3. 将 Run 状态先切回 `Running`
+4. 将 `ApproveAgentRunStepMessage` 入队到 `AgentRunChannel`
+5. 由后台 `AgentRunWorker` 真正执行工具、更新审批 payload 为 `Approved`、完成步骤并继续循环
+
+`RejectAgentRunStepCommandHandler` 审批拒绝链路：
+
+1. 加载 `AgentRun`，验证 `Status == WaitingApproval`
+2. 校验最后一个 Pending step 与 `stepId` 匹配，且审批 payload `Decision == Pending`
+3. 将 Run 状态先切回 `Running`
+4. 将 `RejectAgentRunStepMessage` 入队到 `AgentRunChannel`
+5. 由后台 `AgentRunWorker` 更新审批 payload 为 `Rejected`、将 Pending step 标记为失败并终止 Run
+
 当前架构特点：
 
 - 无 Service 层，Handler 直接编排基础设施接口
@@ -145,7 +167,10 @@
 - `StepDecision` 为模型输出的结构化解析结果，支持 `respond` 和 `tool_call` 两种动作
 - 支持多轮 tool call 循环（受 `MaxTurns` 限制）
 - 支持异步工具：工具返回 `IsPending=true` 时 Run 挂起，通过 resume 接口恢复
-- `StatusVersion` 作为 EF Core 并发令牌，防止并发 resume
+- 支持高风险工具审批：命中 `ToolDefinition.SideEffectLevel` 写操作等级时，Run 会切换到 `WaitingApproval`
+- 审批支持 approve / reject 两条恢复路径：approve 会继续执行工具并恢复 loop，reject 会终止 Run
+- 审批上下文与结果当前通过 `AgentStep.DecisionPayload` 存储，但对外 steps 查询已投影为 typed `Approval` DTO
+- `StatusVersion` 作为 EF Core 并发令牌，防止并发 resume / approval 冲突
 - `AgentRunEventBus` 按 run 分发事件，SSE endpoint 订阅对应事件流
 
 当前工具执行语义：
@@ -162,10 +187,11 @@
 
 当前实现约束：
 
-- 未实现审批、人机协同、handoff
+- 已落地最小审批流，但尚未实现更完整的人机协同、人工接管、handoff
 - 未实现记忆、检索和多 Agent 编排
 - 工具执行已不是单纯依赖本地注册表，但内置工具与 webhook 工具仍是并行模型，尚未抽象为统一 execution kind
-- `WaitingTool` / resume 语义仍是单工具挂起模型
+- `WaitingTool` / `WaitingApproval` 当前都依赖单步骤挂起语义，尚未演进为更通用的系统级挂起模型
+- 审批身份鉴权、审批专用持久化实体（`AgentApproval`）与审批审计链路尚未接入主路径
 
 ### 3.3 领域模型
 
@@ -235,13 +261,17 @@
 
 - `POST /agent-runs` 创建 Run 后立即返回，由后台 Worker 异步执行
 - `POST /agent-runs/{runId}:resume` 将恢复消息重新入队，由后台 Worker 继续执行
+- `POST /agent-runs/{runId}/steps/{stepId}:approve` 将审批通过消息重新入队，由后台 Worker 执行待批工具并继续循环
+- `POST /agent-runs/{runId}/steps/{stepId}:reject` 将审批拒绝消息重新入队，由后台 Worker 将待批步骤与 Run 终止为失败态
 - Worker 在每个关键 step 完成时向 `AgentRunEventBus` 发布事件
-- `GET /agent-runs/{runId}/stream` 通过 SSE 向前端实时推送 `step`、`waiting`、`done`、`error` 事件
+- `GET /agent-runs/{runId}/stream` 通过 SSE 向前端实时推送 `step`、`waiting`、`waiting_approval`、`approval_rejected`、`done`、`error` 事件
 
 当前 SSE 事件粒度：
 
 - `step`：步骤完成
 - `waiting`：异步工具挂起
+- `waiting_approval`：高风险工具等待审批
+- `approval_rejected`：审批被拒绝并终止 run
 - `done`：运行完成
 - `error`：运行失败
 
@@ -281,19 +311,21 @@
 
 - `BestAgent.Api.Tests`
 
-当前仓库可见测试文件共 `13` 个，`[Fact]` 测试用例共 `52` 个：
+当前仓库可见测试文件共 `15` 个，`[Fact]` 测试用例共 `58` 个：
 
-- `AgentRunsControllerTests` 中 `4` 个
+- `AgentRunsControllerTests` 中 `5` 个
 - `AgentDefinitionsControllerTests` 中 `8` 个
 - `ToolDefinitionsControllerTests` 中 `6` 个
 - `CreateAgentRunCommandHandlerTests` 中 `2` 个
 - `CreateAgentRunCommandHandlerIntegrationTests` 中 `1` 个
 - `ResumeAgentRunCommandHandlerTests` 中 `3` 个
+- `ApproveAgentRunStepCommandHandlerTests` 中 `3` 个
+- `RejectAgentRunStepCommandHandlerTests` 中 `1` 个
 - `AgentDefinitionCommandHandlerTests` 中 `4` 个
 - `ToolDefinitionCommandHandlerTests` 中 `6` 个
-- `AgentRunLoopTests` 中 `2` 个
-- `AgentRunWorkerTests` 中 `2` 个
-- `AgentRunWaitingResumeIntegrationTests` 中 `1` 个
+- `AgentRunLoopTests` 中 `3` 个
+- `AgentRunWorkerTests` 中 `4` 个
+- `AgentRunWaitingResumeIntegrationTests` 中 `2` 个
 - `ToolExecutorTests` 中 `7` 个
 - `HttpToolInvokerTests` 中 `6` 个
 
@@ -301,19 +333,22 @@
 
 - `AgentRun` 创建接口映射
 - `GetAgentRunById` 查询返回
-- `GetAgentRunSteps` 查询返回
+- `GetAgentRunSteps` 查询返回（包含 typed `Approval` DTO）
 - `GET /agent-runs/{runId}/stream` 的 SSE 输出行为
 - `CreateAgentRunCommandHandler` 创建与入队
 - `ResumeAgentRunCommandHandler` 恢复与状态校验
+- `ApproveAgentRunStepCommandHandler` 审批通过与状态校验
+- `RejectAgentRunStepCommandHandler` 审批拒绝与状态校验
 - `AgentDefinition` 控制器映射与命令分发
 - `AgentDefinition` 创建、创建新版本、激活版本等 handler 逻辑
 - `ToolDefinition` 控制器映射与 CRUD 命令分发
 - `ToolDefinition` 创建、更新、删除等 handler 逻辑
-- `AgentRunLoop` 运行时分支行为
-- `AgentRunWorker` 后台消费执行行为
+- `AgentRunLoop` 运行时分支行为（同步工具、异步工具、审批等待）
+- `AgentRunWorker` 后台消费执行行为（resume、approve、reject）
 - `ToolExecutor` 的 DB-first 工具调度行为（webhook 优先、本地 handler 回退、禁用拦截、缺失定义/配置错误）
 - `HttpToolInvoker` 的 HTTP 调用与响应处理
 - 异步工具等待 / 恢复集成链路
+- 审批等待 / approve / reject 集成链路
 - 外部模型联调用例骨架
 
 截至当前代码状态，测试覆盖已经不再局限于 `AgentRun` 主链路，`AgentDefinition`、`ToolDefinition`、运行时与工具执行相关能力也已有较完整的单元测试与部分集成测试覆盖。
@@ -347,12 +382,13 @@ dotnet run --project BestAgent.Api
 以下能力仍停留在设计层，尚未在当前代码中完整落地：
 
 - 多 Agent / Router / handoff
-- 审批与人工协同（`WaitingApproval`、`WaitingHuman`）
+- 更完整的人机协同（`WaitingHuman`、人工接管、人工替换结果）
 - 记忆、检索与长期知识库
 - Outbox 事件落库与投递
 - 鉴权、租户隔离与后台管理界面
 - 本地工具与 HTTP 工具的统一执行类型抽象，以及更彻底地去除对 `ToolRegistry` 兼容回退的依赖
 - 工具定义从“HTTP webhook 配置模型”继续演进为更通用的工具执行定义（支持明确的 executor type / binding / resolution）
+- 审批身份鉴权、审批专用持久化实体（如 `AgentApproval`）、审批历史与审计查询
 - 事件持久化、跨实例分发与更完整的流式观测能力
 
 ## 6. 当前异步执行架构
@@ -393,7 +429,7 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 2. 补充 `Program.cs`、全局异常处理、数据库初始化等启动 / 基础设施相关测试
 3. 为本地工具与 HTTP 工具补统一 execution kind / resolver 抽象，进一步收敛 `ToolRegistry` 兼容路径
 4. 将 `ToolDefinition` 从当前偏 webhook 的配置模型，演进为更通用的工具执行定义
-5. 审批流（`WaitingApproval` 状态 + 审批回调）
+5. 审批流补齐身份鉴权、审批专用持久化与审计查询
 6. 多 Agent / Router / handoff
 7. 事件持久化与跨实例分发
 

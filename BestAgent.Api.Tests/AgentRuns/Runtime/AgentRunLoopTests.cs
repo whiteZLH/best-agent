@@ -1,8 +1,10 @@
+using System.Text.Json;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Models;
 using BestAgent.Application.Tools;
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 using NSubstitute;
 using Xunit;
 
@@ -14,6 +16,7 @@ public class AgentRunLoopTests
     private readonly IStepDecisionParser _stepDecisionParser = Substitute.For<IStepDecisionParser>();
     private readonly IToolExecutor _toolExecutor = Substitute.For<IToolExecutor>();
     private readonly IAgentStepRepository _agentStepRepository = Substitute.For<IAgentStepRepository>();
+    private readonly IToolDefinitionRepository _toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
 
     [Fact]
     public async Task ExecuteAsync_ShouldCompleteRunAfterToolCall()
@@ -42,6 +45,7 @@ public class AgentRunLoopTests
             _stepDecisionParser,
             _toolExecutor,
             _agentStepRepository,
+            _toolDefinitionRepository,
             CancellationToken.None,
             events.Add);
 
@@ -106,6 +110,7 @@ public class AgentRunLoopTests
             _stepDecisionParser,
             _toolExecutor,
             _agentStepRepository,
+            _toolDefinitionRepository,
             CancellationToken.None,
             events.Add);
 
@@ -122,6 +127,77 @@ public class AgentRunLoopTests
                 step.InputPayload == "{\"city\":\"Shanghai\"}" &&
                 step.OutputPayload == null),
             Arg.Any<CancellationToken>());
+
+        Assert.Single(events);
+        AssertEvent(events[0], "step", 3, "model_call", "Completed", "tool-decision");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldWaitForApproval_WhenToolRequiresApproval()
+    {
+        var context = CreateLoopContext();
+        var resolvedDefinition = CreateResolvedDefinition();
+        var events = new List<AgentRunEvent>();
+
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("tool-decision"));
+
+        _stepDecisionParser.Parse("tool-decision")
+            .Returns(StepDecision.ToolCall("weather", "{\"city\":\"Shanghai\"}"));
+
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(new ToolDefinition
+            {
+                Id = "tool-1",
+                ToolName = "weather",
+                DisplayName = "Weather",
+                Description = "Weather tool",
+                Enabled = true,
+                SideEffectLevel = "internal_write"
+            });
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            CancellationToken.None,
+            events.Add);
+
+        var waiting = Assert.IsType<AgentLoopWaitingApproval>(result);
+        Assert.Equal(4, waiting.SuspendedAtStepNo);
+        Assert.Equal("weather", waiting.ToolName);
+        Assert.Equal("internal_write", waiting.SideEffectLevel);
+        Assert.False(string.IsNullOrWhiteSpace(waiting.WaitToken));
+
+        await _toolExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<string>(),
+            Arg.Any<string?>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>());
+
+        await _agentStepRepository.Received(2).AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>());
+        await _agentStepRepository.Received(1).AddAsync(
+            Arg.Is<AgentStep>(step =>
+                step.StepNo == 4 &&
+                step.StepType == "tool_call" &&
+                step.Status == "Pending" &&
+                step.InputPayload == "{\"city\":\"Shanghai\"}" &&
+                step.DecisionPayload != null),
+            Arg.Any<CancellationToken>());
+
+        var pendingStep = _agentStepRepository.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.AddAsync))
+            .Select(call => call.GetArguments()[0])
+            .OfType<AgentStep>()
+            .Last(step => step.StepType == "tool_call");
+        var approvalPayload = ApprovalPayloadSerializer.Parse(pendingStep.DecisionPayload!);
+        Assert.Equal("approval", approvalPayload.WaitType);
+        Assert.Equal("weather", approvalPayload.ToolName);
+        Assert.Equal(ApprovalDecisions.Pending, approvalPayload.Decision);
 
         Assert.Single(events);
         AssertEvent(events[0], "step", 3, "model_call", "Completed", "tool-decision");

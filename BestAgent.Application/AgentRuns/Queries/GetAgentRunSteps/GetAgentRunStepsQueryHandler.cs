@@ -1,3 +1,4 @@
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
 using MediatR;
 
@@ -26,11 +27,29 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
                 step.OutputPayload,
                 step.ErrorPayload,
                 step.StepKey,
+                MapApproval(step.DecisionPayload),
                 step.CreateTime,
                 step.LastModifyTime,
                 step.StartedAt,
                 step.EndedAt,
                 step.DurationMs))
             .ToList();
+    }
+
+    private static ApprovalInfo? MapApproval(string? decisionPayload)
+    {
+        if (!ApprovalPayloadSerializer.TryParse(decisionPayload, out var payload))
+        {
+            return null;
+        }
+
+        return new ApprovalInfo(
+            payload!.WaitType,
+            payload.ToolName,
+            payload.ToolInput,
+            payload.SideEffectLevel,
+            payload.Decision,
+            payload.Comment,
+            payload.DecidedAt);
     }
 }

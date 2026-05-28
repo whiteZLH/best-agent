@@ -11,6 +11,15 @@ public record ResumeAgentRunMessage(
     string WaitToken,
     string ToolResult) : AgentRunMessage(RunId);
 
+public record ApproveAgentRunStepMessage(
+    string RunId,
+    string StepId) : AgentRunMessage(RunId);
+
+public record RejectAgentRunStepMessage(
+    string RunId,
+    string StepId,
+    string? Comment) : AgentRunMessage(RunId);
+
 public interface IAgentRunChannel
 {
     ValueTask EnqueueAsync(AgentRunMessage message, CancellationToken cancellationToken = default);
