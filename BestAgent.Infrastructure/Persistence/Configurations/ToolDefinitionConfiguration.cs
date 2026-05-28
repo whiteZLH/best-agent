@@ -17,6 +17,9 @@ public class ToolDefinitionConfiguration : IEntityTypeConfiguration<ToolDefiniti
         builder.Property(x => x.Description).HasColumnName("description");
         builder.Property(x => x.InputSchema).HasColumnName("input_schema").HasColumnType("jsonb");
         builder.Property(x => x.OutputSchema).HasColumnName("output_schema").HasColumnType("jsonb");
+        builder.Property(x => x.EndpointUrl).HasColumnName("endpoint_url").HasMaxLength(2048);
+        builder.Property(x => x.HttpMethod).HasColumnName("http_method").HasMaxLength(16);
+        builder.Property(x => x.AuthHeaders).HasColumnName("auth_headers").HasColumnType("jsonb");
         builder.Property(x => x.SideEffectLevel).HasColumnName("side_effect_level").HasMaxLength(32);
         builder.Property(x => x.TimeoutMs).HasColumnName("timeout_ms");
         builder.Property(x => x.RetryPolicy).HasColumnName("retry_policy").HasColumnType("jsonb");

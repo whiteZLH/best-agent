@@ -10,6 +10,9 @@ public record class ToolDefinition : AuditedEntity
     public string? Description { get; init; }
     public string? InputSchema { get; init; }
     public string? OutputSchema { get; init; }
+    public string? EndpointUrl { get; init; }
+    public string HttpMethod { get; init; } = "POST";
+    public string? AuthHeaders { get; init; }
     public string SideEffectLevel { get; init; } = string.Empty;
     public int TimeoutMs { get; init; }
     public string? RetryPolicy { get; init; }

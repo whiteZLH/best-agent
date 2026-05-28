@@ -45,8 +45,11 @@ public class UpdateToolDefinitionCommandHandler : IRequestHandler<UpdateToolDefi
         {
             DisplayName = request.DisplayName.Trim(),
             Description = request.Description?.Trim(),
-            InputSchema = request.InputSchema,
-            OutputSchema = request.OutputSchema,
+            InputSchema = ToolDefinitionJsonValidator.NormalizeOptionalJson(request.InputSchema, nameof(request.InputSchema)),
+            OutputSchema = ToolDefinitionJsonValidator.NormalizeOptionalJson(request.OutputSchema, nameof(request.OutputSchema)),
+            EndpointUrl = string.IsNullOrWhiteSpace(request.EndpointUrl) ? null : request.EndpointUrl.Trim(),
+            HttpMethod = string.IsNullOrWhiteSpace(request.HttpMethod) ? "POST" : request.HttpMethod.Trim().ToUpperInvariant(),
+            AuthHeaders = ToolDefinitionJsonValidator.NormalizeOptionalJsonObject(request.AuthHeaders, nameof(request.AuthHeaders)),
             SideEffectLevel = request.SideEffectLevel.Trim(),
             TimeoutMs = request.TimeoutMs,
             RetryPolicy = request.RetryPolicy,

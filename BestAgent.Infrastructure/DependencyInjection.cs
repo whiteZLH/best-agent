@@ -49,8 +49,10 @@ public static class DependencyInjection
             return httpClient;
         });
         services.AddSingleton<IModelGateway, OpenAiCompatibleModelGateway>();
+        services.AddHttpClient("ToolWebhook");
         services.AddSingleton<ToolRegistry>();
         services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
+        services.AddScoped<IHttpToolInvoker, HttpToolInvoker>();
         services.AddScoped<IToolExecutor, ToolExecutor>();
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
