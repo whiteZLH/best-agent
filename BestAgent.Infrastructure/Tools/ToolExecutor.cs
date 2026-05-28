@@ -25,38 +25,43 @@ public class ToolExecutor : IToolExecutor
         ToolExecutionContext context,
         CancellationToken cancellationToken)
     {
+        var definition = await _toolDefinitionRepository.GetByToolNameAsync(toolName, cancellationToken);
+        if (definition is not null)
+        {
+            if (!definition.Enabled)
+            {
+                throw new InvalidOperationException($"Tool '{toolName}' is disabled.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(definition.EndpointUrl))
+            {
+                var request = new HttpToolInvocationRequest(
+                    definition.ToolName,
+                    definition.EndpointUrl,
+                    definition.HttpMethod,
+                    definition.AuthHeaders,
+                    input,
+                    definition.InputSchema,
+                    definition.OutputSchema,
+                    context,
+                    definition.TimeoutMs);
+
+                return await _httpToolInvoker.InvokeAsync(request, cancellationToken);
+            }
+
+            if (_toolRegistry.TryGet(toolName, out var fallbackHandler) && fallbackHandler is not null)
+            {
+                return await fallbackHandler(input, context, cancellationToken);
+            }
+
+            throw new InvalidOperationException($"Tool '{toolName}' is defined but has no endpoint URL configured and no registered handler.");
+        }
+
         if (_toolRegistry.TryGet(toolName, out var handler) && handler is not null)
         {
             return await handler(input, context, cancellationToken);
         }
 
-        var definition = await _toolDefinitionRepository.GetByToolNameAsync(toolName, cancellationToken);
-        if (definition is null)
-        {
-            throw new InvalidOperationException($"Tool '{toolName}' has no registered handler and no tool definition.");
-        }
-
-        if (!definition.Enabled)
-        {
-            throw new InvalidOperationException($"Tool '{toolName}' is disabled.");
-        }
-
-        if (string.IsNullOrWhiteSpace(definition.EndpointUrl))
-        {
-            throw new InvalidOperationException($"Tool '{toolName}' has no registered handler and no endpoint URL configured.");
-        }
-
-        var request = new HttpToolInvocationRequest(
-            definition.ToolName,
-            definition.EndpointUrl,
-            definition.HttpMethod,
-            definition.AuthHeaders,
-            input,
-            definition.InputSchema,
-            definition.OutputSchema,
-            context,
-            definition.TimeoutMs);
-
-        return await _httpToolInvoker.InvokeAsync(request, cancellationToken);
+        throw new InvalidOperationException($"Tool '{toolName}' has no tool definition and no registered handler.");
     }
 }

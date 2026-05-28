@@ -37,7 +37,7 @@ public class ToolDefinitionsControllerTests
             Assert.True(query.EnabledOnly);
             return (IReadOnlyList<ToolDefinitionViewModel>)
             [
-                CreateViewModel(toolName: "weather", enabled: true, hasHandler: false)
+                CreateViewModel(toolName: "weather", enabled: true)
             ];
         });
         var controller = new ToolDefinitionsController(mediator, _mapper);
@@ -54,7 +54,6 @@ public class ToolDefinitionsControllerTests
         Assert.Equal("{\"Authorization\":\"Bearer token\"}", tool.AuthHeaders);
         Assert.Equal(5000, tool.TimeoutMs);
         Assert.True(tool.Enabled);
-        Assert.False(tool.HasHandler);
     }
 
     [Fact]
@@ -74,7 +73,7 @@ public class ToolDefinitionsControllerTests
         var mediator = new FakeMediator((GetToolDefinitionByNameQuery query) =>
         {
             Assert.Equal("weather", query.ToolName);
-            return CreateViewModel(toolName: "weather", enabled: true, hasHandler: true);
+            return CreateViewModel(toolName: "weather", enabled: true);
         });
         var controller = new ToolDefinitionsController(mediator, _mapper);
 
@@ -83,7 +82,6 @@ public class ToolDefinitionsControllerTests
         var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
         var response = Assert.IsType<GetToolDefinitionResponse>(okResult.Value);
         Assert.Equal("weather", response.ToolName);
-        Assert.True(response.HasHandler);
     }
 
     [Fact]
@@ -100,7 +98,7 @@ public class ToolDefinitionsControllerTests
             Assert.Equal(5000, command.TimeoutMs);
             Assert.True(command.AsyncSupported);
             Assert.True(command.Enabled);
-            return CreateViewModel(toolName: command.ToolName, enabled: command.Enabled, hasHandler: false);
+            return CreateViewModel(toolName: command.ToolName, enabled: command.Enabled);
         });
         var controller = new ToolDefinitionsController(mediator, _mapper);
 
@@ -152,8 +150,7 @@ public class ToolDefinitionsControllerTests
                 authHeaders: command.AuthHeaders,
                 timeoutMs: command.TimeoutMs,
                 asyncSupported: command.AsyncSupported,
-                enabled: command.Enabled,
-                hasHandler: false);
+                enabled: command.Enabled);
         });
         var controller = new ToolDefinitionsController(mediator, _mapper);
 
@@ -217,8 +214,7 @@ public class ToolDefinitionsControllerTests
         string? authHeaders = "{\"Authorization\":\"Bearer token\"}",
         int timeoutMs = 5000,
         bool asyncSupported = true,
-        bool enabled = true,
-        bool hasHandler = false)
+        bool enabled = true)
     {
         var now = new DateTime(2026, 5, 28, 0, 0, 0, DateTimeKind.Utc);
         return new ToolDefinitionViewModel(
@@ -240,7 +236,6 @@ public class ToolDefinitionsControllerTests
             "Strong",
             "none",
             enabled,
-            hasHandler,
             now,
             now);
     }

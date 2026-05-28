@@ -19,6 +19,5 @@ public record GetToolDefinitionResponse(
     string ConsistencyMode,
     string? CompensationPolicy,
     bool Enabled,
-    bool HasHandler,
     DateTime CreateTime,
     DateTime LastModifyTime);

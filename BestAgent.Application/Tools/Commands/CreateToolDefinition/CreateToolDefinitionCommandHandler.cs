@@ -6,14 +6,11 @@ namespace BestAgent.Application.Tools.Commands.CreateToolDefinition;
 public class CreateToolDefinitionCommandHandler : IRequestHandler<CreateToolDefinitionCommand, ToolDefinitionViewModel>
 {
     private readonly IToolDefinitionRepository _toolDefinitionRepository;
-    private readonly IToolHandlerRegistry _toolHandlerRegistry;
 
     public CreateToolDefinitionCommandHandler(
-        IToolDefinitionRepository toolDefinitionRepository,
-        IToolHandlerRegistry toolHandlerRegistry)
+        IToolDefinitionRepository toolDefinitionRepository)
     {
         _toolDefinitionRepository = toolDefinitionRepository;
-        _toolHandlerRegistry = toolHandlerRegistry;
     }
 
     public async Task<ToolDefinitionViewModel> Handle(CreateToolDefinitionCommand request, CancellationToken cancellationToken)
@@ -75,6 +72,6 @@ public class CreateToolDefinitionCommandHandler : IRequestHandler<CreateToolDefi
         };
 
         await _toolDefinitionRepository.AddAsync(entity, cancellationToken);
-        return ToolDefinitionViewModel.FromEntity(entity, _toolHandlerRegistry.HasHandler(entity.ToolName));
+        return ToolDefinitionViewModel.FromEntity(entity);
     }
 }

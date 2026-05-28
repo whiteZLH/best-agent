@@ -17,8 +17,7 @@ public class ToolDefinitionCommandHandlerTests
         {
             ExistsByToolNameAsyncResult = false
         };
-        var handlerRegistry = new FakeToolHandlerRegistry(["weather"]);
-        var handler = new CreateToolDefinitionCommandHandler(repository, handlerRegistry);
+        var handler = new CreateToolDefinitionCommandHandler(repository);
 
         var result = await handler.Handle(
             new CreateToolDefinitionCommand(
@@ -51,7 +50,6 @@ public class ToolDefinitionCommandHandlerTests
         Assert.Equal("{ \"Authorization\" : \"Bearer token\" }", result.AuthHeaders);
         Assert.Equal("ReadOnly", result.SideEffectLevel);
         Assert.Equal("Strong", result.ConsistencyMode);
-        Assert.True(result.HasHandler);
         Assert.NotNull(repository.AddedToolDefinition);
         Assert.Equal("weather", repository.AddedToolDefinition!.ToolName);
         Assert.Equal("Weather", repository.AddedToolDefinition.DisplayName);
@@ -71,7 +69,7 @@ public class ToolDefinitionCommandHandlerTests
         {
             ExistsByToolNameAsyncResult = true
         };
-        var handler = new CreateToolDefinitionCommandHandler(repository, new FakeToolHandlerRegistry([]));
+        var handler = new CreateToolDefinitionCommandHandler(repository);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
             new CreateToolDefinitionCommand("weather", "Weather", null, null, null, null, null, null, "ReadOnly", 5000, null, null, null, false, "Strong", null, true),
@@ -81,15 +79,14 @@ public class ToolDefinitionCommandHandlerTests
     }
 
     [Fact]
-    public async Task UpdateToolDefinition_ShouldUpdatePersistedEntity_AndReturnHandlerState()
+    public async Task UpdateToolDefinition_ShouldUpdatePersistedEntity()
     {
         var existing = CreateToolDefinition();
         var repository = new FakeToolDefinitionRepository
         {
             GetByIdAsyncResult = existing
         };
-        var handlerRegistry = new FakeToolHandlerRegistry([]);
-        var handler = new UpdateToolDefinitionCommandHandler(repository, handlerRegistry);
+        var handler = new UpdateToolDefinitionCommandHandler(repository);
 
         var result = await handler.Handle(
             new UpdateToolDefinitionCommand(
@@ -125,7 +122,6 @@ public class ToolDefinitionCommandHandlerTests
         Assert.Equal("Eventual", result.ConsistencyMode);
         Assert.False(result.AsyncSupported);
         Assert.False(result.Enabled);
-        Assert.False(result.HasHandler);
         Assert.NotNull(repository.UpdatedToolDefinition);
         Assert.Equal("Weather v2", repository.UpdatedToolDefinition!.DisplayName);
         Assert.Equal("updated description", repository.UpdatedToolDefinition.Description);
@@ -142,7 +138,7 @@ public class ToolDefinitionCommandHandlerTests
     public async Task UpdateToolDefinition_ShouldThrowNotFound_WhenToolDoesNotExist()
     {
         var repository = new FakeToolDefinitionRepository();
-        var handler = new UpdateToolDefinitionCommandHandler(repository, new FakeToolHandlerRegistry([]));
+        var handler = new UpdateToolDefinitionCommandHandler(repository);
 
         var exception = await Assert.ThrowsAsync<NotFoundException>(() => handler.Handle(
             new UpdateToolDefinitionCommand("missing", "Weather", null, null, null, null, null, null, "ReadOnly", 5000, null, null, null, false, "Strong", null, true),
@@ -265,26 +261,6 @@ public class ToolDefinitionCommandHandlerTests
         {
             DeletedToolDefinition = toolDefinition;
             return Task.CompletedTask;
-        }
-    }
-
-    private sealed class FakeToolHandlerRegistry : IToolHandlerRegistry
-    {
-        private readonly HashSet<string> _registeredNames;
-
-        public FakeToolHandlerRegistry(IEnumerable<string> registeredNames)
-        {
-            _registeredNames = [.. registeredNames];
-        }
-
-        public bool HasHandler(string toolName)
-        {
-            return _registeredNames.Contains(toolName);
-        }
-
-        public IReadOnlyCollection<string> GetRegisteredHandlerNames()
-        {
-            return _registeredNames;
         }
     }
 }

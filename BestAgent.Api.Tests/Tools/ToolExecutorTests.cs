@@ -14,37 +14,32 @@ public class ToolExecutorTests
     private readonly ToolExecutionContext _context = new("run-001", "writer", "say hi");
 
     [Fact]
-    public async Task ExecuteAsync_ShouldPreferRegisteredHandlerOverToolDefinition()
+    public async Task ExecuteAsync_ShouldPreferToolDefinitionWebhookOverRegisteredHandler()
     {
         _toolRegistry.RegisterHandler("weather", (_, _, _) =>
             Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
-        var executor = CreateExecutor();
-
-        var result = await executor.ExecuteAsync("weather", "input", _context, CancellationToken.None);
-
-        Assert.Equal("weather", result.ToolName);
-        Assert.Equal("from-handler", result.Output);
-        Assert.False(result.IsPending);
-        await _toolDefinitionRepository.DidNotReceiveWithAnyArgs().GetByToolNameAsync(default!, default);
-        await _httpToolInvoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, default);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_ShouldThrow_WhenToolDefinitionMissing()
-    {
+        var definition = CreateToolDefinition();
         _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
-            .Returns((ToolDefinition?)null);
+            .Returns(definition);
+        _httpToolInvoker.InvokeAsync(Arg.Any<HttpToolInvocationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ToolExecutionResult.Completed("weather", "from-webhook"));
         var executor = CreateExecutor();
 
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            executor.ExecuteAsync("weather", "input", _context, CancellationToken.None));
+        var result = await executor.ExecuteAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None);
 
-        Assert.Equal("Tool 'weather' has no registered handler and no tool definition.", exception.Message);
+        Assert.Equal("from-webhook", result.Output);
+        await _httpToolInvoker.Received(1).InvokeAsync(
+            Arg.Is<HttpToolInvocationRequest>(request =>
+                request.ToolName == "weather" &&
+                request.EndpointUrl == "https://example.com/tools/weather"),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task ExecuteAsync_ShouldThrow_WhenToolDefinitionDisabled()
+    public async Task ExecuteAsync_ShouldThrow_WhenToolDefinitionDisabledEvenIfHandlerExists()
     {
+        _toolRegistry.RegisterHandler("weather", (_, _, _) =>
+            Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
         _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
             .Returns(CreateToolDefinition(enabled: false));
         var executor = CreateExecutor();
@@ -53,10 +48,26 @@ public class ToolExecutorTests
             executor.ExecuteAsync("weather", "input", _context, CancellationToken.None));
 
         Assert.Equal("Tool 'weather' is disabled.", exception.Message);
+        await _httpToolInvoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, default);
     }
 
     [Fact]
-    public async Task ExecuteAsync_ShouldThrow_WhenEndpointUrlMissing()
+    public async Task ExecuteAsync_ShouldFallbackToRegisteredHandler_WhenToolDefinitionHasNoEndpointUrl()
+    {
+        _toolRegistry.RegisterHandler("weather", (_, _, _) =>
+            Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(endpointUrl: "   "));
+        var executor = CreateExecutor();
+
+        var result = await executor.ExecuteAsync("weather", "input", _context, CancellationToken.None);
+
+        Assert.Equal("from-handler", result.Output);
+        await _httpToolInvoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldThrow_WhenToolDefinitionHasNoEndpointUrlAndNoHandler()
     {
         _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
             .Returns(CreateToolDefinition(endpointUrl: "   "));
@@ -65,7 +76,35 @@ public class ToolExecutorTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             executor.ExecuteAsync("weather", "input", _context, CancellationToken.None));
 
-        Assert.Equal("Tool 'weather' has no registered handler and no endpoint URL configured.", exception.Message);
+        Assert.Equal("Tool 'weather' is defined but has no endpoint URL configured and no registered handler.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldUseRegisteredHandler_WhenToolDefinitionMissing()
+    {
+        _toolRegistry.RegisterHandler("weather", (_, _, _) =>
+            Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns((ToolDefinition?)null);
+        var executor = CreateExecutor();
+
+        var result = await executor.ExecuteAsync("weather", "input", _context, CancellationToken.None);
+
+        Assert.Equal("from-handler", result.Output);
+        await _httpToolInvoker.DidNotReceiveWithAnyArgs().InvokeAsync(default!, default);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldThrow_WhenToolDefinitionAndHandlerMissing()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns((ToolDefinition?)null);
+        var executor = CreateExecutor();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            executor.ExecuteAsync("weather", "input", _context, CancellationToken.None));
+
+        Assert.Equal("Tool 'weather' has no tool definition and no registered handler.", exception.Message);
     }
 
     [Fact]

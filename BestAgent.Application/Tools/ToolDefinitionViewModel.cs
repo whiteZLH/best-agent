@@ -21,11 +21,10 @@ public record ToolDefinitionViewModel(
     string ConsistencyMode,
     string? CompensationPolicy,
     bool Enabled,
-    bool HasHandler,
     DateTime CreateTime,
     DateTime LastModifyTime)
 {
-    public static ToolDefinitionViewModel FromEntity(ToolDefinition entity, bool hasHandler)
+    public static ToolDefinitionViewModel FromEntity(ToolDefinition entity)
     {
         return new ToolDefinitionViewModel(
             entity.Id,
@@ -46,7 +45,6 @@ public record ToolDefinitionViewModel(
             entity.ConsistencyMode,
             entity.CompensationPolicy,
             entity.Enabled,
-            hasHandler,
             entity.CreateTime,
             entity.LastModifyTime);
     }

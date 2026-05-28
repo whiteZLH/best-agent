@@ -7,14 +7,11 @@ namespace BestAgent.Application.Tools.Commands.UpdateToolDefinition;
 public class UpdateToolDefinitionCommandHandler : IRequestHandler<UpdateToolDefinitionCommand, ToolDefinitionViewModel>
 {
     private readonly IToolDefinitionRepository _toolDefinitionRepository;
-    private readonly IToolHandlerRegistry _toolHandlerRegistry;
 
     public UpdateToolDefinitionCommandHandler(
-        IToolDefinitionRepository toolDefinitionRepository,
-        IToolHandlerRegistry toolHandlerRegistry)
+        IToolDefinitionRepository toolDefinitionRepository)
     {
         _toolDefinitionRepository = toolDefinitionRepository;
-        _toolHandlerRegistry = toolHandlerRegistry;
     }
 
     public async Task<ToolDefinitionViewModel> Handle(UpdateToolDefinitionCommand request, CancellationToken cancellationToken)
@@ -65,6 +62,6 @@ public class UpdateToolDefinitionCommandHandler : IRequestHandler<UpdateToolDefi
         };
 
         await _toolDefinitionRepository.UpdateAsync(updated, cancellationToken);
-        return ToolDefinitionViewModel.FromEntity(updated, _toolHandlerRegistry.HasHandler(updated.ToolName));
+        return ToolDefinitionViewModel.FromEntity(updated);
     }
 }

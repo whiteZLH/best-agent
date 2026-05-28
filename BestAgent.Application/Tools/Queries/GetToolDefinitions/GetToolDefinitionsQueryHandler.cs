@@ -6,14 +6,11 @@ namespace BestAgent.Application.Tools.Queries.GetToolDefinitions;
 public class GetToolDefinitionsQueryHandler : IRequestHandler<GetToolDefinitionsQuery, IReadOnlyList<ToolDefinitionViewModel>>
 {
     private readonly IToolDefinitionRepository _toolDefinitionRepository;
-    private readonly IToolHandlerRegistry _toolHandlerRegistry;
 
     public GetToolDefinitionsQueryHandler(
-        IToolDefinitionRepository toolDefinitionRepository,
-        IToolHandlerRegistry toolHandlerRegistry)
+        IToolDefinitionRepository toolDefinitionRepository)
     {
         _toolDefinitionRepository = toolDefinitionRepository;
-        _toolHandlerRegistry = toolHandlerRegistry;
     }
 
     public async Task<IReadOnlyList<ToolDefinitionViewModel>> Handle(GetToolDefinitionsQuery request, CancellationToken cancellationToken)
@@ -23,7 +20,7 @@ public class GetToolDefinitionsQueryHandler : IRequestHandler<GetToolDefinitions
             : await _toolDefinitionRepository.GetAllAsync(cancellationToken);
 
         return entities
-            .Select(e => ToolDefinitionViewModel.FromEntity(e, _toolHandlerRegistry.HasHandler(e.ToolName)))
+            .Select(ToolDefinitionViewModel.FromEntity)
             .ToArray();
     }
 }

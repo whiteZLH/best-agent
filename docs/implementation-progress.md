@@ -15,6 +15,7 @@
 - 基于 `Channel + BackgroundService` 的异步执行架构
 - `AgentRun` Step 级事件流与 SSE 推送接口
 - OpenAI 兼容模型网关抽象与实现
+- `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook 和本地 handler 兼容回退）
 - 基础单元测试与控制器测试
 
 当前实现目标仍然是验证主链路和数据模型的 MVP，不是完整平台版本。
@@ -147,11 +148,24 @@
 - `StatusVersion` 作为 EF Core 并发令牌，防止并发 resume
 - `AgentRunEventBus` 按 run 分发事件，SSE endpoint 订阅对应事件流
 
+当前工具执行语义：
+
+- `AgentRunLoop` 统一通过 `IToolExecutor` 执行工具
+- `ToolExecutor` 现已调整为 **DB-first**：先查 `ToolDefinition`
+- 如果 `ToolDefinition.Enabled == false`，直接拒绝执行
+- 如果配置了 `EndpointUrl`，通过 `HttpToolInvoker` 走 HTTP webhook
+- 如果未配置 `EndpointUrl`，但本地 `ToolRegistry` 有同名 handler，则作为兼容路径回退到本地 handler
+- 如果既无可执行 webhook 配置，也无本地 handler，则返回工具定义不完整错误
+- 如果数据库中不存在 `ToolDefinition`，但本地存在 handler，当前仍允许兼容执行
+- 从主流 Agent 实现视角看，这一方案属于**正确的 MVP 过渡形态**：工具定义与工具执行已分层、执行权仍由宿主应用掌握、数据库定义开始成为主要事实来源
+- 当前仍不是最终平台化形态：`ToolDefinition` 仍偏向 HTTP webhook 配置模型，本地工具与 HTTP 工具仍是并行实现，尚缺统一的 execution kind / resolver 抽象
+
 当前实现约束：
 
 - 未实现审批、人机协同、handoff
 - 未实现记忆、检索和多 Agent 编排
-- `ToolDefinition` 已可管理，但工具执行 handler 仍主要依赖本地注册表
+- 工具执行已不是单纯依赖本地注册表，但内置工具与 webhook 工具仍是并行模型，尚未抽象为统一 execution kind
+- `WaitingTool` / resume 语义仍是单工具挂起模型
 
 ### 3.3 领域模型
 
@@ -204,6 +218,8 @@
 - 通过 `ApplyConfigurationsFromAssembly` 应用实体配置
 - 启动时由 `DatabaseInitializationHostedService` 调用 `EnsureCreatedAsync`
 - 空库时自动 seed 一个 `default-agent`
+- `ToolDefinition` 当前已持久化 `EndpointUrl`、`HttpMethod`、`AuthHeaders` 等 webhook 配置字段
+- `table.sql` 已与当前 `ToolDefinition` 结构对齐，补齐 webhook 相关列定义
 
 当前仓库里尚未看到 EF Core Migration 文件，数据库初始化策略以 `EnsureCreated` 为主，而不是 migration 驱动。
 
@@ -265,32 +281,42 @@
 
 - `BestAgent.Api.Tests`
 
-当前仓库可见测试用例共 `9` 个：
+当前仓库可见测试文件共 `13` 个，`[Fact]` 测试用例共 `52` 个：
 
-- `AgentRunsControllerTests` 中 `3` 个
+- `AgentRunsControllerTests` 中 `4` 个
+- `AgentDefinitionsControllerTests` 中 `8` 个
+- `ToolDefinitionsControllerTests` 中 `6` 个
 - `CreateAgentRunCommandHandlerTests` 中 `2` 个
 - `CreateAgentRunCommandHandlerIntegrationTests` 中 `1` 个
 - `ResumeAgentRunCommandHandlerTests` 中 `3` 个
+- `AgentDefinitionCommandHandlerTests` 中 `4` 个
+- `ToolDefinitionCommandHandlerTests` 中 `6` 个
+- `AgentRunLoopTests` 中 `2` 个
+- `AgentRunWorkerTests` 中 `2` 个
+- `AgentRunWaitingResumeIntegrationTests` 中 `1` 个
+- `ToolExecutorTests` 中 `7` 个
+- `HttpToolInvokerTests` 中 `6` 个
 
-当前覆盖重点集中在：
+当前覆盖重点包括：
 
 - `AgentRun` 创建接口映射
 - `GetAgentRunById` 查询返回
 - `GetAgentRunSteps` 查询返回
+- `GET /agent-runs/{runId}/stream` 的 SSE 输出行为
 - `CreateAgentRunCommandHandler` 创建与入队
 - `ResumeAgentRunCommandHandler` 恢复与状态校验
-- 异步工具全流程用例
+- `AgentDefinition` 控制器映射与命令分发
+- `AgentDefinition` 创建、创建新版本、激活版本等 handler 逻辑
+- `ToolDefinition` 控制器映射与 CRUD 命令分发
+- `ToolDefinition` 创建、更新、删除等 handler 逻辑
+- `AgentRunLoop` 运行时分支行为
+- `AgentRunWorker` 后台消费执行行为
+- `ToolExecutor` 的 DB-first 工具调度行为（webhook 优先、本地 handler 回退、禁用拦截、缺失定义/配置错误）
+- `HttpToolInvoker` 的 HTTP 调用与响应处理
+- 异步工具等待 / 恢复集成链路
 - 外部模型联调用例骨架
 
-当前仍未看到以下测试：
-
-- `AgentDefinition` 相关控制器测试
-- `AgentDefinition` 相关 handler 测试
-- `ToolDefinition` 相关控制器测试
-- `ToolDefinition` 相关 handler 测试
-- SSE endpoint 行为测试
-
-截至当前代码状态，测试文件数量与文档统计一致，但覆盖范围仍偏向 `AgentRun` 主链路。
+截至当前代码状态，测试覆盖已经不再局限于 `AgentRun` 主链路，`AgentDefinition`、`ToolDefinition`、运行时与工具执行相关能力也已有较完整的单元测试与部分集成测试覆盖。
 
 ## 4. 当前配置与启动方式
 
@@ -325,7 +351,8 @@ dotnet run --project BestAgent.Api
 - 记忆、检索与长期知识库
 - Outbox 事件落库与投递
 - 鉴权、租户隔离与后台管理界面
-- 工具执行 handler 的真正动态化（当前 `ToolDefinition` 可管理，但执行端仍主要依赖 `ToolRegistry` 本地注册）
+- 本地工具与 HTTP 工具的统一执行类型抽象，以及更彻底地去除对 `ToolRegistry` 兼容回退的依赖
+- 工具定义从“HTTP webhook 配置模型”继续演进为更通用的工具执行定义（支持明确的 executor type / binding / resolution）
 - 事件持久化、跨实例分发与更完整的流式观测能力
 
 ## 6. 当前异步执行架构
@@ -362,11 +389,13 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 
 推荐按下面顺序继续推进：
 
-1. 为 `AgentDefinition` 与 `ToolDefinition` 补齐控制器和 handler 测试
-2. 推进工具执行 handler 的真正动态化，减少对硬编码 `ToolRegistry` 的依赖
-3. 审批流（`WaitingApproval` 状态 + 审批回调）
-4. 多 Agent / Router / handoff
-5. 事件持久化与跨实例分发
+1. 将 `CreateAgentRunCommandHandlerIntegrationTests` 从骨架补成真正可执行的集成测试，或明确其保留目的
+2. 补充 `Program.cs`、全局异常处理、数据库初始化等启动 / 基础设施相关测试
+3. 为本地工具与 HTTP 工具补统一 execution kind / resolver 抽象，进一步收敛 `ToolRegistry` 兼容路径
+4. 将 `ToolDefinition` 从当前偏 webhook 的配置模型，演进为更通用的工具执行定义
+5. 审批流（`WaitingApproval` 状态 + 审批回调）
+6. 多 Agent / Router / handoff
+7. 事件持久化与跨实例分发
 
 ## 8. 关键文件索引
 
@@ -388,16 +417,28 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 - `BestAgent.Application/Tools/Commands/CreateToolDefinition/CreateToolDefinitionCommandHandler.cs`
 - `BestAgent.Application/Tools/Commands/UpdateToolDefinition/UpdateToolDefinitionCommandHandler.cs`
 - `BestAgent.Application/Tools/Commands/DeleteToolDefinition/DeleteToolDefinitionCommandHandler.cs`
+- `BestAgent.Application/Tools/ToolDefinitionViewModel.cs`
 - `BestAgent.Infrastructure/DependencyInjection.cs`
 - `BestAgent.Infrastructure/Runtime/AgentRunWorker.cs`
 - `BestAgent.Infrastructure/Persistence/BestAgentDbContext.cs`
 - `BestAgent.Infrastructure/Persistence/Seeding/DatabaseInitializationHostedService.cs`
+- `BestAgent.Infrastructure/Tools/ToolExecutor.cs`
 - `BestAgent.Infrastructure/Tools/ToolRegistry.cs`
+- `BestAgent.Infrastructure/Tools/HttpToolInvoker.cs`
 - `BestAgent.Infrastructure/Model/OpenAiCompatibleModelGateway.cs`
 
 测试文件：
 
 - `BestAgent.Api.Tests/Controllers/AgentRunsControllerTests.cs`
+- `BestAgent.Api.Tests/Controllers/AgentDefinitionsControllerTests.cs`
+- `BestAgent.Api.Tests/Controllers/ToolDefinitionsControllerTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandlerTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandlerIntegrationTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Commands/ResumeAgentRun/ResumeAgentRunCommandHandlerTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Runtime/AgentRunLoopTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Runtime/AgentRunWorkerTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Integration/AgentRunWaitingResumeIntegrationTests.cs`
+- `BestAgent.Api.Tests/AgentDefinitions/Commands/AgentDefinitionCommandHandlerTests.cs`
+- `BestAgent.Api.Tests/Tools/Commands/ToolDefinitionCommandHandlerTests.cs`
+- `BestAgent.Api.Tests/Tools/ToolExecutorTests.cs`
+- `BestAgent.Api.Tests/Tools/HttpToolInvokerTests.cs`
