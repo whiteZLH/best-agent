@@ -1,3 +1,4 @@
+using System.Text;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Api.Controllers;
@@ -7,6 +8,7 @@ using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Runtime;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -126,6 +128,43 @@ public class AgentRunsControllerTests
         Assert.Equal(1200, step.DurationMs);
     }
 
+    [Fact]
+    public async Task Stream_ShouldWriteSseFormattedEvents_AndSetHeaders()
+    {
+        var eventBus = new RecordingEventBus(
+        [
+            new AgentRunEvent("run-001", "step", new AgentRunEventData(1, "tool_call", "Completed", "done")),
+            new AgentRunEvent("run-001", "done", new AgentRunEventData(0, "completed", "Completed", "final output"))
+        ]);
+        var controller = new AgentRunsController(new FakeMediator((CreateAgentRunCommand _) => throw new NotSupportedException()), _mapper, eventBus)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Response =
+                    {
+                        Body = new MemoryStream()
+                    }
+                }
+            }
+        };
+
+        await controller.Stream("run-001", CancellationToken.None);
+
+        Assert.Equal("text/event-stream", controller.Response.Headers["Content-Type"]);
+        Assert.Equal("no-cache", controller.Response.Headers["Cache-Control"]);
+        Assert.Equal("keep-alive", controller.Response.Headers["Connection"]);
+        Assert.Equal("run-001", eventBus.SubscribedRunId);
+
+        controller.Response.Body.Position = 0;
+        using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+
+        Assert.Contains("event: step\ndata: {\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null}\n\n", body);
+        Assert.Contains("event: done\ndata: {\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null}\n\n", body);
+    }
+
     private sealed class NullEventBus : IAgentRunEventBus
     {
         public void Publish(AgentRunEvent evt) { }
@@ -135,6 +174,32 @@ public class AgentRunsControllerTests
         {
             await Task.CompletedTask;
             yield break;
+        }
+    }
+
+    private sealed class RecordingEventBus : IAgentRunEventBus
+    {
+        private readonly IReadOnlyList<AgentRunEvent> _events;
+
+        public RecordingEventBus(IReadOnlyList<AgentRunEvent> events)
+        {
+            _events = events;
+        }
+
+        public string? SubscribedRunId { get; private set; }
+
+        public void Publish(AgentRunEvent evt) { }
+
+        public async IAsyncEnumerable<AgentRunEvent> SubscribeAsync(
+            string runId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            SubscribedRunId = runId;
+            foreach (var evt in _events)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return evt;
+                await Task.Yield();
+            }
         }
     }
 
