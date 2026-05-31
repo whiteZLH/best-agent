@@ -1,21 +1,17 @@
 using BestAgent.Application.Tools;
-using BestAgent.Domain.Tools;
 
 namespace BestAgent.Infrastructure.Tools;
 
 public class ToolExecutor : IToolExecutor
 {
-    private readonly ToolRegistry _toolRegistry;
-    private readonly IToolDefinitionRepository _toolDefinitionRepository;
+    private readonly IToolResolver _toolResolver;
     private readonly IHttpToolInvoker _httpToolInvoker;
 
     public ToolExecutor(
-        ToolRegistry toolRegistry,
-        IToolDefinitionRepository toolDefinitionRepository,
+        IToolResolver toolResolver,
         IHttpToolInvoker httpToolInvoker)
     {
-        _toolRegistry = toolRegistry;
-        _toolDefinitionRepository = toolDefinitionRepository;
+        _toolResolver = toolResolver;
         _httpToolInvoker = httpToolInvoker;
     }
 
@@ -25,43 +21,15 @@ public class ToolExecutor : IToolExecutor
         ToolExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var definition = await _toolDefinitionRepository.GetByToolNameAsync(toolName, cancellationToken);
-        if (definition is not null)
+        var resolution = await _toolResolver.ResolveAsync(toolName, input, context, cancellationToken);
+
+        return resolution.ExecutionKind switch
         {
-            if (!definition.Enabled)
-            {
-                throw new InvalidOperationException($"Tool '{toolName}' is disabled.");
-            }
-
-            if (!string.IsNullOrWhiteSpace(definition.EndpointUrl))
-            {
-                var request = new HttpToolInvocationRequest(
-                    definition.ToolName,
-                    definition.EndpointUrl,
-                    definition.HttpMethod,
-                    definition.AuthHeaders,
-                    input,
-                    definition.InputSchema,
-                    definition.OutputSchema,
-                    context,
-                    definition.TimeoutMs);
-
-                return await _httpToolInvoker.InvokeAsync(request, cancellationToken);
-            }
-
-            if (_toolRegistry.TryGet(toolName, out var fallbackHandler) && fallbackHandler is not null)
-            {
-                return await fallbackHandler(input, context, cancellationToken);
-            }
-
-            throw new InvalidOperationException($"Tool '{toolName}' is defined but has no endpoint URL configured and no registered handler.");
-        }
-
-        if (_toolRegistry.TryGet(toolName, out var handler) && handler is not null)
-        {
-            return await handler(input, context, cancellationToken);
-        }
-
-        throw new InvalidOperationException($"Tool '{toolName}' has no tool definition and no registered handler.");
+            ToolExecutionKind.Webhook when resolution.WebhookRequest is not null
+                => await _httpToolInvoker.InvokeAsync(resolution.WebhookRequest, cancellationToken),
+            ToolExecutionKind.LocalHandler when resolution.LocalHandler is not null
+                => await resolution.LocalHandler(input, context, cancellationToken),
+            _ => throw new InvalidOperationException($"Tool '{toolName}' resolved to an invalid execution binding.")
+        };
     }
 }

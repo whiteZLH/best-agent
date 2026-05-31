@@ -52,6 +52,7 @@ public static class DependencyInjection
         services.AddHttpClient("ToolWebhook");
         services.AddSingleton<ToolRegistry>();
         services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
+        services.AddScoped<IToolResolver, ToolResolver>();
         services.AddScoped<IHttpToolInvoker, HttpToolInvoker>();
         services.AddScoped<IToolExecutor, ToolExecutor>();
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();

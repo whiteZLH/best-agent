@@ -16,6 +16,7 @@
 - `AgentRun` Step 级事件流与 SSE 推送接口
 - OpenAI 兼容模型网关抽象与实现
 - `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook 和本地 handler 兼容回退）
+- 已补上独立 `ToolResolver`，将工具绑定解析从 `ToolExecutor` 中拆出
 - 最小审批流闭环（`WaitingApproval` + `approve/reject`）
 - 审批专用持久化与 run 级审批查询接口
 - 基础单元测试、控制器测试与部分集成 / 基础设施测试
@@ -455,7 +456,7 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 
 推荐按下面顺序继续推进：
 
-1. 为本地工具与 HTTP 工具补统一 execution kind / resolver 抽象，进一步收敛 `ToolRegistry` 兼容路径
+1. 将当前内部 `ToolResolver` 进一步演进为正式持久化 `execution kind / binding` 模型，并逐步收敛 `ToolRegistry` 兼容语义
 2. 将 `ToolDefinition` 从当前偏 webhook 的配置模型，演进为更通用的工具执行定义
 3. 将当前“从认证上下文取审批人身份”的兼容实现，升级为正式认证鉴权与审批授权规则
 4. 多 Agent / Router / handoff

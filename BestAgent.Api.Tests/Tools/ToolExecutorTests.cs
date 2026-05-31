@@ -136,7 +136,7 @@ public class ToolExecutorTests
 
     private ToolExecutor CreateExecutor()
     {
-        return new ToolExecutor(_toolRegistry, _toolDefinitionRepository, _httpToolInvoker);
+        return new ToolExecutor(new ToolResolver(_toolRegistry, _toolDefinitionRepository), _httpToolInvoker);
     }
 
     private static ToolDefinition CreateToolDefinition(bool enabled = true, string? endpointUrl = "https://example.com/tools/weather")

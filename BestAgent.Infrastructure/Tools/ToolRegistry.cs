@@ -16,11 +16,18 @@ public class ToolRegistry : IToolHandlerRegistry
         };
     }
 
-    public bool TryGet(
+    public bool TryGetHandler(
         string toolName,
         out Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>>? handler)
     {
         return _handlers.TryGetValue(toolName, out handler);
+    }
+
+    public bool TryGet(
+        string toolName,
+        out Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>>? handler)
+    {
+        return TryGetHandler(toolName, out handler);
     }
 
     public bool HasHandler(string toolName)

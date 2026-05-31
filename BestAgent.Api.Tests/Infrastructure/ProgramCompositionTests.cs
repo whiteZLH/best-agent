@@ -4,6 +4,7 @@ using BestAgent.Api.Mappings;
 using BestAgent.Application;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Tools;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Infrastructure;
 using BestAgent.Infrastructure.Persistence.Seeding;
@@ -55,6 +56,7 @@ public class ProgramCompositionTests
         Assert.IsType<AgentRunEventBus>(provider.GetRequiredService<IAgentRunEventBus>());
         Assert.NotNull(provider.GetRequiredService<IMapper>());
         Assert.NotNull(provider.GetRequiredService<IAgentApprovalRepository>());
+        Assert.NotNull(provider.GetRequiredService<IToolResolver>());
 
         var hostedServices = provider.GetServices<IHostedService>().ToList();
         Assert.Contains(hostedServices, service => service.GetType() == typeof(DatabaseInitializationHostedService));
