@@ -7,4 +7,8 @@ public record ApprovalInfo(
     string SideEffectLevel,
     string Decision,
     string? Comment,
-    DateTime? DecidedAt);
+    DateTime? DecidedAt,
+    string? ApprovalId = null,
+    string? ApproverId = null,
+    string? ApproverName = null,
+    string? ApproverRole = null);

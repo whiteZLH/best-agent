@@ -10,6 +10,7 @@ using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Commands.RejectAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunApprovals;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.Tools;
@@ -44,6 +45,7 @@ public class ApiMappingProfile : Profile
         CreateMap<GetAgentRunByIdResult, GetAgentRunResponse>();
         CreateMap<ApprovalInfo, ApprovalInfoResponse>();
         CreateMap<GetAgentRunStepsItem, GetAgentRunStepResponse>();
+        CreateMap<GetAgentRunApprovalsItem, GetAgentRunApprovalResponse>();
         CreateMap<CreateToolDefinitionRequest, CreateToolDefinitionCommand>();
         CreateMap<ToolDefinitionViewModel, GetToolDefinitionResponse>();
     }

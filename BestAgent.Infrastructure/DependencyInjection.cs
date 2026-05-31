@@ -57,6 +57,7 @@ public static class DependencyInjection
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IAgentStepRepository, AgentStepRepository>();
+        services.AddScoped<IAgentApprovalRepository, AgentApprovalRepository>();
         services.AddScoped<IToolDefinitionRepository, ToolDefinitionRepository>();
         services.AddHostedService<DatabaseInitializationHostedService>();
         services.AddHostedService<AgentRunWorker>();

@@ -1,6 +1,6 @@
 # BestAgent MVP 实现进度
 
-更新日期：2026-05-29
+更新日期：2026-05-31
 
 ## 1. 当前状态
 
@@ -16,7 +16,9 @@
 - `AgentRun` Step 级事件流与 SSE 推送接口
 - OpenAI 兼容模型网关抽象与实现
 - `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook 和本地 handler 兼容回退）
-- 基础单元测试与控制器测试
+- 最小审批流闭环（`WaitingApproval` + `approve/reject`）
+- 审批专用持久化与 run 级审批查询接口
+- 基础单元测试、控制器测试与部分集成 / 基础设施测试
 
 当前实现目标仍然是验证主链路和数据模型的 MVP，不是完整平台版本。
 
@@ -55,6 +57,7 @@
 - `POST /agent-runs/{runId}/steps/{stepId}:reject`
 - `GET /agent-runs/{runId}`
 - `GET /agent-runs/{runId}/steps`
+- `GET /agent-runs/{runId}/approvals`
 - `GET /agent-runs/{runId}/stream`
 
 `AgentDefinition` 接口：
@@ -98,6 +101,7 @@
 - `RejectAgentRunStepCommand`
 - `GetAgentRunByIdQuery`
 - `GetAgentRunStepsQuery`
+- `GetAgentRunApprovalsQuery`
 - `CreateAgentDefinitionCommand`
 - `CreateAgentDefinitionVersionCommand`
 - `ActivateAgentDefinitionVersionCommand`
@@ -124,12 +128,13 @@
 2. 创建 `AgentRun`
 3. 写入 `created`、`running` 步骤
 4. 将 `CreateAgentRunMessage` 入队到 `AgentRunChannel`
-5. 由后台 `AgentRunWorker` 消费消息并委托 `AgentRunLoop.ExecuteAsync` 进入循环（最多 `MaxTurns` 轮）：
+5. 由后台 `AgentRunWorker` 消费消息并委托 `AgentRunLoop.ExecuteAsync` 进入循环（单次 loop 调用内最多 `MaxTurns` 轮）：
    - 通过 `IModelGateway` 调用模型
    - 写入 `model_call` 步骤
    - 若模型返回 `respond`，返回 `AgentLoopCompleted`
    - 若模型返回 `tool_call`，先校验权限，再按 `ToolDefinition.SideEffectLevel` 判断是否需要审批
    - 若命中高风险工具，写入带审批 payload 的 Pending `tool_call` 步骤，并返回 `AgentLoopWaitingApproval`
+   - 同时由 Worker 在 `ApplyLoopResult` 中落一条独立 `AgentApproval`
    - 若无需审批，则通过 `IToolExecutor` 执行工具
    - 若工具返回 `IsPending=true`，写入 Pending 步骤，返回 `AgentLoopSuspended`
    - 若工具同步完成，写入 `tool_call` 步骤，继续循环
@@ -149,29 +154,33 @@
 1. 加载 `AgentRun`，验证 `Status == WaitingApproval`
 2. 校验最后一个 Pending step 与 `stepId` 匹配，且审批 payload `Decision == Pending`
 3. 将 Run 状态先切回 `Running`
-4. 将 `ApproveAgentRunStepMessage` 入队到 `AgentRunChannel`
-5. 由后台 `AgentRunWorker` 真正执行工具、更新审批 payload 为 `Approved`、完成步骤并继续循环
+4. 解析审批人信息：优先使用服务端认证上下文（`HttpContext.User`），无认证用户时兼容回退到请求体字段
+5. 将 `ApproveAgentRunStepMessage` 入队到 `AgentRunChannel`
+6. 由后台 `AgentRunWorker` 真正执行工具、更新审批 payload 为 `Approved`、更新独立 `AgentApproval` 审计字段并继续循环
 
 `RejectAgentRunStepCommandHandler` 审批拒绝链路：
 
 1. 加载 `AgentRun`，验证 `Status == WaitingApproval`
 2. 校验最后一个 Pending step 与 `stepId` 匹配，且审批 payload `Decision == Pending`
 3. 将 Run 状态先切回 `Running`
-4. 将 `RejectAgentRunStepMessage` 入队到 `AgentRunChannel`
-5. 由后台 `AgentRunWorker` 更新审批 payload 为 `Rejected`、将 Pending step 标记为失败并终止 Run
+4. 解析审批人信息：优先使用服务端认证上下文（`HttpContext.User`），无认证用户时兼容回退到请求体字段
+5. 将 `RejectAgentRunStepMessage` 入队到 `AgentRunChannel`
+6. 由后台 `AgentRunWorker` 更新审批 payload 为 `Rejected`、更新独立 `AgentApproval` 审计字段、将 Pending step 标记为失败并终止 Run
 
 当前架构特点：
 
 - 无 Service 层，Handler 直接编排基础设施接口
 - 循环逻辑提取为 `AgentRunLoop` 静态方法类，Create 和 Resume 共享
 - `StepDecision` 为模型输出的结构化解析结果，支持 `respond` 和 `tool_call` 两种动作
-- 支持多轮 tool call 循环（受 `MaxTurns` 限制）
+- 支持多轮 tool call 循环（单次进入 `AgentRunLoop` 时受 `MaxTurns` 限制）
 - 支持异步工具：工具返回 `IsPending=true` 时 Run 挂起，通过 resume 接口恢复
 - 支持高风险工具审批：命中 `ToolDefinition.SideEffectLevel` 写操作等级时，Run 会切换到 `WaitingApproval`
 - 审批支持 approve / reject 两条恢复路径：approve 会继续执行工具并恢复 loop，reject 会终止 Run
-- 审批上下文与结果当前通过 `AgentStep.DecisionPayload` 存储，但对外 steps 查询已投影为 typed `Approval` DTO
+- 审批信息同时保留在 `AgentStep.DecisionPayload`（兼容/运行时快照）与独立 `AgentApproval` 持久化记录中
+- `GetAgentRunSteps` 现优先从 `AgentApproval` 投影审批信息，旧数据仍可 fallback 到 `DecisionPayload`
 - `StatusVersion` 作为 EF Core 并发令牌，防止并发 resume / approval 冲突
 - `AgentRunEventBus` 按 run 分发事件，SSE endpoint 订阅对应事件流
+- 当前 `resume` / `approve` 重新进入 `AgentRunLoop` 时从新的 loop 调用开始，因此 `MaxTurns` 目前更接近“单次 loop 进入”的上限，而不是整个 run 生命周期累计上限
 
 当前工具执行语义：
 
@@ -187,11 +196,11 @@
 
 当前实现约束：
 
-- 已落地最小审批流，但尚未实现更完整的人机协同、人工接管、handoff
+- 已落地最小审批流，并补齐了独立审批持久化与 run 级审批查询
 - 未实现记忆、检索和多 Agent 编排
 - 工具执行已不是单纯依赖本地注册表，但内置工具与 webhook 工具仍是并行模型，尚未抽象为统一 execution kind
 - `WaitingTool` / `WaitingApproval` 当前都依赖单步骤挂起语义，尚未演进为更通用的系统级挂起模型
-- 审批身份鉴权、审批专用持久化实体（`AgentApproval`）与审批审计链路尚未接入主路径
+- 审批身份来源已支持从认证上下文解析，但仓库尚未正式接入完整认证鉴权中间件、权限策略与审批授权规则
 
 ### 3.3 领域模型
 
@@ -201,7 +210,13 @@
 - `AgentDefinitionVersion`
 - `AgentRun`
 - `AgentStep`
+- `AgentApproval`
 - `ToolDefinition`
+
+当前审批模型状态：
+
+- `AgentApproval` 已接入主路径，用于独立存储审批请求、审批人、审批结论与审计时间
+- `AgentStep.DecisionPayload` 仍保留，用于运行时兼容和旧数据 fallback
 
 统一审计基类：
 
@@ -219,8 +234,9 @@
 
 当前规则：
 
-- 审计字段由应用层手工赋值
-- 默认操作者为 `system`
+- 审计字段仍主要由应用层手工赋值
+- 默认操作者仍可回退为 `system`
+- 审批操作在存在认证上下文时，会优先记录认证用户身份到 `AgentApproval`
 - Repository 查询默认过滤 `deleted = false`
 - 已提供 `ToolDefinition` 删除接口
 
@@ -236,16 +252,19 @@
 - `AgentDefinitionVersions`
 - `AgentRuns`
 - `AgentSteps`
+- `AgentApprovals`
 - `ToolDefinitions`
 
 当前持久化特点：
 
 - 使用 `Npgsql` 连接 PostgreSQL
 - 通过 `ApplyConfigurationsFromAssembly` 应用实体配置
+- 已新增 `AgentApprovalConfiguration` 与 `AgentApprovalRepository`
+- `AgentApproval` 已映射到 `agent_approval` 表，支持按 `run_id` / `step_id` 查询
 - 启动时由 `DatabaseInitializationHostedService` 调用 `EnsureCreatedAsync`
-- 空库时自动 seed 一个 `default-agent`
+- 空库时自动 seed 一个 `default-agent`，并额外 seed 默认工具定义（当前至少包括 `echo_context`、`async_task`）
 - `ToolDefinition` 当前已持久化 `EndpointUrl`、`HttpMethod`、`AuthHeaders` 等 webhook 配置字段
-- `table.sql` 已与当前 `ToolDefinition` 结构对齐，补齐 webhook 相关列定义
+- `table.sql` 已与当前 `ToolDefinition` 和 `AgentApproval` 结构对齐
 
 当前仓库里尚未看到 EF Core Migration 文件，数据库初始化策略以 `EnsureCreated` 为主，而不是 migration 驱动。
 
@@ -311,9 +330,9 @@
 
 - `BestAgent.Api.Tests`
 
-当前仓库可见测试文件共 `15` 个，`[Fact]` 测试用例共 `58` 个：
+当前仓库可见测试文件共 `21` 个，`[Fact]` 测试用例共 `76` 个：
 
-- `AgentRunsControllerTests` 中 `5` 个
+- `AgentRunsControllerTests` 中 `7` 个
 - `AgentDefinitionsControllerTests` 中 `8` 个
 - `ToolDefinitionsControllerTests` 中 `6` 个
 - `CreateAgentRunCommandHandlerTests` 中 `2` 个
@@ -324,18 +343,25 @@
 - `AgentDefinitionCommandHandlerTests` 中 `4` 个
 - `ToolDefinitionCommandHandlerTests` 中 `6` 个
 - `AgentRunLoopTests` 中 `3` 个
-- `AgentRunWorkerTests` 中 `4` 个
+- `AgentRunWorkerTests` 中 `6` 个
 - `AgentRunWaitingResumeIntegrationTests` 中 `2` 个
+- `GetAgentRunApprovalsQueryHandlerTests` 中 `1` 个
 - `ToolExecutorTests` 中 `7` 个
 - `HttpToolInvokerTests` 中 `6` 个
+- `GlobalExceptionHandlerTests` 中 `5` 个
+- `ProgramCompositionTests` 中 `1` 个
+- `DatabaseInitializationHostedServiceTests` 中 `2` 个
+- `AgentApprovalRepositoryTests` 中 `1` 个
 
 当前覆盖重点包括：
 
 - `AgentRun` 创建接口映射
 - `GetAgentRunById` 查询返回
 - `GetAgentRunSteps` 查询返回（包含 typed `Approval` DTO）
+- `GetAgentRunApprovals` 独立审批查询返回
 - `GET /agent-runs/{runId}/stream` 的 SSE 输出行为
 - `CreateAgentRunCommandHandler` 创建与入队
+- `CreateAgentRun` 创建后由后台 Worker 执行并完成 run 的集成链路
 - `ResumeAgentRunCommandHandler` 恢复与状态校验
 - `ApproveAgentRunStepCommandHandler` 审批通过与状态校验
 - `RejectAgentRunStepCommandHandler` 审批拒绝与状态校验
@@ -344,14 +370,16 @@
 - `ToolDefinition` 控制器映射与 CRUD 命令分发
 - `ToolDefinition` 创建、更新、删除等 handler 逻辑
 - `AgentRunLoop` 运行时分支行为（同步工具、异步工具、审批等待）
-- `AgentRunWorker` 后台消费执行行为（resume、approve、reject）
+- `AgentRunWorker` 后台消费执行行为（resume、approve、reject、审批记录创建与更新）
 - `ToolExecutor` 的 DB-first 工具调度行为（webhook 优先、本地 handler 回退、禁用拦截、缺失定义/配置错误）
 - `HttpToolInvoker` 的 HTTP 调用与响应处理
-- 异步工具等待 / 恢复集成链路
 - 审批等待 / approve / reject 集成链路
-- 外部模型联调用例骨架
+- `AgentApprovalRepository` 的增查改行为
+- `GlobalExceptionHandler` 的异常映射与 500 错误 detail 暴露策略
+- `Program.cs` 关键服务注册与 hosted service 组合
+- `DatabaseInitializationHostedService` 的 `EnsureCreated` + 默认 seed 行为
 
-截至当前代码状态，测试覆盖已经不再局限于 `AgentRun` 主链路，`AgentDefinition`、`ToolDefinition`、运行时与工具执行相关能力也已有较完整的单元测试与部分集成测试覆盖。
+截至当前代码状态，测试覆盖已经不再局限于 `AgentRun` 主链路，`AgentDefinition`、`ToolDefinition`、运行时、工具执行、审批持久化以及启动 / 基础设施相关能力也已有较完整的单元测试与部分集成测试覆盖。
 
 ## 4. 当前配置与启动方式
 
@@ -385,11 +413,12 @@ dotnet run --project BestAgent.Api
 - 更完整的人机协同（`WaitingHuman`、人工接管、人工替换结果）
 - 记忆、检索与长期知识库
 - Outbox 事件落库与投递
-- 鉴权、租户隔离与后台管理界面
+- 正式认证鉴权中间件、租户隔离与后台管理界面
+- 审批授权规则（谁有资格审批什么）、审批策略与更严格的服务端权限校验
 - 本地工具与 HTTP 工具的统一执行类型抽象，以及更彻底地去除对 `ToolRegistry` 兼容回退的依赖
 - 工具定义从“HTTP webhook 配置模型”继续演进为更通用的工具执行定义（支持明确的 executor type / binding / resolution）
-- 审批身份鉴权、审批专用持久化实体（如 `AgentApproval`）、审批历史与审计查询
 - 事件持久化、跨实例分发与更完整的流式观测能力
+- 跨 `WaitingTool` / `WaitingApproval` 恢复场景的 run 级累计 `MaxTurns` 控制
 
 ## 6. 当前异步执行架构
 
@@ -413,6 +442,7 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 | SSE 推送粒度 | Step 级别事件 | 每个关键 step 完成时推一个 event |
 | 事件通道 | 进程内 per-run 订阅通道 | SSE endpoint 订阅对应 run 的 channel |
 | WaitingTool 恢复方式 | HTTP resume + 后台继续执行 | 当前仍对外暴露 resume 接口 |
+| WaitingApproval 审计 | `AgentApproval` + `DecisionPayload` 双轨 | 独立持久化 + 运行时兼容 |
 
 ### 6.3 关键组件
 
@@ -425,13 +455,11 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 
 推荐按下面顺序继续推进：
 
-1. 将 `CreateAgentRunCommandHandlerIntegrationTests` 从骨架补成真正可执行的集成测试，或明确其保留目的
-2. 补充 `Program.cs`、全局异常处理、数据库初始化等启动 / 基础设施相关测试
-3. 为本地工具与 HTTP 工具补统一 execution kind / resolver 抽象，进一步收敛 `ToolRegistry` 兼容路径
-4. 将 `ToolDefinition` 从当前偏 webhook 的配置模型，演进为更通用的工具执行定义
-5. 审批流补齐身份鉴权、审批专用持久化与审计查询
-6. 多 Agent / Router / handoff
-7. 事件持久化与跨实例分发
+1. 为本地工具与 HTTP 工具补统一 execution kind / resolver 抽象，进一步收敛 `ToolRegistry` 兼容路径
+2. 将 `ToolDefinition` 从当前偏 webhook 的配置模型，演进为更通用的工具执行定义
+3. 将当前“从认证上下文取审批人身份”的兼容实现，升级为正式认证鉴权与审批授权规则
+4. 多 Agent / Router / handoff
+5. 事件持久化与跨实例分发
 
 ## 8. 关键文件索引
 
@@ -444,9 +472,13 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 - `BestAgent.Application/DependencyInjection.cs`
 - `BestAgent.Application/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandler.cs`
 - `BestAgent.Application/AgentRuns/Commands/ResumeAgentRun/ResumeAgentRunCommandHandler.cs`
+- `BestAgent.Application/AgentRuns/Commands/ApproveAgentRunStep/ApproveAgentRunStepCommandHandler.cs`
+- `BestAgent.Application/AgentRuns/Commands/RejectAgentRunStep/RejectAgentRunStepCommandHandler.cs`
 - `BestAgent.Application/AgentRuns/Runtime/AgentRunChannel.cs`
 - `BestAgent.Application/AgentRuns/Runtime/AgentRunEventBus.cs`
 - `BestAgent.Application/AgentRuns/Runtime/AgentRunLoop.cs`
+- `BestAgent.Application/AgentRuns/Queries/GetAgentRunSteps/GetAgentRunStepsQueryHandler.cs`
+- `BestAgent.Application/AgentRuns/Queries/GetAgentRunApprovals/GetAgentRunApprovalsQueryHandler.cs`
 - `BestAgent.Application/AgentDefinitions/Commands/CreateAgentDefinition/CreateAgentDefinitionCommandHandler.cs`
 - `BestAgent.Application/AgentDefinitions/Commands/CreateAgentDefinitionVersion/CreateAgentDefinitionVersionCommandHandler.cs`
 - `BestAgent.Application/AgentDefinitions/Commands/ActivateAgentDefinitionVersion/ActivateAgentDefinitionVersionCommandHandler.cs`
@@ -457,6 +489,8 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 - `BestAgent.Infrastructure/DependencyInjection.cs`
 - `BestAgent.Infrastructure/Runtime/AgentRunWorker.cs`
 - `BestAgent.Infrastructure/Persistence/BestAgentDbContext.cs`
+- `BestAgent.Infrastructure/Persistence/Configurations/AgentApprovalConfiguration.cs`
+- `BestAgent.Infrastructure/Persistence/Repositories/AgentApprovalRepository.cs`
 - `BestAgent.Infrastructure/Persistence/Seeding/DatabaseInitializationHostedService.cs`
 - `BestAgent.Infrastructure/Tools/ToolExecutor.cs`
 - `BestAgent.Infrastructure/Tools/ToolRegistry.cs`
@@ -471,10 +505,17 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 - `BestAgent.Api.Tests/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandlerTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Commands/CreateAgentRun/CreateAgentRunCommandHandlerIntegrationTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Commands/ResumeAgentRun/ResumeAgentRunCommandHandlerTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Commands/ApproveAgentRunStep/ApproveAgentRunStepCommandHandlerTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Commands/RejectAgentRunStep/RejectAgentRunStepCommandHandlerTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Runtime/AgentRunLoopTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Runtime/AgentRunWorkerTests.cs`
 - `BestAgent.Api.Tests/AgentRuns/Integration/AgentRunWaitingResumeIntegrationTests.cs`
+- `BestAgent.Api.Tests/AgentRuns/Queries/GetAgentRunApprovals/GetAgentRunApprovalsQueryHandlerTests.cs`
 - `BestAgent.Api.Tests/AgentDefinitions/Commands/AgentDefinitionCommandHandlerTests.cs`
 - `BestAgent.Api.Tests/Tools/Commands/ToolDefinitionCommandHandlerTests.cs`
 - `BestAgent.Api.Tests/Tools/ToolExecutorTests.cs`
 - `BestAgent.Api.Tests/Tools/HttpToolInvokerTests.cs`
+- `BestAgent.Api.Tests/Infrastructure/AgentApprovalRepositoryTests.cs`
+- `BestAgent.Api.Tests/Infrastructure/GlobalExceptionHandlerTests.cs`
+- `BestAgent.Api.Tests/Infrastructure/ProgramCompositionTests.cs`
+- `BestAgent.Api.Tests/Infrastructure/DatabaseInitializationHostedServiceTests.cs`

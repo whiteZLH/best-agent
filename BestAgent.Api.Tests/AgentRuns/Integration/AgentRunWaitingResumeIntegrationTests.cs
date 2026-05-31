@@ -3,6 +3,7 @@ using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Commands.RejectAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunApprovals;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Runtime;
@@ -31,6 +32,7 @@ public class AgentRunWaitingResumeIntegrationTests
         var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
         var agentRunRepo = new InMemoryAgentRunRepository();
         var agentStepRepo = new InMemoryAgentStepRepository();
+        var agentApprovalRepo = new InMemoryAgentApprovalRepository();
         var eventBus = new RecordingEventBus();
         var channel = new AgentRunChannel();
         var resolvedDefinition = CreateResolvedDefinition();
@@ -66,6 +68,7 @@ public class AgentRunWaitingResumeIntegrationTests
         services.AddSingleton<IAgentDefinitionRepository>(agentDefinitionRepo);
         services.AddSingleton<IAgentRunRepository>(agentRunRepo);
         services.AddSingleton<IAgentStepRepository>(agentStepRepo);
+        services.AddSingleton<IAgentApprovalRepository>(agentApprovalRepo);
         services.AddSingleton<IModelGateway>(modelGateway);
         services.AddSingleton<IToolExecutor>(toolExecutor);
         services.AddSingleton<IToolDefinitionRepository>(toolDefinitionRepository);
@@ -98,7 +101,12 @@ public class AgentRunWaitingResumeIntegrationTests
         Assert.Equal("weather", pendingStep.Approval.ToolName);
         Assert.Equal("Pending", pendingStep.Approval.Decision);
 
-        var approveResult = await mediator.Send(new ApproveAgentRunStepCommand(createResult.RunId, pendingStep.StepId), cts.Token);
+        var waitingApprovals = await mediator.Send(new GetAgentRunApprovalsQuery(createResult.RunId), cts.Token);
+        var waitingApproval = Assert.Single(waitingApprovals);
+        Assert.Equal("Pending", waitingApproval.Decision);
+        Assert.Equal(pendingStep.StepId, waitingApproval.StepId);
+
+        var approveResult = await mediator.Send(new ApproveAgentRunStepCommand(createResult.RunId, pendingStep.StepId, "u-1", "Alice", "admin", "Looks good"), cts.Token);
         Assert.Equal("Running", approveResult.Status);
 
         var completedRun = await WaitForRunStatusAsync(agentRunRepo, createResult.RunId, "Completed");
@@ -110,8 +118,20 @@ public class AgentRunWaitingResumeIntegrationTests
         Assert.Equal("The weather is sunny.", completedSnapshot.Output);
 
         var completedSteps = await mediator.Send(new GetAgentRunStepsQuery(createResult.RunId), cts.Token);
-        Assert.Contains(completedSteps, step => step.StepType == "tool_call" && step.Status == "Completed" && step.Output == "sunny" && step.Approval != null && step.Approval.Decision == "Approved");
+        Assert.Contains(completedSteps, step =>
+            step.StepType == "tool_call" &&
+            step.Status == "Completed" &&
+            step.Output == "sunny" &&
+            step.Approval != null &&
+            step.Approval.Decision == "Approved" &&
+            step.Approval.ApproverName == "Alice");
         Assert.Contains(completedSteps, step => step.StepType == "model_call" && step.Status == "Completed" && step.Output == "{\"action\":\"respond\",\"response\":\"The weather is sunny.\"}");
+
+        var completedApprovals = await mediator.Send(new GetAgentRunApprovalsQuery(createResult.RunId), cts.Token);
+        var completedApproval = Assert.Single(completedApprovals);
+        Assert.Equal("Approved", completedApproval.Decision);
+        Assert.Equal("Alice", completedApproval.ApproverName);
+        Assert.Equal("Looks good", completedApproval.Comment);
 
         Assert.Contains(eventBus.Events, evt => evt.EventType == "waiting_approval" && evt.Data.Status == "Pending");
         Assert.Contains(eventBus.Events, evt => evt.EventType == "done" && evt.Data.Output == "The weather is sunny.");
@@ -129,6 +149,7 @@ public class AgentRunWaitingResumeIntegrationTests
         var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
         var agentRunRepo = new InMemoryAgentRunRepository();
         var agentStepRepo = new InMemoryAgentStepRepository();
+        var agentApprovalRepo = new InMemoryAgentApprovalRepository();
         var eventBus = new RecordingEventBus();
         var channel = new AgentRunChannel();
         var resolvedDefinition = CreateResolvedDefinition();
@@ -155,6 +176,7 @@ public class AgentRunWaitingResumeIntegrationTests
         services.AddSingleton<IAgentDefinitionRepository>(agentDefinitionRepo);
         services.AddSingleton<IAgentRunRepository>(agentRunRepo);
         services.AddSingleton<IAgentStepRepository>(agentStepRepo);
+        services.AddSingleton<IAgentApprovalRepository>(agentApprovalRepo);
         services.AddSingleton<IModelGateway>(modelGateway);
         services.AddSingleton<IToolExecutor>(toolExecutor);
         services.AddSingleton<IToolDefinitionRepository>(toolDefinitionRepository);
@@ -177,14 +199,27 @@ public class AgentRunWaitingResumeIntegrationTests
         var waitingSteps = await mediator.Send(new GetAgentRunStepsQuery(createResult.RunId), cts.Token);
         var pendingStep = Assert.Single(waitingSteps, step => step.StepType == "tool_call" && step.Status == "Pending");
 
-        var rejectResult = await mediator.Send(new RejectAgentRunStepCommand(createResult.RunId, pendingStep.StepId, "Denied"), cts.Token);
+        var rejectResult = await mediator.Send(new RejectAgentRunStepCommand(createResult.RunId, pendingStep.StepId, "Denied", "u-1", "Alice", "admin"), cts.Token);
         Assert.Equal("Running", rejectResult.Status);
 
         var failedRun = await WaitForRunStatusAsync(agentRunRepo, createResult.RunId, "Failed");
         Assert.Equal("Denied", failedRun.InterruptReason);
 
         var failedSteps = await mediator.Send(new GetAgentRunStepsQuery(createResult.RunId), cts.Token);
-        Assert.Contains(failedSteps, step => step.StepType == "tool_call" && step.Status == "Failed" && step.Approval != null && step.Approval.Decision == "Rejected" && step.Approval.Comment == "Denied");
+        Assert.Contains(failedSteps, step =>
+            step.StepType == "tool_call" &&
+            step.Status == "Failed" &&
+            step.Approval != null &&
+            step.Approval.Decision == "Rejected" &&
+            step.Approval.Comment == "Denied" &&
+            step.Approval.ApproverName == "Alice");
+
+        var failedApprovals = await mediator.Send(new GetAgentRunApprovalsQuery(createResult.RunId), cts.Token);
+        var failedApproval = Assert.Single(failedApprovals);
+        Assert.Equal("Rejected", failedApproval.Decision);
+        Assert.Equal("Denied", failedApproval.Comment);
+        Assert.Equal("Alice", failedApproval.ApproverName);
+
         await toolExecutor.DidNotReceive().ExecuteAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>());
 
         Assert.Contains(eventBus.Events, evt => evt.EventType == "approval_rejected");
@@ -193,7 +228,6 @@ public class AgentRunWaitingResumeIntegrationTests
         cts.Cancel();
         await worker.StopAsync(CancellationToken.None);
     }
-
 
     private static async Task<AgentRun> WaitForRunStatusAsync(InMemoryAgentRunRepository repository, string runId, string expectedStatus)
     {
@@ -330,6 +364,55 @@ public class AgentRunWaitingResumeIntegrationTests
                 if (index >= 0)
                 {
                     _steps[index] = agentStep;
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class InMemoryAgentApprovalRepository : IAgentApprovalRepository
+    {
+        private readonly List<AgentApproval> _approvals = [];
+        private readonly object _lock = new();
+
+        public Task AddAsync(AgentApproval agentApproval, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                _approvals.Add(agentApproval);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<AgentApproval?> GetByRunIdAndStepIdAsync(string runId, string stepId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult(_approvals.FirstOrDefault(x => x.RunId == runId && x.StepId == stepId && !x.Deleted));
+            }
+        }
+
+        public Task<IReadOnlyList<AgentApproval>> ListByRunIdAsync(string runId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult((IReadOnlyList<AgentApproval>)_approvals
+                    .Where(x => x.RunId == runId && !x.Deleted)
+                    .OrderBy(x => x.CreateTime)
+                    .ToList());
+            }
+        }
+
+        public Task UpdateAsync(AgentApproval agentApproval, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                var index = _approvals.FindIndex(x => x.ApprovalId == agentApproval.ApprovalId);
+                if (index >= 0)
+                {
+                    _approvals[index] = agentApproval;
                 }
             }
 

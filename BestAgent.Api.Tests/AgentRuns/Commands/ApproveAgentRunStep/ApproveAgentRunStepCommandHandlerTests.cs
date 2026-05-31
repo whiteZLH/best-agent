@@ -61,7 +61,7 @@ public class ApproveAgentRunStepCommandHandlerTests
         _agentRunRepo.GetByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(run);
         _agentStepRepo.GetLastByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(pendingStep);
 
-        var result = await _mediator.Send(new ApproveAgentRunStepCommand("run-1", pendingStep.StepId));
+        var result = await _mediator.Send(new ApproveAgentRunStepCommand("run-1", pendingStep.StepId, "u-1", "Alice", "admin", "Looks good"));
 
         Assert.Equal("Running", result.Status);
         Assert.Equal("run-1", result.RunId);
@@ -74,7 +74,11 @@ public class ApproveAgentRunStepCommandHandlerTests
         await _agentRunChannel.Received(1).EnqueueAsync(
             Arg.Is<ApproveAgentRunStepMessage>(msg =>
                 msg.RunId == "run-1" &&
-                msg.StepId == pendingStep.StepId),
+                msg.StepId == pendingStep.StepId &&
+                msg.ApproverId == "u-1" &&
+                msg.ApproverName == "Alice" &&
+                msg.ApproverRole == "admin" &&
+                msg.Comment == "Looks good"),
             Arg.Any<CancellationToken>());
     }
 
@@ -96,7 +100,7 @@ public class ApproveAgentRunStepCommandHandlerTests
         _agentRunRepo.GetByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(run);
 
         var ex = await Assert.ThrowsAsync<Application.Exceptions.ConflictException>(() =>
-            _mediator.Send(new ApproveAgentRunStepCommand("run-1", "step-1")));
+            _mediator.Send(new ApproveAgentRunStepCommand("run-1", "step-1", null, null, null, null)));
 
         Assert.Contains("expected 'WaitingApproval'", ex.Message);
     }
@@ -121,7 +125,7 @@ public class ApproveAgentRunStepCommandHandlerTests
         _agentStepRepo.GetLastByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(pendingStep);
 
         var ex = await Assert.ThrowsAsync<Application.Exceptions.ConflictException>(() =>
-            _mediator.Send(new ApproveAgentRunStepCommand("run-1", pendingStep.StepId)));
+            _mediator.Send(new ApproveAgentRunStepCommand("run-1", pendingStep.StepId, null, null, null, null)));
 
         Assert.Contains("not waiting for approval", ex.Message);
     }

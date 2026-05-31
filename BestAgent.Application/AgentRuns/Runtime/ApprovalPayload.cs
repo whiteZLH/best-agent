@@ -70,11 +70,12 @@ public static class ApprovalPayloadSerializer
         return JsonSerializer.Serialize(payload);
     }
 
-    public static ApprovalPayload MarkApproved(ApprovalPayload payload)
+    public static ApprovalPayload MarkApproved(ApprovalPayload payload, string? comment = null)
     {
         return payload with
         {
             Decision = ApprovalDecisions.Approved,
+            Comment = string.IsNullOrWhiteSpace(comment) ? payload.Comment : comment,
             DecidedAt = DateTime.UtcNow
         };
     }

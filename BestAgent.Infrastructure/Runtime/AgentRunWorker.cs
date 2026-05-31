@@ -60,10 +60,24 @@ public class AgentRunWorker : BackgroundService
                     await HandleResumeAsync(resume.RunId, resume.WaitToken, resume.ToolResult, stoppingToken);
                     break;
                 case ApproveAgentRunStepMessage approve:
-                    await HandleApproveAsync(approve.RunId, approve.StepId, stoppingToken);
+                    await HandleApproveAsync(
+                        approve.RunId,
+                        approve.StepId,
+                        approve.ApproverId,
+                        approve.ApproverName,
+                        approve.ApproverRole,
+                        approve.Comment,
+                        stoppingToken);
                     break;
                 case RejectAgentRunStepMessage reject:
-                    await HandleRejectAsync(reject.RunId, reject.StepId, reject.Comment, stoppingToken);
+                    await HandleRejectAsync(
+                        reject.RunId,
+                        reject.StepId,
+                        reject.Comment,
+                        reject.ApproverId,
+                        reject.ApproverName,
+                        reject.ApproverRole,
+                        stoppingToken);
                     break;
             }
         }
@@ -97,6 +111,7 @@ public class AgentRunWorker : BackgroundService
         var toolExecutor = scope.ServiceProvider.GetRequiredService<IToolExecutor>();
         var modelGateway = scope.ServiceProvider.GetRequiredService<IModelGateway>();
         var toolDefinitionRepository = scope.ServiceProvider.GetRequiredService<IToolDefinitionRepository>();
+        var agentApprovalRepository = scope.ServiceProvider.GetRequiredService<IAgentApprovalRepository>();
 
         var agentRun = await agentRunRepo.GetByRunIdAsync(runId, stoppingToken);
         if (agentRun is null) return;
@@ -116,7 +131,7 @@ public class AgentRunWorker : BackgroundService
             stoppingToken,
             evt => _eventBus.Publish(evt));
 
-        await ApplyLoopResult(agentRunRepo, agentRun, loopResult);
+        await ApplyLoopResult(agentRunRepo, agentApprovalRepository, agentRun, loopResult);
     }
 
     private async Task HandleResumeAsync(string runId, string waitToken, string toolResult, CancellationToken stoppingToken)
@@ -129,6 +144,7 @@ public class AgentRunWorker : BackgroundService
         var toolExecutor = scope.ServiceProvider.GetRequiredService<IToolExecutor>();
         var modelGateway = scope.ServiceProvider.GetRequiredService<IModelGateway>();
         var toolDefinitionRepository = scope.ServiceProvider.GetRequiredService<IToolDefinitionRepository>();
+        var agentApprovalRepository = scope.ServiceProvider.GetRequiredService<IAgentApprovalRepository>();
 
         var agentRun = await agentRunRepo.GetByRunIdAsync(runId, stoppingToken);
         if (agentRun is null) return;
@@ -167,10 +183,17 @@ public class AgentRunWorker : BackgroundService
             stoppingToken,
             evt => _eventBus.Publish(evt));
 
-        await ApplyLoopResult(agentRunRepo, agentRun, loopResult);
+        await ApplyLoopResult(agentRunRepo, agentApprovalRepository, agentRun, loopResult);
     }
 
-    private async Task HandleApproveAsync(string runId, string stepId, CancellationToken stoppingToken)
+    private async Task HandleApproveAsync(
+        string runId,
+        string stepId,
+        string? approverId,
+        string? approverName,
+        string? approverRole,
+        string? comment,
+        CancellationToken stoppingToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var agentRunRepo = scope.ServiceProvider.GetRequiredService<IAgentRunRepository>();
@@ -180,6 +203,7 @@ public class AgentRunWorker : BackgroundService
         var toolExecutor = scope.ServiceProvider.GetRequiredService<IToolExecutor>();
         var modelGateway = scope.ServiceProvider.GetRequiredService<IModelGateway>();
         var toolDefinitionRepository = scope.ServiceProvider.GetRequiredService<IToolDefinitionRepository>();
+        var agentApprovalRepository = scope.ServiceProvider.GetRequiredService<IAgentApprovalRepository>();
 
         var agentRun = await agentRunRepo.GetByRunIdAsync(runId, stoppingToken);
         if (agentRun is null) return;
@@ -207,7 +231,24 @@ public class AgentRunWorker : BackgroundService
             stoppingToken);
         var toolEndedAt = DateTime.UtcNow;
 
-        var approvedPayload = ApprovalPayloadSerializer.MarkApproved(approvalContext);
+        var approvedPayload = ApprovalPayloadSerializer.MarkApproved(approvalContext, comment);
+        var approvalRecord = await agentApprovalRepository.GetByRunIdAndStepIdAsync(runId, stepId, stoppingToken);
+        if (approvalRecord is not null)
+        {
+            approvalRecord = approvalRecord with
+            {
+                Decision = ApprovalDecisions.Approved,
+                ApproverId = approverId?.Trim() ?? string.Empty,
+                ApproverName = approverName?.Trim() ?? string.Empty,
+                ApproverRole = approverRole?.Trim() ?? string.Empty,
+                Comment = comment?.Trim() ?? string.Empty,
+                DecidedAt = approvedPayload.DecidedAt,
+                LastModifier = approverId?.Trim() ?? "system",
+                LastModifierName = approverName?.Trim() ?? approverId?.Trim() ?? "system",
+                LastModifyTime = approvedPayload.DecidedAt ?? toolEndedAt
+            };
+            await agentApprovalRepository.UpdateAsync(approvalRecord, stoppingToken);
+        }
 
         if (toolResult.IsPending)
         {
@@ -255,14 +296,22 @@ public class AgentRunWorker : BackgroundService
             stoppingToken,
             evt => _eventBus.Publish(evt));
 
-        await ApplyLoopResult(agentRunRepo, agentRun, loopResult);
+        await ApplyLoopResult(agentRunRepo, agentApprovalRepository, agentRun, loopResult);
     }
 
-    private async Task HandleRejectAsync(string runId, string stepId, string? comment, CancellationToken stoppingToken)
+    private async Task HandleRejectAsync(
+        string runId,
+        string stepId,
+        string? comment,
+        string? approverId,
+        string? approverName,
+        string? approverRole,
+        CancellationToken stoppingToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var agentRunRepo = scope.ServiceProvider.GetRequiredService<IAgentRunRepository>();
         var agentStepRepo = scope.ServiceProvider.GetRequiredService<IAgentStepRepository>();
+        var agentApprovalRepository = scope.ServiceProvider.GetRequiredService<IAgentApprovalRepository>();
 
         var agentRun = await agentRunRepo.GetByRunIdAsync(runId, stoppingToken);
         if (agentRun is null) return;
@@ -277,6 +326,24 @@ public class AgentRunWorker : BackgroundService
         var rejectedPayload = ApprovalPayloadSerializer.MarkRejected(approvalPayload, comment);
         var rejectedAt = DateTime.UtcNow;
         var reason = string.IsNullOrWhiteSpace(comment) ? "Approval rejected." : comment.Trim();
+
+        var approvalRecord = await agentApprovalRepository.GetByRunIdAndStepIdAsync(runId, stepId, stoppingToken);
+        if (approvalRecord is not null)
+        {
+            approvalRecord = approvalRecord with
+            {
+                Decision = ApprovalDecisions.Rejected,
+                ApproverId = approverId?.Trim() ?? string.Empty,
+                ApproverName = approverName?.Trim() ?? string.Empty,
+                ApproverRole = approverRole?.Trim() ?? string.Empty,
+                Comment = reason,
+                DecidedAt = rejectedPayload.DecidedAt,
+                LastModifier = approverId?.Trim() ?? "system",
+                LastModifierName = approverName?.Trim() ?? approverId?.Trim() ?? "system",
+                LastModifyTime = rejectedPayload.DecidedAt ?? rejectedAt
+            };
+            await agentApprovalRepository.UpdateAsync(approvalRecord, stoppingToken);
+        }
 
         pendingStep = pendingStep with
         {
@@ -305,7 +372,11 @@ public class AgentRunWorker : BackgroundService
             new AgentRunEventData(pendingStep.StepNo, "tool_call", "Failed", Error: reason)));
     }
 
-    private async Task ApplyLoopResult(IAgentRunRepository agentRunRepo, AgentRun agentRun, AgentLoopResult loopResult)
+    private async Task ApplyLoopResult(
+        IAgentRunRepository agentRunRepo,
+        IAgentApprovalRepository agentApprovalRepository,
+        AgentRun agentRun,
+        AgentLoopResult loopResult)
     {
         switch (loopResult)
         {
@@ -341,6 +412,25 @@ public class AgentRunWorker : BackgroundService
 
             case AgentLoopWaitingApproval waitingApproval:
                 var approvalAt = DateTime.UtcNow;
+                var approval = new AgentApproval
+                {
+                    ApprovalId = Guid.NewGuid().ToString("N"),
+                    RunId = agentRun.RunId,
+                    StepId = waitingApproval.StepId,
+                    RequestedAction = waitingApproval.ToolName,
+                    RiskLevel = waitingApproval.SideEffectLevel,
+                    RequestPayload = waitingApproval.ToolInput,
+                    Decision = ApprovalDecisions.Pending,
+                    WaitToken = waitingApproval.WaitToken,
+                    Creator = "system",
+                    CreatorName = "system",
+                    LastModifier = "system",
+                    LastModifierName = "system",
+                    CreateTime = approvalAt,
+                    LastModifyTime = approvalAt
+                };
+                await agentApprovalRepository.AddAsync(approval, default);
+
                 agentRun = agentRun with
                 {
                     Status = "WaitingApproval",

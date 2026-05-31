@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
@@ -6,6 +7,7 @@ using BestAgent.Api.Mappings;
 using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
 using BestAgent.Application.AgentRuns.Commands.RejectAgentRunStep;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunApprovals;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Runtime;
@@ -107,7 +109,7 @@ public class AgentRunsControllerTests
                     "output",
                     null,
                     "plan",
-                    new ApprovalInfo("approval", "weather", "{}", "internal_write", "Pending", null, null),
+                    new ApprovalInfo("approval", "weather", "{}", "internal_write", "Pending", null, null, "approval-1", "u-1", "Alice", "admin"),
                     now,
                     now,
                     now,
@@ -131,7 +133,47 @@ public class AgentRunsControllerTests
         Assert.Equal("approval", step.Approval!.WaitType);
         Assert.Equal("weather", step.Approval.ToolName);
         Assert.Equal("Pending", step.Approval.Decision);
+        Assert.Equal("approval-1", step.Approval.ApprovalId);
+        Assert.Equal("Alice", step.Approval.ApproverName);
         Assert.Equal(1200, step.DurationMs);
+    }
+
+    [Fact]
+    public async Task GetApprovals()
+    {
+        var now = new DateTime(2026, 5, 26, 0, 0, 0, DateTimeKind.Utc);
+        var mediator = new FakeMediator((GetAgentRunApprovalsQuery query) =>
+            (IReadOnlyList<GetAgentRunApprovalsItem>)
+            [
+                new(
+                    "approval-1",
+                    query.RunId,
+                    "step-1",
+                    "weather",
+                    "internal_write",
+                    "{}",
+                    "Approved",
+                    "u-1",
+                    "admin",
+                    "Alice",
+                    "Looks good",
+                    "wait-1",
+                    null,
+                    now,
+                    now,
+                    now)
+            ]);
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
+
+        var actionResult = await controller.GetApprovals("run-001", CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var response = Assert.IsAssignableFrom<IReadOnlyList<GetAgentRunApprovalResponse>>(okResult.Value);
+        var approval = Assert.Single(response);
+        Assert.Equal("approval-1", approval.ApprovalId);
+        Assert.Equal("run-001", approval.RunId);
+        Assert.Equal("Approved", approval.Decision);
+        Assert.Equal("Alice", approval.ApproverName);
     }
 
     [Fact]
@@ -142,12 +184,19 @@ public class AgentRunsControllerTests
             Assert.Equal("run-001", command.RunId);
             Assert.Equal("step-001", command.StepId);
             Assert.Equal("Denied", command.Comment);
+            Assert.Equal("u-1", command.ApproverId);
+            Assert.Equal("Alice", command.ApproverName);
+            Assert.Equal("admin", command.ApproverRole);
 
             return new RejectAgentRunStepResult("run-001", "writer", "hello", null, "Failed");
         });
         var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
-        var actionResult = await controller.Reject("run-001", "step-001", new RejectAgentRunStepRequest("Denied"), CancellationToken.None);
+        var actionResult = await controller.Reject(
+            "run-001",
+            "step-001",
+            new RejectAgentRunStepRequest("Denied", "u-1", "Alice", "admin"),
+            CancellationToken.None);
 
         var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
         var response = Assert.IsType<RejectAgentRunStepResponse>(okResult.Value);
@@ -163,18 +212,58 @@ public class AgentRunsControllerTests
         {
             Assert.Equal("run-001", command.RunId);
             Assert.Equal("step-001", command.StepId);
+            Assert.Equal("u-1", command.ApproverId);
+            Assert.Equal("Alice", command.ApproverName);
+            Assert.Equal("admin", command.ApproverRole);
+            Assert.Equal("Looks good", command.Comment);
 
             return new ApproveAgentRunStepResult("run-001", "writer", "hello", null, "Running");
         });
         var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
-        var actionResult = await controller.Approve("run-001", "step-001", new ApproveAgentRunStepRequest(), CancellationToken.None);
+        var actionResult = await controller.Approve(
+            "run-001",
+            "step-001",
+            new ApproveAgentRunStepRequest("u-1", "Alice", "admin", "Looks good"),
+            CancellationToken.None);
 
         var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
         var response = Assert.IsType<ApproveAgentRunStepResponse>(okResult.Value);
         Assert.Equal("run-001", response.RunId);
         Assert.Equal("writer", response.AgentCode);
         Assert.Equal("Running", response.Status);
+    }
+
+    [Fact]
+    public async Task Approve_ShouldPreferAuthenticatedUserContextOverRequestBody()
+    {
+        var mediator = new FakeMediator((ApproveAgentRunStepCommand command) =>
+        {
+            Assert.Equal("claim-user", command.ApproverId);
+            Assert.Equal("Claim User", command.ApproverName);
+            Assert.Equal("reviewer", command.ApproverRole);
+            Assert.Equal("Looks good", command.Comment);
+
+            return new ApproveAgentRunStepResult("run-001", "writer", "hello", null, "Running");
+        });
+        var controller = new AgentRunsController(mediator, _mapper, new NullEventBus())
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal("claim-user", "Claim User", "reviewer")
+                }
+            }
+        };
+
+        var actionResult = await controller.Approve(
+            "run-001",
+            "step-001",
+            new ApproveAgentRunStepRequest("body-user", "Body User", "body-role", "Looks good"),
+            CancellationToken.None);
+
+        Assert.IsType<OkObjectResult>(actionResult.Result);
     }
 
     [Fact]
@@ -212,6 +301,18 @@ public class AgentRunsControllerTests
 
         Assert.Contains("event: step\ndata: {\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null}\n\n", body);
         Assert.Contains("event: done\ndata: {\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null}\n\n", body);
+    }
+
+    private static ClaimsPrincipal CreatePrincipal(string userId, string userName, string role)
+    {
+        return new ClaimsPrincipal(
+            new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Name, userName),
+                new Claim(ClaimTypes.Role, role)
+            ],
+            authenticationType: "TestAuth"));
     }
 
     private sealed class NullEventBus : IAgentRunEventBus
@@ -287,6 +388,13 @@ public class AgentRunsControllerTests
         public FakeMediator(Func<GetAgentRunStepsQuery, IReadOnlyList<GetAgentRunStepsItem>> handler)
         {
             _handler = request => request is GetAgentRunStepsQuery query
+                ? handler(query)
+                : throw new InvalidOperationException($"Unexpected request type: {request.GetType().Name}");
+        }
+
+        public FakeMediator(Func<GetAgentRunApprovalsQuery, IReadOnlyList<GetAgentRunApprovalsItem>> handler)
+        {
+            _handler = request => request is GetAgentRunApprovalsQuery query
                 ? handler(query)
                 : throw new InvalidOperationException($"Unexpected request type: {request.GetType().Name}");
         }

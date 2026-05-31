@@ -20,6 +20,8 @@ public class BestAgentDbContext : DbContext
 
     public DbSet<AgentStep> AgentSteps => Set<AgentStep>();
 
+    public DbSet<AgentApproval> AgentApprovals => Set<AgentApproval>();
+
     public DbSet<ToolDefinition> ToolDefinitions => Set<ToolDefinition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

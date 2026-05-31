@@ -75,7 +75,13 @@ public static class AgentRunLoop
                 };
 
                 await agentStepRepository.AddAsync(pendingStep, cancellationToken);
-                return new AgentLoopWaitingApproval(waitToken, nextStepNo, toolName, decision.ToolInput, toolDefinition.SideEffectLevel);
+                return new AgentLoopWaitingApproval(
+                    waitToken,
+                    nextStepNo,
+                    pendingStep.StepId,
+                    toolName,
+                    decision.ToolInput,
+                    toolDefinition.SideEffectLevel);
             }
 
             var toolStartedAt = DateTime.UtcNow;

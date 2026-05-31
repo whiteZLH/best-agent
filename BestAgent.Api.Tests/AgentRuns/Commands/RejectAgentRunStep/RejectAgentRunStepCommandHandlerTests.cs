@@ -52,14 +52,20 @@ public class RejectAgentRunStepCommandHandlerTests
         _agentRunRepo.GetByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(run);
         _agentStepRepo.GetLastByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(pendingStep);
 
-        var result = await _mediator.Send(new RejectAgentRunStepCommand("run-1", pendingStep.StepId, "Denied"));
+        var result = await _mediator.Send(new RejectAgentRunStepCommand("run-1", pendingStep.StepId, "Denied", "u-1", "Alice", "admin"));
 
         Assert.Equal("Running", result.Status);
         await _agentRunRepo.Received(1).UpdateAsync(
             Arg.Is<AgentRun>(r => r.Status == "Running" && r.CurrentWaitToken == string.Empty),
             Arg.Any<CancellationToken>());
         await _agentRunChannel.Received(1).EnqueueAsync(
-            Arg.Is<RejectAgentRunStepMessage>(msg => msg.RunId == "run-1" && msg.StepId == pendingStep.StepId && msg.Comment == "Denied"),
+            Arg.Is<RejectAgentRunStepMessage>(msg =>
+                msg.RunId == "run-1" &&
+                msg.StepId == pendingStep.StepId &&
+                msg.Comment == "Denied" &&
+                msg.ApproverId == "u-1" &&
+                msg.ApproverName == "Alice" &&
+                msg.ApproverRole == "admin"),
             Arg.Any<CancellationToken>());
     }
 }

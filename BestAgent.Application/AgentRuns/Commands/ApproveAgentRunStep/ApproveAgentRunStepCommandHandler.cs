@@ -47,7 +47,13 @@ public class ApproveAgentRunStepCommandHandler : IRequestHandler<ApproveAgentRun
         await _agentRunRepository.UpdateAsync(agentRun, cancellationToken);
 
         await _agentRunChannel.EnqueueAsync(
-            new ApproveAgentRunStepMessage(request.RunId, request.StepId),
+            new ApproveAgentRunStepMessage(
+                request.RunId,
+                request.StepId,
+                request.ApproverId,
+                request.ApproverName,
+                request.ApproverRole,
+                request.Comment),
             cancellationToken);
 
         return new ApproveAgentRunStepResult(agentRun.RunId, agentRun.AgentCode, agentRun.InputPayload, null, "Running");

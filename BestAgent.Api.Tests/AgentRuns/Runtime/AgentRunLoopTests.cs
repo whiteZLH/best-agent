@@ -172,6 +172,7 @@ public class AgentRunLoopTests
         Assert.Equal("weather", waiting.ToolName);
         Assert.Equal("internal_write", waiting.SideEffectLevel);
         Assert.False(string.IsNullOrWhiteSpace(waiting.WaitToken));
+        Assert.False(string.IsNullOrWhiteSpace(waiting.StepId));
 
         await _toolExecutor.DidNotReceive().ExecuteAsync(
             Arg.Any<string>(),
@@ -182,6 +183,7 @@ public class AgentRunLoopTests
         await _agentStepRepository.Received(2).AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>());
         await _agentStepRepository.Received(1).AddAsync(
             Arg.Is<AgentStep>(step =>
+                step.StepId == waiting.StepId &&
                 step.StepNo == 4 &&
                 step.StepType == "tool_call" &&
                 step.Status == "Pending" &&

@@ -13,12 +13,19 @@ public record ResumeAgentRunMessage(
 
 public record ApproveAgentRunStepMessage(
     string RunId,
-    string StepId) : AgentRunMessage(RunId);
+    string StepId,
+    string? ApproverId,
+    string? ApproverName,
+    string? ApproverRole,
+    string? Comment) : AgentRunMessage(RunId);
 
 public record RejectAgentRunStepMessage(
     string RunId,
     string StepId,
-    string? Comment) : AgentRunMessage(RunId);
+    string? Comment,
+    string? ApproverId,
+    string? ApproverName,
+    string? ApproverRole) : AgentRunMessage(RunId);
 
 public interface IAgentRunChannel
 {
