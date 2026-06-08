@@ -1,4 +1,5 @@
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 using MediatR;
 
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
@@ -6,10 +7,20 @@ namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery, GetAgentRunByIdResult?>
 {
     private readonly IAgentRunRepository _agentRunRepository;
+    private readonly IAgentStepRepository _agentStepRepository;
+    private readonly IAgentApprovalRepository _agentApprovalRepository;
+    private readonly IToolInvocationRepository _toolInvocationRepository;
 
-    public GetAgentRunByIdQueryHandler(IAgentRunRepository agentRunRepository)
+    public GetAgentRunByIdQueryHandler(
+        IAgentRunRepository agentRunRepository,
+        IAgentStepRepository agentStepRepository,
+        IAgentApprovalRepository agentApprovalRepository,
+        IToolInvocationRepository toolInvocationRepository)
     {
         _agentRunRepository = agentRunRepository;
+        _agentStepRepository = agentStepRepository;
+        _agentApprovalRepository = agentApprovalRepository;
+        _toolInvocationRepository = toolInvocationRepository;
     }
 
     public async Task<GetAgentRunByIdResult?> Handle(GetAgentRunByIdQuery request, CancellationToken cancellationToken)
@@ -18,6 +29,36 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
         if (agentRun is null)
         {
             return null;
+        }
+
+        var currentStepId = default(string);
+        var waitStepType = default(string);
+        var currentInvocationId = default(string);
+        var currentApprovalId = default(string);
+        var currentStep = agentRun.CurrentStepNo > 0
+            ? await _agentStepRepository.GetLastByRunIdAsync(request.RunId, cancellationToken)
+            : null;
+        if (currentStep is not null
+            && currentStep.StepNo == agentRun.CurrentStepNo)
+        {
+            currentStepId = currentStep.StepId;
+            if (!string.IsNullOrWhiteSpace(agentRun.CurrentWaitToken)
+                || agentRun.Status.StartsWith("Waiting", StringComparison.OrdinalIgnoreCase))
+            {
+                waitStepType = currentStep.StepType;
+
+                var pendingInvocation = await _toolInvocationRepository.GetPendingByRunIdAndStepIdAsync(
+                    request.RunId,
+                    currentStep.StepId,
+                    cancellationToken);
+                currentInvocationId = pendingInvocation?.InvocationId;
+
+                var approval = await _agentApprovalRepository.GetByRunIdAndStepIdAsync(
+                    request.RunId,
+                    currentStep.StepId,
+                    cancellationToken);
+                currentApprovalId = approval?.ApprovalId;
+            }
         }
 
         return new GetAgentRunByIdResult(
@@ -39,6 +80,10 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
             string.IsNullOrWhiteSpace(agentRun.DelegatedByRunId) ? null : agentRun.DelegatedByRunId,
             string.IsNullOrWhiteSpace(agentRun.DelegatedByAgent) ? null : agentRun.DelegatedByAgent,
             string.IsNullOrWhiteSpace(agentRun.InterruptReason) ? null : agentRun.InterruptReason,
-            string.IsNullOrWhiteSpace(agentRun.CurrentWaitToken) ? null : agentRun.CurrentWaitToken);
+            string.IsNullOrWhiteSpace(agentRun.CurrentWaitToken) ? null : agentRun.CurrentWaitToken,
+            currentStepId,
+            waitStepType,
+            currentInvocationId,
+            currentApprovalId);
     }
 }

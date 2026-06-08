@@ -19,4 +19,8 @@ public record GetAgentRunByIdResult(
     string? DelegatedByRunId,
     string? DelegatedByAgent,
     string? InterruptReason,
-    string? WaitToken);
+    string? WaitToken,
+    string? CurrentStepId = null,
+    string? WaitStepType = null,
+    string? CurrentInvocationId = null,
+    string? CurrentApprovalId = null);

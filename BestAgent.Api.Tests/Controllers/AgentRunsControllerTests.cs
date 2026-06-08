@@ -214,7 +214,11 @@ public class AgentRunsControllerTests
                 "delegator-run-1",
                 "router",
                 "Waiting for tool callback.",
-                "wait-1"));
+                "wait-1",
+                "step-4",
+                "tool_call",
+                "invocation-1",
+                null));
         var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
         var actionResult = await controller.GetById("run-001", CancellationToken.None);
@@ -236,6 +240,10 @@ public class AgentRunsControllerTests
         Assert.Equal("router", response.DelegatedByAgent);
         Assert.Equal("Waiting for tool callback.", response.InterruptReason);
         Assert.Equal("wait-1", response.WaitToken);
+        Assert.Equal("step-4", response.CurrentStepId);
+        Assert.Equal("tool_call", response.WaitStepType);
+        Assert.Equal("invocation-1", response.CurrentInvocationId);
+        Assert.Null(response.CurrentApprovalId);
     }
 
     [Fact]
