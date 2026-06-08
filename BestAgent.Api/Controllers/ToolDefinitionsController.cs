@@ -168,14 +168,17 @@ public class ToolDefinitionsController : ControllerBase
         }
 
         var kind = ToolExecutionBindingHelper.NormalizeExecutionKind(execution.Kind, nameof(execution.Kind));
+        var version = ToolExecutionBindingHelper.NormalizeStructuredExecutionVersion(
+            execution.Version,
+            "Execution.Version");
         var resolved = kind switch
         {
             var value when value == ToolExecutionBindingHelper.Webhook && execution.Webhook is not null
-                => ResolveWebhookExecutionRequest(execution, execution.Webhook),
+                => ResolveWebhookExecutionRequest(execution, execution.Webhook, version),
             var value when value == ToolExecutionBindingHelper.LocalHandler && execution.LocalHandler is not null
-                => ResolveLocalHandlerExecutionRequest(execution, execution.LocalHandler),
+                => ResolveLocalHandlerExecutionRequest(execution, execution.LocalHandler, version),
             var value when value == ToolExecutionBindingHelper.InlineResult && execution.InlineResult is not null
-                => ResolveInlineResultExecutionRequest(execution, execution.InlineResult),
+                => ResolveInlineResultExecutionRequest(execution, execution.InlineResult, version),
             _ => throw new InvalidOperationException("Execution payload does not match Execution.Kind.")
         };
 
@@ -192,7 +195,8 @@ public class ToolDefinitionsController : ControllerBase
 
     private static ResolvedToolExecutionRequest ResolveWebhookExecutionRequest(
         ToolExecutionRequest execution,
-        WebhookToolExecutionRequest webhook)
+        WebhookToolExecutionRequest webhook,
+        int version)
     {
         var normalizedHttpMethod = string.IsNullOrWhiteSpace(webhook.HttpMethod)
             ? "POST"
@@ -205,31 +209,36 @@ public class ToolDefinitionsController : ControllerBase
                 webhook.AuthHeaders),
             webhook.EndpointUrl,
             normalizedHttpMethod,
-            webhook.AuthHeaders);
+            webhook.AuthHeaders,
+            version);
     }
 
     private static ResolvedToolExecutionRequest ResolveLocalHandlerExecutionRequest(
         ToolExecutionRequest execution,
-        LocalHandlerToolExecutionRequest localHandler)
+        LocalHandlerToolExecutionRequest localHandler,
+        int version)
     {
         return new ResolvedToolExecutionRequest(
             execution.Kind,
             ToolExecutionBindingHelper.CreateLocalHandlerBinding(localHandler.HandlerName),
             null,
             null,
-            null);
+            null,
+            version);
     }
 
     private static ResolvedToolExecutionRequest ResolveInlineResultExecutionRequest(
         ToolExecutionRequest execution,
-        InlineResultToolExecutionRequest inlineResult)
+        InlineResultToolExecutionRequest inlineResult,
+        int version)
     {
         return new ResolvedToolExecutionRequest(
             execution.Kind,
             ToolExecutionBindingHelper.CreateInlineResultBinding(inlineResult.Output, inlineResult.Meta),
             null,
             null,
-            null);
+            null,
+            version);
     }
 
     private static void ValidateLegacyExecutionInputConsistency(
@@ -263,6 +272,14 @@ public class ToolDefinitionsController : ControllerBase
         string executionBinding,
         ResolvedToolExecutionRequest resolved)
     {
+        var legacyVersion = ToolExecutionBindingHelper.ResolveExecutionBindingVersion(executionBinding);
+        if (resolved.ExecutionVersion.HasValue
+            && legacyVersion.HasValue
+            && legacyVersion.Value != resolved.ExecutionVersion.Value)
+        {
+            throw new InvalidOperationException("ExecutionBinding must match Execution.Version when both are provided.");
+        }
+
         if (string.Equals(resolved.ExecutionKind, ToolExecutionBindingHelper.Webhook, StringComparison.Ordinal))
         {
             var legacyBinding = ToolExecutionBindingHelper.ParseWebhookBinding(executionBinding, nameof(executionBinding));
@@ -576,7 +593,8 @@ public class ToolDefinitionsController : ControllerBase
         string? ExecutionBinding,
         string? EndpointUrl,
         string? HttpMethod,
-        string? AuthHeaders);
+        string? AuthHeaders,
+        int? ExecutionVersion = null);
 
     private sealed record ResolvedToolPoliciesRequest(
         string? RetryPolicy,

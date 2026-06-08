@@ -36,6 +36,7 @@ public class ToolDefinitionViewModelTests
         Assert.NotNull(viewModel.ExecutionBinding);
         Assert.NotNull(viewModel.Execution);
         Assert.Equal(ToolExecutionBindingHelper.Webhook, viewModel.Execution!.Kind);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, viewModel.Execution.Version);
         Assert.NotNull(viewModel.Execution.Webhook);
         Assert.Equal("https://example.com/tools/weather", viewModel.Execution.Webhook!.EndpointUrl);
         Assert.Equal("PATCH", viewModel.Execution.Webhook.HttpMethod);
@@ -77,6 +78,7 @@ public class ToolDefinitionViewModelTests
 
         Assert.Equal(ToolExecutionBindingHelper.Webhook, viewModel.ExecutionKind);
         Assert.NotNull(viewModel.Execution);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, viewModel.Execution!.Version);
         Assert.NotNull(viewModel.Execution!.Webhook);
         Assert.Equal("https://binding.example.com/tools/weather", viewModel.Execution.Webhook!.EndpointUrl);
         Assert.Equal("PUT", viewModel.Execution.Webhook.HttpMethod);
@@ -237,7 +239,38 @@ public class ToolDefinitionViewModelTests
         Assert.Equal("{\"nested\":{\"apiKey\":\"***\"},\"source\":\"inline\"}", maskedBinding.Meta);
         Assert.NotNull(viewModel.Execution);
         Assert.NotNull(viewModel.Execution!.InlineResult);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, viewModel.Execution.Version);
         Assert.Equal("{\"token\":\"***\",\"temperature\":26.5}", viewModel.Execution.InlineResult!.Output);
         Assert.Equal("{\"nested\":{\"apiKey\":\"***\"},\"source\":\"inline\"}", viewModel.Execution.InlineResult.Meta);
+    }
+
+    [Fact]
+    public void FromEntity_ShouldCanonicalizeLegacyLocalHandlerBinding_AndExposeExecutionVersion()
+    {
+        var now = new DateTime(2026, 6, 9, 0, 0, 0, DateTimeKind.Utc);
+        var entity = new ToolDefinition
+        {
+            Id = "tool-local-legacy",
+            ToolName = "echo_context",
+            DisplayName = "Echo Context",
+            ExecutionKind = ToolExecutionBindingHelper.LocalHandler,
+            ExecutionBinding = "{\"handlerName\":\"echo_context\"}",
+            SideEffectLevel = "read_only",
+            TimeoutMs = 5000,
+            ConsistencyMode = "none",
+            Enabled = true,
+            CreateTime = now,
+            LastModifyTime = now
+        };
+
+        var viewModel = ToolDefinitionViewModel.FromEntity(entity);
+        var binding = ToolExecutionBindingHelper.ParseLocalHandlerBinding(
+            viewModel.ExecutionBinding,
+            nameof(viewModel.ExecutionBinding));
+
+        Assert.Equal("echo_context", binding.HandlerName);
+        Assert.NotNull(viewModel.Execution);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, viewModel.Execution!.Version);
+        Assert.Contains("\"version\":1", viewModel.ExecutionBinding);
     }
 }

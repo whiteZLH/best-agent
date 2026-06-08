@@ -53,6 +53,7 @@ public class ToolDefinitionsControllerTests
         Assert.NotNull(tool.ExecutionBinding);
         Assert.NotNull(tool.Execution);
         Assert.Equal(ToolExecutionBindingHelper.Webhook, tool.Execution!.Kind);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, tool.Execution.Version);
         Assert.NotNull(tool.Execution.Webhook);
         Assert.Equal("https://example.com/tools/weather", tool.Execution.Webhook!.EndpointUrl);
         Assert.Equal("https://example.com/tools/weather", tool.EndpointUrl);
@@ -101,6 +102,7 @@ public class ToolDefinitionsControllerTests
         Assert.Equal("weather", response.ToolName);
         Assert.NotNull(response.Execution);
         Assert.Equal(ToolExecutionBindingHelper.Webhook, response.Execution!.Kind);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, response.Execution.Version);
         Assert.Equal("{\"Authorization\":\"***\"}", response.AuthHeaders);
         Assert.Equal("***", response.CallbackSecret);
         Assert.NotNull(response.Policies);
@@ -229,7 +231,8 @@ public class ToolDefinitionsControllerTests
                     "POST",
                     "{\"Authorization\":\"Bearer token\"}"),
                 null,
-                null));
+                null,
+                ToolExecutionBindingHelper.CurrentBindingVersion));
         var mediator = new FakeMediator((CreateToolDefinitionCommand command) =>
         {
             Assert.Equal(ToolExecutionBindingHelper.Webhook, command.ExecutionKind);
@@ -252,6 +255,49 @@ public class ToolDefinitionsControllerTests
         var response = Assert.IsType<GetToolDefinitionResponse>(createdResult.Value);
         Assert.NotNull(response.Execution);
         Assert.Equal(ToolExecutionBindingHelper.Webhook, response.Execution!.Kind);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, response.Execution.Version);
+    }
+
+    [Fact]
+    public async Task Create_ShouldThrow_WhenStructuredExecutionUsesUnsupportedVersion()
+    {
+        var request = new CreateToolDefinitionRequest(
+            "weather",
+            "Weather",
+            "Get weather",
+            "{\"type\":\"object\"}",
+            "{\"type\":\"string\"}",
+            null,
+            null,
+            null,
+            null,
+            null,
+            "tool-callback-secret",
+            "ReadOnly",
+            5000,
+            null,
+            null,
+            null,
+            true,
+            "Strong",
+            null,
+            true,
+            new ToolExecutionRequest(
+                ToolExecutionBindingHelper.Webhook,
+                new WebhookToolExecutionRequest(
+                    "https://example.com/tools/weather",
+                    "POST",
+                    "{\"Authorization\":\"Bearer token\"}"),
+                null,
+                null,
+                99));
+        var mediator = new FakeMediator((CreateToolDefinitionCommand command) => CreateViewModel(toolName: command.ToolName));
+        var controller = new ToolDefinitionsController(mediator, _mapper);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            controller.Create(request, CancellationToken.None));
+
+        Assert.Equal("Execution.Version must be '1'.", exception.Message);
     }
 
     [Fact]
@@ -608,6 +654,7 @@ public class ToolDefinitionsControllerTests
         var response = Assert.IsType<GetToolDefinitionResponse>(createdResult.Value);
         Assert.NotNull(response.Execution);
         Assert.Equal(ToolExecutionBindingHelper.LocalHandler, response.Execution!.Kind);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, response.Execution.Version);
         Assert.NotNull(response.Execution.LocalHandler);
         Assert.Equal("echo_context", response.Execution.LocalHandler!.HandlerName);
     }
@@ -783,6 +830,7 @@ public class ToolDefinitionsControllerTests
         var response = Assert.IsType<GetToolDefinitionResponse>(okResult.Value);
         Assert.NotNull(response.Execution);
         Assert.Equal(ToolExecutionBindingHelper.InlineResult, response.Execution!.Kind);
+        Assert.Equal(ToolExecutionBindingHelper.CurrentBindingVersion, response.Execution.Version);
         Assert.NotNull(response.Execution.InlineResult);
         Assert.Equal("{\"temperature\":26.5}", response.Execution.InlineResult!.Output);
     }
@@ -1110,7 +1158,8 @@ public class ToolDefinitionsControllerTests
                 binding.HttpMethod,
                 binding.AuthHeaders),
             null,
-            null);
+            null,
+            ToolExecutionBindingHelper.CurrentBindingVersion);
     }
 
     private static ToolExecutionViewModel CreateLocalHandlerExecutionViewModel(string executionBinding)
@@ -1121,7 +1170,8 @@ public class ToolDefinitionsControllerTests
             executionBinding,
             null,
             new LocalHandlerToolExecutionViewModel(binding.HandlerName),
-            null);
+            null,
+            ToolExecutionBindingHelper.CurrentBindingVersion);
     }
 
     private static ToolExecutionViewModel CreateInlineResultExecutionViewModel(string executionBinding)
@@ -1132,7 +1182,8 @@ public class ToolDefinitionsControllerTests
             executionBinding,
             null,
             null,
-            new InlineResultToolExecutionViewModel(binding.Output, binding.Meta));
+            new InlineResultToolExecutionViewModel(binding.Output, binding.Meta),
+            ToolExecutionBindingHelper.CurrentBindingVersion);
     }
 
     private static RetryToolPolicyViewModel? CreateRetryPolicyViewModel(string? retryPolicy)

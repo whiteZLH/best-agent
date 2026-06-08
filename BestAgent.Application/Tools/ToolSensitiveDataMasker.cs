@@ -80,6 +80,12 @@ public static class ToolSensitiveDataMasker
                 MaskRuntimePayload(inlineResultBinding.Meta));
         }
 
+        if (normalizedExecutionKind == ToolExecutionBindingHelper.LocalHandler)
+        {
+            var localHandlerBinding = ToolExecutionBindingHelper.ParseLocalHandlerBinding(executionBinding, nameof(executionBinding));
+            return ToolExecutionBindingHelper.CreateLocalHandlerBinding(localHandlerBinding.HandlerName);
+        }
+
         return executionBinding;
     }
 

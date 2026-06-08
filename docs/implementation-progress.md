@@ -33,6 +33,7 @@
 - `ToolDefinition` 写入阶段已开始规范化策略字段：`RetryPolicy`、`AuthPolicy`、`CompensationPolicy` 可兼容 legacy 字符串输入并归一化为结构化 JSON，`ConsistencyMode` 已收紧为 `none` / `eventual` / `strong` 有限枚举，`SideEffectLevel` 已收紧为 `read_only` / `internal_write` / `external_write` / `destructive` 有限枚举，二者统一按小写持久化；`destructive` 工具当前要求显式声明 `CompensationPolicy`
 - 启动初始化当前也已开始对旧存量工具定义统一做策略字段归一：`RetryPolicy` / `AuthPolicy` / `IdempotencyPolicy` / `CompensationPolicy` 会按与命令写入相同的规则规范化，`ConsistencyMode` / `SideEffectLevel` 也会在启动期收敛到规范小写枚举
 - `ToolDefinition` 查询返回当前已开始补充结构化 `Execution` 读侧模型；兼容 flat 字段当前也已按执行类型真实返回，非 webhook 工具不再暴露假的 `HttpMethod` / `AuthHeaders`，同时显式返回当前 webhook / local handler / `inline_result` 的规范化执行定义
+- `ToolDefinition` 结构化 `Execution` 读写契约当前也已开始显式暴露最小 `version` 字段：查询返回会回显当前 binding 文档版本，结构化写入也会校验 `Execution.version` 必须与当前支持版本一致
 - `ToolDefinition` 查询返回当前也已开始收敛兼容 flat `ExecutionBinding` 的敏感载荷脱敏边界：除 webhook 认证头外，`inline_result` binding 中的运行时敏感字段也会与结构化 `Execution.InlineResult` 视图保持一致地脱敏
 - `ToolDefinition` 查询返回当前也已开始补充结构化 `Policies` 读侧模型；在继续保留 `RetryPolicy` / `AuthPolicy` / `IdempotencyPolicy` / `CompensationPolicy` 兼容字符串字段的同时，显式返回规范化后的策略视图
 - `ToolDefinition` 查询 / 写入当前也已开始补充最小参数级策略视图：可通过 `ParameterPolicy` 或结构化 `Policies.Parameter` 持久化 `allowedPaths` / `deniedPaths`

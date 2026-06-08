@@ -36,6 +36,7 @@ public record ToolDefinitionViewModel(
         var executionKind = ToolExecutionBindingHelper.NormalizeExecutionKind(entity.ExecutionKind, nameof(entity.ExecutionKind));
         var executionBinding = ToolSensitiveDataMasker.MaskExecutionBinding(executionKind, entity.ExecutionBinding);
         ToolExecutionViewModel? execution = null;
+        int? executionVersion = null;
         var endpointUrl = entity.EndpointUrl;
         string? httpMethod = string.IsNullOrWhiteSpace(entity.HttpMethod) ? null : entity.HttpMethod;
         var authHeaders = ToolSensitiveDataMasker.MaskAuthHeaders(entity.AuthHeaders);
@@ -61,13 +62,15 @@ public record ToolDefinitionViewModel(
                     webhookBinding.HttpMethod,
                     webhookBinding.AuthHeaders),
                 null,
-                null);
+                null,
+                ToolExecutionBindingHelper.CurrentBindingVersion);
         }
 
         if (execution is null
             && executionKind == ToolExecutionBindingHelper.Webhook
             && !string.IsNullOrWhiteSpace(executionBinding))
         {
+            executionVersion = ToolExecutionBindingHelper.ResolveExecutionBindingVersion(executionBinding);
             var webhookBinding = ToolExecutionBindingHelper.ParseWebhookBinding(executionBinding, nameof(entity.ExecutionBinding));
             endpointUrl = webhookBinding.EndpointUrl;
             httpMethod = webhookBinding.HttpMethod;
@@ -80,23 +83,27 @@ public record ToolDefinitionViewModel(
                     webhookBinding.HttpMethod,
                     webhookBinding.AuthHeaders),
                 null,
-                null);
+                null,
+                executionVersion);
         }
         else if (executionKind == ToolExecutionBindingHelper.LocalHandler && !string.IsNullOrWhiteSpace(executionBinding))
         {
+            executionVersion = ToolExecutionBindingHelper.ResolveExecutionBindingVersion(executionBinding);
             var localHandlerBinding = ToolExecutionBindingHelper.ParseLocalHandlerBinding(executionBinding, nameof(entity.ExecutionBinding));
             execution = new ToolExecutionViewModel(
                 executionKind,
                 executionBinding,
                 null,
                 new LocalHandlerToolExecutionViewModel(localHandlerBinding.HandlerName),
-                null);
+                null,
+                executionVersion);
             endpointUrl = null;
             httpMethod = null;
             authHeaders = null;
         }
         else if (executionKind == ToolExecutionBindingHelper.InlineResult && !string.IsNullOrWhiteSpace(executionBinding))
         {
+            executionVersion = ToolExecutionBindingHelper.ResolveExecutionBindingVersion(executionBinding);
             var inlineResultBinding = ToolExecutionBindingHelper.ParseInlineResultBinding(executionBinding, nameof(entity.ExecutionBinding));
             execution = new ToolExecutionViewModel(
                 executionKind,
@@ -105,7 +112,8 @@ public record ToolDefinitionViewModel(
                 null,
                 new InlineResultToolExecutionViewModel(
                     ToolSensitiveDataMasker.MaskRuntimePayload(inlineResultBinding.Output) ?? inlineResultBinding.Output,
-                    ToolSensitiveDataMasker.MaskRuntimePayload(inlineResultBinding.Meta)));
+                    ToolSensitiveDataMasker.MaskRuntimePayload(inlineResultBinding.Meta)),
+                executionVersion);
             endpointUrl = null;
             httpMethod = null;
             authHeaders = null;
@@ -298,7 +306,8 @@ public record ToolExecutionViewModel(
     string? Binding,
     WebhookToolExecutionViewModel? Webhook,
     LocalHandlerToolExecutionViewModel? LocalHandler,
-    InlineResultToolExecutionViewModel? InlineResult);
+    InlineResultToolExecutionViewModel? InlineResult,
+    int? Version = null);
 
 public record WebhookToolExecutionViewModel(
     string EndpointUrl,

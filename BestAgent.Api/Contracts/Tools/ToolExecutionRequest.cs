@@ -4,7 +4,8 @@ public record ToolExecutionRequest(
     string? Kind,
     WebhookToolExecutionRequest? Webhook,
     LocalHandlerToolExecutionRequest? LocalHandler,
-    InlineResultToolExecutionRequest? InlineResult);
+    InlineResultToolExecutionRequest? InlineResult,
+    int? Version = null);
 
 public record WebhookToolExecutionRequest(
     string EndpointUrl,

@@ -29,6 +29,31 @@ public static class ToolExecutionBindingHelper
         };
     }
 
+    public static int NormalizeStructuredExecutionVersion(int? version, string fieldName)
+    {
+        if (version is null)
+        {
+            return CurrentBindingVersion;
+        }
+
+        if (version.Value != CurrentBindingVersion)
+        {
+            throw new InvalidOperationException($"{fieldName} must be '{CurrentBindingVersion}'.");
+        }
+
+        return version.Value;
+    }
+
+    public static int? ResolveExecutionBindingVersion(string? binding)
+    {
+        if (string.IsNullOrWhiteSpace(binding))
+        {
+            return null;
+        }
+
+        return TryParseVersionedBinding(binding, nameof(binding))?.Version ?? CurrentBindingVersion;
+    }
+
     public static string CreateWebhookBinding(string endpointUrl, string httpMethod, string? authHeaders)
     {
         var payload = new VersionedExecutionBindingDocument(

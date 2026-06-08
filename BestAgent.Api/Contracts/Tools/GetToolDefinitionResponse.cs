@@ -33,7 +33,8 @@ public record ToolExecutionResponse(
     string? Binding,
     WebhookToolExecutionResponse? Webhook,
     LocalHandlerToolExecutionResponse? LocalHandler,
-    InlineResultToolExecutionResponse? InlineResult);
+    InlineResultToolExecutionResponse? InlineResult,
+    int? Version = null);
 
 public record WebhookToolExecutionResponse(
     string EndpointUrl,
