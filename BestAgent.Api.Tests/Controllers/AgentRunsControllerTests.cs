@@ -223,6 +223,67 @@ public class AgentRunsControllerTests
     }
 
     [Fact]
+    public async Task Create_ShouldRejectAnonymousRequest_WhenRunRoleIsRequired()
+    {
+        var mediator = new FakeMediator((CreateAgentRunCommand _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when authentication is required."));
+        var controller = new AgentRunsController(
+            mediator,
+            _mapper,
+            new NullEventBus(),
+            authenticationOptions: new BestAgentAuthenticationOptions
+            {
+                RunAllowedRoles = ["operator", "admin"]
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.UnauthorizedException>(() =>
+            controller.Create(
+                new CreateAgentRunRequest("writer", "hello", null, null, null, null),
+                null,
+                CancellationToken.None));
+
+        Assert.Equal("Authenticated access is required for this run endpoint.", ex.Message);
+    }
+
+    [Fact]
+    public async Task Create_ShouldRejectAuthenticatedRequest_WhenRunRoleIsForbidden()
+    {
+        var mediator = new FakeMediator((CreateAgentRunCommand _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when role is forbidden."));
+        var controller = new AgentRunsController(
+            mediator,
+            _mapper,
+            new NullEventBus(),
+            authenticationOptions: new BestAgentAuthenticationOptions
+            {
+                RunAllowedRoles = ["operator", "admin"]
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal("claim-user", "Claim User", "reviewer")
+                }
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.ForbiddenException>(() =>
+            controller.Create(
+                new CreateAgentRunRequest("writer", "hello", null, null, null, null),
+                null,
+                CancellationToken.None));
+
+        Assert.Equal("Run access requires one of roles: operator, admin.", ex.Message);
+    }
+
+    [Fact]
     public async Task GetById()
     {
         var now = new DateTime(2026, 5, 26, 0, 0, 0, DateTimeKind.Utc);

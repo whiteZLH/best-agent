@@ -632,14 +632,22 @@ public class AgentRunsController : ControllerBase
 
     private void EnsureAuthenticatedRunAccess()
     {
-        if (!_authenticationOptions.RequireAuthenticatedRunAccess)
+        var requiresRole = _authenticationOptions.RunAllowedRoles.Length > 0;
+        if (!_authenticationOptions.RequireAuthenticatedRunAccess && !requiresRole)
         {
             return;
         }
 
         if (HttpContext?.User?.Identity?.IsAuthenticated == true)
         {
-            return;
+            if (!requiresRole
+                || _authenticationOptions.RunAllowedRoles.Any(HttpContext.User.IsInRole))
+            {
+                return;
+            }
+
+            throw new ForbiddenException(
+                $"Run access requires one of roles: {string.Join(", ", _authenticationOptions.RunAllowedRoles)}.");
         }
 
         throw new UnauthorizedException("Authenticated access is required for this run endpoint.");

@@ -52,6 +52,10 @@ builder.Services.AddSingleton(new BestAgentAuthenticationOptions
         builder.Configuration["Authentication:RequireAuthenticatedManagementAccess"],
         out var requireAuthenticatedManagementAccess)
         && requireAuthenticatedManagementAccess,
+    RunAllowedRoles = ReadStringList(
+        builder.Configuration,
+        "Authentication:RunAllowedRoles",
+        Array.Empty<string>()),
     ManagementAllowedRoles = ReadStringList(
         builder.Configuration,
         "Authentication:ManagementAllowedRoles",
