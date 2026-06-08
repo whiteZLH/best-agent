@@ -43,6 +43,7 @@ public class AgentRunsController : ControllerBase
     private readonly IToolInvocationRepository? _toolInvocationRepository;
     private readonly IToolDefinitionRepository? _toolDefinitionRepository;
     private readonly IAgentRunRepository? _agentRunRepository;
+    private readonly BestAgentAuthenticationOptions _authenticationOptions;
 
     public AgentRunsController(
         IMediator mediator,
@@ -51,7 +52,8 @@ public class AgentRunsController : ControllerBase
         IWebhookRequestAuthorizer? webhookRequestAuthorizer = null,
         IToolInvocationRepository? toolInvocationRepository = null,
         IToolDefinitionRepository? toolDefinitionRepository = null,
-        IAgentRunRepository? agentRunRepository = null)
+        IAgentRunRepository? agentRunRepository = null,
+        BestAgentAuthenticationOptions? authenticationOptions = null)
     {
         _mediator = mediator;
         _mapper = mapper;
@@ -60,6 +62,7 @@ public class AgentRunsController : ControllerBase
         _toolInvocationRepository = toolInvocationRepository;
         _toolDefinitionRepository = toolDefinitionRepository;
         _agentRunRepository = agentRunRepository;
+        _authenticationOptions = authenticationOptions ?? new BestAgentAuthenticationOptions();
     }
 
     [HttpPost]
@@ -68,6 +71,7 @@ public class AgentRunsController : ControllerBase
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         var command = _mapper.Map<CreateAgentRunCommand>(request);
         command = ApplyAuthenticatedRunIdentity(command);
         if (!string.IsNullOrWhiteSpace(idempotencyKey))
@@ -86,6 +90,7 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var result = await _mediator.Send(new GetAgentRunByIdQuery(runId), cancellationToken);
         if (result is null)
@@ -101,6 +106,7 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var children = await _mediator.Send(new GetAgentRunChildrenQuery(runId), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunChildResponse>>(children));
@@ -111,6 +117,7 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var tree = await _mediator.Send(new GetAgentRunTreeQuery(runId), cancellationToken);
         if (tree is null)
@@ -126,6 +133,7 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var steps = await _mediator.Send(new GetAgentRunStepsQuery(runId), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunStepResponse>>(steps));
@@ -136,6 +144,7 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var approvals = await _mediator.Send(new GetAgentRunApprovalsQuery(runId), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunApprovalResponse>>(approvals));
@@ -147,6 +156,7 @@ public class AgentRunsController : ControllerBase
         [FromQuery] long? afterSeqNo,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var events = await _mediator.Send(new GetAgentRunEventsQuery(runId, afterSeqNo), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunEventResponse>>(events));
@@ -158,6 +168,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] ResumeAgentRunRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var command = new ResumeAgentRunCommand(runId, request.WaitToken, request.ToolResult);
         var result = await _mediator.Send(command, cancellationToken);
@@ -218,6 +229,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] CancelAgentRunRequest? request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var result = await _mediator.Send(new CancelAgentRunCommand(runId, request?.Reason), cancellationToken);
         var response = _mapper.Map<CancelAgentRunResponse>(result);
@@ -231,6 +243,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] RequestHumanAgentRunRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var actor = ResolveApprovalActor(request.HumanOperatorId, request.HumanOperatorName, request.HumanOperatorRole);
         var result = await _mediator.Send(
@@ -254,6 +267,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] CompleteHumanAgentRunRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var actor = ResolveApprovalActor(request.HumanOperatorId, request.HumanOperatorName, request.HumanOperatorRole);
         var result = await _mediator.Send(
@@ -280,6 +294,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] ApproveAgentRunStepRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var actor = ResolveApprovalActor(request.ApproverId, request.ApproverName, request.ApproverRole);
         var result = await _mediator.Send(
@@ -303,6 +318,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] RejectAgentRunStepRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var actor = ResolveApprovalActor(request.ApproverId, request.ApproverName, request.ApproverRole);
         var result = await _mediator.Send(
@@ -322,6 +338,7 @@ public class AgentRunsController : ControllerBase
     [HttpGet("{runId}/stream")]
     public async Task Stream([FromRoute] string runId, CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         Response.Headers["Content-Type"] = "text/event-stream";
         Response.Headers["Cache-Control"] = "no-cache";
@@ -540,6 +557,21 @@ public class AgentRunsController : ControllerBase
 
         await Response.WriteAsync($"event: {eventType}\ndata: {data}\n\n", cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private void EnsureAuthenticatedRunAccess()
+    {
+        if (!_authenticationOptions.RequireAuthenticatedRunAccess)
+        {
+            return;
+        }
+
+        if (HttpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            return;
+        }
+
+        throw new UnauthorizedException("Authenticated access is required for this run endpoint.");
     }
 
     private static long? TryParseLastEventId(string? lastEventId)

@@ -33,7 +33,11 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddSingleton(new BestAgentAuthenticationOptions
 {
     Users = ReadAuthenticationUsers(builder.Configuration, "Authentication:Users"),
-    Services = ReadAuthenticationServices(builder.Configuration, "Authentication:Services")
+    Services = ReadAuthenticationServices(builder.Configuration, "Authentication:Services"),
+    RequireAuthenticatedRunAccess = bool.TryParse(
+        builder.Configuration["Authentication:RequireAuthenticatedRunAccess"],
+        out var requireAuthenticatedRunAccess)
+        && requireAuthenticatedRunAccess
 });
 builder.Services
     .AddAuthentication(BestAgentAuthenticationOptions.SchemeName)

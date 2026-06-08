@@ -7,6 +7,8 @@ public sealed class BestAgentAuthenticationOptions
     public BestAgentAuthenticatedUser[] Users { get; init; } = [];
 
     public BestAgentAuthenticatedService[] Services { get; init; } = [];
+
+    public bool RequireAuthenticatedRunAccess { get; init; }
 }
 
 public sealed record BestAgentAuthenticatedUser(

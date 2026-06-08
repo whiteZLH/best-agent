@@ -191,6 +191,35 @@ public class AgentRunsControllerTests
     }
 
     [Fact]
+    public async Task Create_ShouldRejectAnonymousRequest_WhenAuthenticatedRunAccessIsRequired()
+    {
+        var mediator = new FakeMediator((CreateAgentRunCommand _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when authentication is required."));
+        var controller = new AgentRunsController(
+            mediator,
+            _mapper,
+            new NullEventBus(),
+            authenticationOptions: new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedRunAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.UnauthorizedException>(() =>
+            controller.Create(
+                new CreateAgentRunRequest("writer", "hello", null, null, null, null),
+                null,
+                CancellationToken.None));
+
+        Assert.Equal("Authenticated access is required for this run endpoint.", ex.Message);
+    }
+
+    [Fact]
     public async Task GetById()
     {
         var now = new DateTime(2026, 5, 26, 0, 0, 0, DateTimeKind.Utc);
@@ -326,6 +355,32 @@ public class AgentRunsControllerTests
     }
 
     [Fact]
+    public async Task GetById_ShouldRejectAnonymousRequest_WhenAuthenticatedRunAccessIsRequired()
+    {
+        var mediator = new FakeMediator((GetAgentRunByIdQuery _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when authentication is required."));
+        var controller = new AgentRunsController(
+            mediator,
+            _mapper,
+            new NullEventBus(),
+            authenticationOptions: new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedRunAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.UnauthorizedException>(() =>
+            controller.GetById("run-001", CancellationToken.None));
+
+        Assert.Equal("Authenticated access is required for this run endpoint.", ex.Message);
+    }
+
+    [Fact]
     public async Task CompleteToolInvocation_ShouldRejectMismatchedScopedHeaders_BeforeWebhookAuthorization()
     {
         var authorizer = new RecordingWebhookRequestAuthorizer();
@@ -405,6 +460,55 @@ public class AgentRunsControllerTests
 
         Assert.Contains("outside the authenticated tenant or user scope", ex.Message);
         Assert.Equal(0, authorizer.ApprovalAuthorizeCount);
+    }
+
+    [Fact]
+    public async Task CompleteToolInvocation_ShouldAllowAnonymousWebhookCallback_WhenAuthenticatedRunAccessIsRequired()
+    {
+        var authorizer = new RecordingWebhookRequestAuthorizer();
+        var controller = new AgentRunsController(
+            new FakeMediator((CompleteToolInvocationCommand command) =>
+            {
+                Assert.Equal("run-001", command.RunId);
+                Assert.Equal("invocation-1", command.InvocationId);
+                return new CompleteToolInvocationResult("run-001", "writer", "hello", "done", "Running");
+            }),
+            _mapper,
+            new NullEventBus(),
+            webhookRequestAuthorizer: authorizer,
+            agentRunRepository: new FakeAgentRunRepository(
+                new AgentRun
+                {
+                    RunId = "run-001",
+                    AgentCode = "writer",
+                    Status = "WaitingTool",
+                    TenantId = "tenant-1",
+                    UserId = "user-1",
+                    SessionId = "session-1",
+                    InputPayload = "hello"
+                }),
+            authenticationOptions: new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedRunAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+
+        var actionResult = await controller.CompleteToolInvocation(
+            "run-001",
+            "invocation-1",
+            new CompleteToolInvocationRequest("wait-1", "{}"),
+            null,
+            CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var response = Assert.IsType<CompleteToolInvocationResponse>(okResult.Value);
+        Assert.Equal("run-001", response.RunId);
+        Assert.Equal(1, authorizer.ToolAuthorizeCount);
     }
 
     [Fact]
