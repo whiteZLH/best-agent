@@ -631,7 +631,7 @@ dotnet run --project BestAgent.Api
 - 正式认证鉴权中间件、后台管理界面与更完整的租户隔离治理：当前已开始落地最小 ASP.NET Core 认证管道，支持配置化 `Bearer` token 用户 / 服务身份，并在请求显式携带无效 `Authorization` 时于控制器前返回 `401`；同时也已开始补上两类最小强制鉴权开关：当 `Authentication:RequireAuthenticatedRunAccess=true` 时，交互式 Run API（创建、查询、恢复、取消、审批、人机协同、SSE）要求已认证身份后方可访问；当 `Authentication:RequireAuthenticatedManagementAccess=true` 时，`AgentDefinitionsController` / `ToolDefinitionsController` 管理接口也要求已认证身份后方可访问；若进一步配置 `Authentication:ManagementAllowedRoles`，上述管理接口还会执行最小角色校验；外部 `tool/approval complete` 回调仍继续走既有 HMAC 校验；但更细粒度授权模型和完整租户隔离治理仍未完成
 - 租户级审批策略、更严格的服务端权限校验与审批授权规则扩展：当前已开始支持最小 `Approval:TenantPolicies` 配置解析，Worker 的审批触发判断以及 step 级 `approve/reject` / 外部 `approval complete` 授权校验都会按 `run.tenantId` 解析租户策略；租户策略会先在全局审批默认值之上形成 tenant 级有效策略，再与版本级 `ApprovalPolicy` 一起收敛到更严格结果，避免版本策略继续放宽租户边界；但更丰富的租户策略来源、动态配置与更完整权限模型仍未完成
 - 更完整的工具治理：当前已落地运行时输入 / 输出 schema 校验 MVP、参数级 `allowedPaths/deniedPaths` 最小执行、AgentDefinitionVersion 级 `DeniedTools` 显式拒绝列表、异步恢复/人工替代结果后置输出校验、HTTP webhook 最小重试策略、最小 `IdempotencyPolicy` 执行、已完成幂等工具结果与同 run 内 pending 异步调用的最小 Runtime 前置复用、普通运行与审批放行后同步工具失败的最小结构化回写，以及工具定义响应层、运行时查询/事件读侧与 `session_memory` 写回层的最小敏感字段脱敏；`AuthPolicy` 当前也已开始进入执行一致性校验主链路，运行时解析会拒绝“声明 bearer/oauth 但实际未携带 Bearer 认证头”或“非 webhook 仍声明外部认证方案”的漂移定义；`CompensationPolicy={"mode":"manual"}` 当前也已开始复用 `WaitingHuman` 提供最小人工补偿闭环，但完整 JSON Schema 规范、更丰富补偿策略执行和更复杂副作用场景的 Runtime 前置去重仍未完整落地
-- 更彻底地去除对 legacy webhook flat 字段和 `ToolRegistry` 兼容语义的依赖：当前已进一步收紧“新写入”路径对 legacy webhook flat 字段的隐式兼容，但持久化模型与对旧存量定义的启动期归一仍未完全移除
+- 更彻底地去除对 legacy webhook flat 字段和 `ToolRegistry` 兼容语义的依赖：当前运行时 DI 与测试主路径已开始切到新的 `InMemoryToolHandlerRegistry`，`ToolRegistry` 仅保留过渡别名；同时“新写入”路径也已进一步收紧对 legacy webhook flat 字段的隐式兼容，但持久化模型与对旧存量定义的启动期归一仍未完全移除
 - 工具定义从当前 `ExecutionKind + ExecutionBinding` 模型继续演进为更完整的执行定义（当前已支持 webhook / local handler / `inline_result`，但更丰富 executor type、策略化解析与版本化治理仍待继续扩展）
 - 跨实例事件分发、外部队列投递与更完整的流式观测能力
 
@@ -712,6 +712,7 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 - `BestAgent.Infrastructure/Persistence/Repositories/AgentApprovalRepository.cs`
 - `BestAgent.Infrastructure/Persistence/Seeding/DatabaseInitializationHostedService.cs`
 - `BestAgent.Infrastructure/Tools/ToolExecutor.cs`
+- `BestAgent.Infrastructure/Tools/InMemoryToolHandlerRegistry.cs`
 - `BestAgent.Infrastructure/Tools/ToolRegistry.cs`
 - `BestAgent.Infrastructure/Tools/HttpToolInvoker.cs`
 - `BestAgent.Infrastructure/Model/OpenAiCompatibleModelGateway.cs`

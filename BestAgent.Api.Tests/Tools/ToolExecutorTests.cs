@@ -10,7 +10,7 @@ namespace BestAgent.Api.Tests.Tools;
 
 public class ToolExecutorTests
 {
-    private readonly ToolRegistry _toolRegistry = new();
+    private readonly InMemoryToolHandlerRegistry _toolRegistry = new();
     private readonly IToolDefinitionRepository _toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
     private readonly IHttpToolInvoker _httpToolInvoker = Substitute.For<IHttpToolInvoker>();
     private readonly IAgentMetrics _agentMetrics = Substitute.For<IAgentMetrics>();

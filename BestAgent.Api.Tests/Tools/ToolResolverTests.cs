@@ -8,7 +8,7 @@ namespace BestAgent.Api.Tests.Tools;
 
 public class ToolResolverTests
 {
-    private readonly ToolRegistry _toolRegistry = new();
+    private readonly InMemoryToolHandlerRegistry _toolRegistry = new();
     private readonly IToolDefinitionRepository _toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
     private readonly ToolExecutionContext _context = new("run-001", "writer", "say hi");
 

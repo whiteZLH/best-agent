@@ -22,6 +22,9 @@ namespace BestAgent.Api.Tests.AgentRuns.Runtime;
 
 public class AgentRunWorkerTests
 {
+    private const int WaitPollAttempts = 250;
+    private static readonly TimeSpan WaitPollDelay = TimeSpan.FromMilliseconds(20);
+
     [Fact]
     public async Task ExecuteAsync_ShouldCompletePendingStep_ResumeRun_AndPublishDoneEvent()
     {
@@ -6756,7 +6759,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentRun> WaitForUpdatedRunAsync(IAgentRunRepository repository, string expectedStatus)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentRunRepository.UpdateAsync))
@@ -6769,7 +6772,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for AgentRun status '{expectedStatus}'.");
@@ -6777,7 +6780,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentStep> WaitForUpdatedStepAsync(IAgentStepRepository repository, string expectedStatus)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.UpdateAsync))
@@ -6790,7 +6793,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for AgentStep status '{expectedStatus}'.");
@@ -6798,7 +6801,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentApproval> WaitForAddedApprovalAsync(IAgentApprovalRepository repository)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentApprovalRepository.AddAsync))
@@ -6811,7 +6814,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException("Timed out waiting for AgentApproval add.");
@@ -6819,7 +6822,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentApproval> WaitForUpdatedApprovalAsync(IAgentApprovalRepository repository, string expectedDecision)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentApprovalRepository.UpdateAsync))
@@ -6832,7 +6835,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for AgentApproval decision '{expectedDecision}'.");
@@ -6840,7 +6843,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentStep> WaitForAddedStepAsync(IAgentStepRepository repository, string stepType, string status)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.AddAsync))
@@ -6853,7 +6856,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for AgentStep '{stepType}' with status '{status}'.");
@@ -6861,7 +6864,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentRunEvent> WaitForEventAsync(RecordingEventBus eventBus, string eventType)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             lock (eventBus.Events)
             {
@@ -6872,7 +6875,7 @@ public class AgentRunWorkerTests
                 }
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for event '{eventType}'.");
@@ -6880,7 +6883,7 @@ public class AgentRunWorkerTests
 
     private static async Task WaitForRunLookupAsync(IAgentRunRepository repository)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var found = repository.ReceivedCalls()
                 .Any(call => call.GetMethodInfo().Name == nameof(IAgentRunRepository.GetByRunIdAsync));
@@ -6889,7 +6892,7 @@ public class AgentRunWorkerTests
                 return;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException("Timed out waiting for AgentRun lookup.");
@@ -6897,7 +6900,7 @@ public class AgentRunWorkerTests
 
     private static async Task<AgentRun> WaitForChildRunCompletionAsync(IAgentRunRepository repository, string parentRunId)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentRunRepository.UpdateAsync))
@@ -6912,7 +6915,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for child run of '{parentRunId}' to complete.");
@@ -6923,7 +6926,7 @@ public class AgentRunWorkerTests
         string parentRunId,
         string expectedStatus)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentRunRepository.UpdateAsync))
@@ -6938,7 +6941,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for child run of '{parentRunId}' to reach status '{expectedStatus}'.");
@@ -6954,7 +6957,7 @@ public class AgentRunWorkerTests
         string parentRunId,
         string expectedOutput)
     {
-        for (var i = 0; i < 100; i++)
+        for (var i = 0; i < WaitPollAttempts; i++)
         {
             var calls = repository.ReceivedCalls()
                 .Where(call => call.GetMethodInfo().Name == nameof(IAgentRunRepository.UpdateAsync))
@@ -6970,7 +6973,7 @@ public class AgentRunWorkerTests
                 return match;
             }
 
-            await Task.Delay(20);
+            await Task.Delay(WaitPollDelay);
         }
 
         throw new TimeoutException($"Timed out waiting for parent run '{parentRunId}' final completion with output '{expectedOutput}'.");

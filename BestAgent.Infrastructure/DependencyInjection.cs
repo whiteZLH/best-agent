@@ -73,8 +73,8 @@ public static class DependencyInjection
         });
         services.AddSingleton<IModelGateway, OpenAiCompatibleModelGateway>();
         services.AddHttpClient("ToolWebhook");
-        services.AddSingleton<ToolRegistry>();
-        services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
+        services.AddSingleton<InMemoryToolHandlerRegistry>();
+        services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<InMemoryToolHandlerRegistry>());
         services.AddScoped<IToolResolver, ToolResolver>();
         services.AddSingleton<IToolInputValidator, JsonSchemaToolInputValidator>();
         services.AddSingleton<IToolOutputValidator, JsonSchemaToolOutputValidator>();
