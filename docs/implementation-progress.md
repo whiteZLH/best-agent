@@ -421,8 +421,8 @@
 - `POST /agent-runs/{runId}/steps/{stepId}:approve` 将审批通过消息重新入队，由后台 Worker 执行待批工具并继续循环
 - `POST /agent-runs/{runId}/steps/{stepId}:reject` 将审批拒绝消息重新入队，由后台 Worker 将待批步骤与 Run 终止为失败态
 - Worker 在每个关键 step 完成时向 `AgentRunEventBus` 发布事件
-- Worker / command handler / approval timeout dispatcher 发布的生命周期事件会先尝试写入 `run_outbox_event`，再推送进程内事件流并标记已发布；当前覆盖 `step`、`waiting`、`waiting_approval`、`waiting_human`、`approval_timed_out`、`approval_rejected`、`cancelled`、`done`、`error`
-- 独立 `RunOutboxEventDispatcher` 会轮询仍为 `pending` 的 outbox 事件，通过 publisher 补偿投递并更新发布状态
+- Worker / command handler / approval timeout dispatcher 发布的生命周期事件会先尝试写入 `run_outbox_event`；Worker 当前会先继续推送进程内事件流，再对已落库事件执行最小外部 publisher best-effort 投递，成功后才标记已发布；当前覆盖 `step`、`waiting`、`waiting_approval`、`waiting_human`、`approval_timed_out`、`approval_rejected`、`cancelled`、`done`、`error`
+- 独立 `RunOutboxEventDispatcher` 会轮询仍为 `pending` 的 outbox 事件，通过 publisher 补偿投递并更新发布状态；当前 publisher 已开始支持最小可配置 HTTP POST 外部投递
 - `GET /agent-runs/{runId}/events?afterSeqNo=...` 从 `run_outbox_event` 按 `seq_no` 回放 run 级事件，支持断线后增量补拉
 - `GET /agent-runs/{runId}/stream` 通过 SSE 向前端实时推送 `step`、`waiting`、`waiting_approval`、`waiting_human`、`approval_rejected`、`cancelled`、`done`、`error` 事件，并支持基于 `Last-Event-ID` 的最小自动补拉
 
@@ -439,7 +439,7 @@
 当前实现约束：
 
 - SSE 事件通道仍是进程内实现，适合单体 MVP
-- 已具备 run 级 outbox 事件落库、事件重放 API 与独立投递器 MVP，但尚未实现跨实例外部队列分发
+- 已具备 run 级 outbox 事件落库、事件重放 API、独立投递器 MVP 与最小可配置 HTTP 外部投递，但尚未实现真正的跨实例外部队列分发
 - `WaitingTool` 仍通过 HTTP resume 接口对外暴露，不是纯内部回调模型
 
 ### 3.6 模型网关
@@ -626,7 +626,7 @@ dotnet run --project BestAgent.Api
 - 更细粒度的人机协同：当前已落地 `WaitingHuman` 最小闭环，并已支持替代挂起工具结果继续 loop；当前也已支持对已完成 `tool_call` 结果发起人工覆盖，并保留原工具结果后再用人工结果继续生成最终答复；当前已补上“仅允许覆盖当前 run 最新已完成且仍为当前步骤的 `tool_call` 结果”的最小服务端保护，并要求 `request-human` / `complete-human` 具备明确人工操作者身份；若配置 `HumanTakeover:AllowedRoles`，上述人工接管入口还会执行最小角色校验；审批策略配置当前也已开始做合法 side effect level 规范化，但更细粒度权限边界与正式认证鉴权仍未实现
 - 更完整的记忆、检索与长期知识库：当前已完成最小 memory write、`effective_at/expires_at` 活跃窗口过滤、相对 TTL (`ttlSeconds`) 写入、轻量 query rewrite、query-aware lexical retrieval、词法重排、prompt citation 注入、`model_call` / steps 读侧的最小 retrieval 审计注入，以及最终答复 `References` 追加，但更复杂的长期记忆治理、向量检索、更强语义 rewrite 和更细粒度写入策略仍未完整落地
 - 可观测性：当前已补上最小 Metrics 闭环，`IAgentMetrics` + `System.Diagnostics.Metrics` 已开始覆盖 Run 创建/终态、模型调用耗时与 token/cost、工具执行耗时、检索耗时/候选数/命中数、SSE stream 建连/事件发送/连接时长，以及审批等待/超时时长；同时也已开始用统一 `ActivitySource` 为 `AgentRun`、`ModelCall`、`ToolExecution`、`Retrieval`、`Approval`、`Handoff` 与 `RunStream` 链路补最小 tracing span，并开始为 `BestAgentRequestLoggingMiddleware`、`OpenAiCompatibleModelGateway`、`ToolExecutor` 与 `DefaultApprovalAuthorizer` 补最小结构化日志，但更完整的日志规范、跨实例 exporter / dashboard、trace 传播与更细粒度经营指标仍未完整落地
-- 跨实例事件分发、外部队列发布与更完整的 outbox 投递语义
+- 跨实例事件分发、外部队列发布与更完整的 outbox 投递语义：当前已开始支持最小可配置 HTTP outbox publisher，并把 Worker 的即时本地事件推送与外部投递状态解耦；当外部投递失败时，事件会继续保留 `pending` 交由 `RunOutboxEventDispatcher` 补偿重试，但真正的消息队列、批量投递、死信策略与跨实例消费拓扑仍未完成
 - 正式认证鉴权中间件、后台管理界面与更完整的租户隔离治理：当前已开始落地最小 ASP.NET Core 认证管道，支持配置化 `Bearer` token 用户 / 服务身份，并在请求显式携带无效 `Authorization` 时于控制器前返回 `401`；Run API 也会继续消费这些 claims 做 scope 继承与边界校验，但强制鉴权策略、更细粒度授权模型和完整租户隔离治理仍未完成
 - 正式认证鉴权中间件、后台管理界面与更完整的租户隔离治理：当前已开始落地最小 ASP.NET Core 认证管道，支持配置化 `Bearer` token 用户 / 服务身份，并在请求显式携带无效 `Authorization` 时于控制器前返回 `401`；同时也已开始补上两类最小强制鉴权开关：当 `Authentication:RequireAuthenticatedRunAccess=true` 时，交互式 Run API（创建、查询、恢复、取消、审批、人机协同、SSE）要求已认证身份后方可访问；当 `Authentication:RequireAuthenticatedManagementAccess=true` 时，`AgentDefinitionsController` / `ToolDefinitionsController` 管理接口也要求已认证身份后方可访问；若进一步配置 `Authentication:ManagementAllowedRoles`，上述管理接口还会执行最小角色校验；外部 `tool/approval complete` 回调仍继续走既有 HMAC 校验；但更细粒度授权模型和完整租户隔离治理仍未完成
 - 租户级审批策略、更严格的服务端权限校验与审批授权规则扩展：当前已开始支持最小 `Approval:TenantPolicies` 配置解析，Worker 的审批触发判断以及 step 级 `approve/reject` / 外部 `approval complete` 授权校验都会按 `run.tenantId` 解析租户策略；租户策略会先在全局审批默认值之上形成 tenant 级有效策略，再与版本级 `ApprovalPolicy` 一起收敛到更严格结果，避免版本策略继续放宽租户边界；但更丰富的租户策略来源、动态配置与更完整权限模型仍未完成
@@ -711,6 +711,8 @@ GET /agent-runs/{runId}/stream → SSE 连接，实时推送 step / waiting / do
 - `BestAgent.Infrastructure/Persistence/Configurations/AgentApprovalConfiguration.cs`
 - `BestAgent.Infrastructure/Persistence/Repositories/AgentApprovalRepository.cs`
 - `BestAgent.Infrastructure/Persistence/Seeding/DatabaseInitializationHostedService.cs`
+- `BestAgent.Infrastructure/Runtime/HttpRunOutboxEventPublisher.cs`
+- `BestAgent.Infrastructure/Runtime/RunOutboxPublisherOptions.cs`
 - `BestAgent.Infrastructure/Tools/ToolExecutor.cs`
 - `BestAgent.Infrastructure/Tools/InMemoryToolHandlerRegistry.cs`
 - `BestAgent.Infrastructure/Tools/HttpToolInvoker.cs`

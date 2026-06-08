@@ -3001,13 +3001,14 @@ public class AgentRunWorker : BackgroundService
             runStatus,
             storedEvent?.OccurredAt ?? occurredAt);
         _eventBus.Publish(evt);
-        if (!string.IsNullOrWhiteSpace(storedEvent?.EventId))
+        if (storedEvent is not null
+            && await TryPublishOutboxEventAsync(storedEvent, cancellationToken))
         {
             await MarkOutboxEventPublishedAsync(storedEvent.EventId, cancellationToken);
         }
     }
 
-    private async Task<StoredOutboxEvent?> StoreOutboxEventAsync(
+    private async Task<RunOutboxEvent?> StoreOutboxEventAsync(
         string runId,
         string eventType,
         string runStatus,
@@ -3026,32 +3027,56 @@ public class AgentRunWorker : BackgroundService
 
             var nextSeqNo = await outboxRepository.GetNextSeqNoAsync(runId, cancellationToken);
             var eventId = Guid.NewGuid().ToString("N");
-            await outboxRepository.AddAsync(
-                new RunOutboxEvent
-                {
-                    EventId = eventId,
-                    RunId = runId,
-                    SeqNo = nextSeqNo,
-                    EventType = eventType,
-                    RunStatus = runStatus,
-                    Payload = JsonSerializer.Serialize(data),
-                    PublishStatus = "pending",
-                    OccurredAt = occurredAt,
-                    Creator = "system",
-                    CreatorName = "system",
-                    LastModifier = "system",
-                    LastModifierName = "system",
-                    CreateTime = occurredAt,
-                    LastModifyTime = occurredAt
-                },
-                cancellationToken);
+            var outboxEvent = new RunOutboxEvent
+            {
+                EventId = eventId,
+                RunId = runId,
+                SeqNo = nextSeqNo,
+                EventType = eventType,
+                RunStatus = runStatus,
+                Payload = JsonSerializer.Serialize(data),
+                PublishStatus = "pending",
+                OccurredAt = occurredAt,
+                Creator = "system",
+                CreatorName = "system",
+                LastModifier = "system",
+                LastModifierName = "system",
+                CreateTime = occurredAt,
+                LastModifyTime = occurredAt
+            };
+            await outboxRepository.AddAsync(outboxEvent, cancellationToken);
 
-            return new StoredOutboxEvent(eventId, nextSeqNo, occurredAt);
+            return outboxEvent;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to store outbox event {EventType} for run {RunId}", eventType, runId);
             return null;
+        }
+    }
+
+    private async Task<bool> TryPublishOutboxEventAsync(RunOutboxEvent outboxEvent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var publisher = scope.ServiceProvider.GetService<IRunOutboxEventPublisher>();
+            if (publisher is null)
+            {
+                return true;
+            }
+
+            await publisher.PublishAsync(outboxEvent, cancellationToken);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Failed to publish outbox event {EventId} for run {RunId}; leaving event pending for dispatcher retry.",
+                outboxEvent.EventId,
+                outboxEvent.RunId);
+            return false;
         }
     }
 
@@ -3077,9 +3102,4 @@ public class AgentRunWorker : BackgroundService
     private sealed record ToolOutputValidationFailure(
         string Message,
         string? CompensationPolicy);
-
-    private sealed record StoredOutboxEvent(
-        string EventId,
-        long SeqNo,
-        DateTime OccurredAt);
 }

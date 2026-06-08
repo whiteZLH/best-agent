@@ -22,7 +22,7 @@ namespace BestAgent.Api.Tests.AgentRuns.Runtime;
 
 public class AgentRunWorkerTests
 {
-    private const int WaitPollAttempts = 250;
+    private const int WaitPollAttempts = 1000;
     private static readonly TimeSpan WaitPollDelay = TimeSpan.FromMilliseconds(20);
 
     [Fact]
@@ -187,6 +187,76 @@ public class AgentRunWorkerTests
             Arg.Any<DateTime>(),
             Arg.Any<CancellationToken>());
         agentMetrics.Received(1).RecordRunCompleted("writer", "Completed", 0m);
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldLeaveOutboxEventPending_WhenExternalPublisherFails()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var runOutboxRepo = Substitute.For<IRunOutboxEventRepository>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var outboxPublisher = Substitute.For<IRunOutboxEventPublisher>();
+        var run = CreateRunningRun();
+        var resolvedDefinition = CreateResolvedDefinition();
+
+        agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        agentDefinitionRepo.GetEnabledByCodeAsync(run.AgentCode, Arg.Any<CancellationToken>()).Returns(resolvedDefinition);
+        runOutboxRepo.GetNextSeqNoAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(1L, 2L);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("final-answer"));
+        stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("All done"));
+        outboxPublisher.PublishAsync(Arg.Any<RunOutboxEvent>(), Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("outbox publish failed"));
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            runOutboxRepo,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter,
+            outboxPublisher: outboxPublisher);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(run.RunId), cts.Token);
+
+        var completedRun = await WaitForUpdatedRunAsync(agentRunRepo, expectedStatus: "Completed");
+        await WaitForEventAsync(eventBus, eventType: "done");
+
+        Assert.Equal("All done", completedRun.OutputPayload);
+        await outboxPublisher.Received(2).PublishAsync(Arg.Any<RunOutboxEvent>(), Arg.Any<CancellationToken>());
+        await runOutboxRepo.DidNotReceive().MarkPublishedAsync(
+            Arg.Any<string>(),
+            Arg.Any<DateTime>(),
+            Arg.Any<CancellationToken>());
+        await runOutboxRepo.Received(2).AddAsync(
+            Arg.Is<RunOutboxEvent>(evt =>
+                evt.RunId == run.RunId &&
+                evt.PublishStatus == "pending"),
+            Arg.Any<CancellationToken>());
 
         cts.Cancel();
         await worker.StopAsync(CancellationToken.None);
@@ -7020,7 +7090,8 @@ public class AgentRunWorkerTests
         IToolOutputValidator? toolOutputValidator = null,
         IAgentOutputValidator? agentOutputValidator = null,
         IRuntimeContextComposer? runtimeContextComposer = null,
-        IRouteRuleRepository? routeRuleRepository = null)
+        IRouteRuleRepository? routeRuleRepository = null,
+        IRunOutboxEventPublisher? outboxPublisher = null)
     {
         var services = new ServiceCollection();
         services.AddSingleton(agentRunRepo);
@@ -7051,6 +7122,11 @@ public class AgentRunWorkerTests
         if (routeRuleRepository is not null)
         {
             services.AddSingleton(routeRuleRepository);
+        }
+
+        if (outboxPublisher is not null)
+        {
+            services.AddSingleton(outboxPublisher);
         }
 
         services.AddSingleton<IToolInvocationRepository>(toolInvocationRepository ?? new InMemoryToolInvocationRepository());

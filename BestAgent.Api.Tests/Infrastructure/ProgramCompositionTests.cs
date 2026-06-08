@@ -98,7 +98,7 @@ public class ProgramCompositionTests
         Assert.NotNull(provider.GetRequiredService<IToolResolver>());
         Assert.IsType<JsonSchemaToolInputValidator>(provider.GetRequiredService<IToolInputValidator>());
         Assert.IsType<JsonSchemaToolOutputValidator>(provider.GetRequiredService<IToolOutputValidator>());
-        Assert.IsType<EventBusRunOutboxEventPublisher>(provider.GetRequiredService<IRunOutboxEventPublisher>());
+        Assert.IsType<HttpRunOutboxEventPublisher>(provider.GetRequiredService<IRunOutboxEventPublisher>());
 
         var hostedServices = provider.GetServices<IHostedService>().ToList();
         Assert.Contains(hostedServices, service => service.GetType() == typeof(DatabaseInitializationHostedService));

@@ -51,10 +51,19 @@ public static class DependencyInjection
                 ? ApprovalTimeoutOptions.RejectAction
                 : configuration["Approval:TimeoutAction"]!.Trim()
         };
+        var runOutboxPublisherOptions = new RunOutboxPublisherOptions
+        {
+            EndpointUrl = configuration["Outbox:Publisher:EndpointUrl"],
+            AuthorizationHeader = configuration["Outbox:Publisher:AuthorizationHeader"],
+            TimeoutSeconds = int.TryParse(configuration["Outbox:Publisher:TimeoutSeconds"], out var outboxTimeoutSeconds)
+                ? outboxTimeoutSeconds
+                : 5
+        };
 
         services.AddDbContext<BestAgentDbContext>(options => options.UseNpgsql(connectionString));
         services.AddSingleton(openAiOptions);
         services.AddSingleton(approvalTimeoutOptions);
+        services.AddSingleton(runOutboxPublisherOptions);
         services.AddSingleton<BestAgent.Application.Observability.IAgentMetrics, AgentMetrics>();
         services.AddSingleton(sp =>
         {
@@ -73,6 +82,12 @@ public static class DependencyInjection
         });
         services.AddSingleton<IModelGateway, OpenAiCompatibleModelGateway>();
         services.AddHttpClient("ToolWebhook");
+        services.AddHttpClient("RunOutboxPublisher", (sp, client) =>
+        {
+            var options = sp.GetRequiredService<RunOutboxPublisherOptions>();
+            var timeoutSeconds = options.TimeoutSeconds > 0 ? options.TimeoutSeconds : 5;
+            client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        });
         services.AddSingleton<InMemoryToolHandlerRegistry>();
         services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<InMemoryToolHandlerRegistry>());
         services.AddScoped<IToolResolver, ToolResolver>();
@@ -100,7 +115,7 @@ public static class DependencyInjection
         services.AddScoped<RuntimeMemoryWriter>();
         services.AddScoped<IRuntimeContextComposer>(sp => sp.GetRequiredService<RuntimeContextComposer>());
         services.AddScoped<IRuntimeMemoryWriter>(sp => sp.GetRequiredService<RuntimeMemoryWriter>());
-        services.AddSingleton<IRunOutboxEventPublisher, EventBusRunOutboxEventPublisher>();
+        services.AddSingleton<IRunOutboxEventPublisher, HttpRunOutboxEventPublisher>();
         services.AddHostedService<DatabaseInitializationHostedService>();
         services.AddHostedService<AgentRunWorker>();
         services.AddHostedService<ApprovalTimeoutDispatcher>();

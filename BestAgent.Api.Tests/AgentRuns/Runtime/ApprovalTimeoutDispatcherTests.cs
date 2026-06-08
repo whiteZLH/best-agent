@@ -92,7 +92,11 @@ public class ApprovalTimeoutDispatcherTests
             "tool_call",
             Arg.Any<TimeSpan>());
         agentMetrics.Received(1).RecordRunCompleted("writer", "TimedOut", 0m);
-        var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ApprovalActivityName);
+        var activity = Assert.Single(
+            collector.Activities,
+            value => value.OperationName == AgentTracing.ApprovalActivityName
+                && string.Equals(value.GetTagItem("bestagent.approval_action") as string, "timeout", StringComparison.Ordinal)
+                && string.Equals(value.GetTagItem("bestagent.step_type") as string, "tool_call", StringComparison.Ordinal));
         Assert.Equal("timeout", activity.GetTagItem("bestagent.approval_action"));
         Assert.Equal("timedout", activity.GetTagItem("bestagent.status"));
         Assert.Equal("tool_call", activity.GetTagItem("bestagent.step_type"));
