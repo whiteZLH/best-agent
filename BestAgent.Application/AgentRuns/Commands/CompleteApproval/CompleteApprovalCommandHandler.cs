@@ -19,6 +19,8 @@ public class CompleteApprovalCommandHandler : IRequestHandler<CompleteApprovalCo
     private readonly IApprovalAuthorizer _approvalAuthorizer;
     private readonly IIdempotencyRecordRepository _idempotencyRecordRepository;
     private readonly IAgentDefinitionRepository _agentDefinitionRepository;
+    private readonly ApprovalPolicyOptions _approvalPolicyOptions;
+    private readonly TenantApprovalPolicyOptions _tenantApprovalPolicyOptions;
 
     public CompleteApprovalCommandHandler(
         IAgentRunRepository agentRunRepository,
@@ -27,7 +29,9 @@ public class CompleteApprovalCommandHandler : IRequestHandler<CompleteApprovalCo
         IAgentRunChannel agentRunChannel,
         IApprovalAuthorizer approvalAuthorizer,
         IIdempotencyRecordRepository idempotencyRecordRepository,
-        IAgentDefinitionRepository agentDefinitionRepository)
+        IAgentDefinitionRepository agentDefinitionRepository,
+        ApprovalPolicyOptions? approvalPolicyOptions = null,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions = null)
     {
         _agentRunRepository = agentRunRepository;
         _agentStepRepository = agentStepRepository;
@@ -36,6 +40,8 @@ public class CompleteApprovalCommandHandler : IRequestHandler<CompleteApprovalCo
         _approvalAuthorizer = approvalAuthorizer;
         _idempotencyRecordRepository = idempotencyRecordRepository;
         _agentDefinitionRepository = agentDefinitionRepository;
+        _approvalPolicyOptions = ApprovalPolicyOptionsNormalizer.Normalize(approvalPolicyOptions);
+        _tenantApprovalPolicyOptions = TenantApprovalPolicyOptionsNormalizer.Normalize(tenantApprovalPolicyOptions);
     }
 
     public async Task<CompleteApprovalResult> Handle(CompleteApprovalCommand request, CancellationToken cancellationToken)
@@ -108,19 +114,20 @@ public class CompleteApprovalCommandHandler : IRequestHandler<CompleteApprovalCo
 
         var resolvedDefinition = await ResolveDefinitionForRunAsync(agentRun, cancellationToken);
         _approvalAuthorizer.Authorize(new ApprovalAuthorizationContext(
-            request.RunId,
-            approval.StepId,
-            approvalContext!.RequestedAction,
-            approvalContext.SideEffectLevel,
-            request.ApproverId,
-            request.ApproverName,
-            request.ApproverRole,
-            resolvedDefinition?.Version.ApprovalPolicy,
-            await AgentRunApprovalPolicyResolver.ResolveEffectivePolicyAsync(
+            RunId: request.RunId,
+            StepId: approval.StepId,
+            ToolName: approvalContext!.RequestedAction,
+            SideEffectLevel: approvalContext.SideEffectLevel,
+            ApproverId: request.ApproverId,
+            ApproverName: request.ApproverName,
+            ApproverRole: request.ApproverRole,
+            ApprovalPolicyOptions: await AgentRunApprovalPolicyResolver.ResolveEffectivePolicyAsync(
                 _agentDefinitionRepository,
                 _agentRunRepository,
                 _agentStepRepository,
                 agentRun,
+                _approvalPolicyOptions,
+                _tenantApprovalPolicyOptions,
                 cancellationToken)));
 
         agentRun = agentRun with

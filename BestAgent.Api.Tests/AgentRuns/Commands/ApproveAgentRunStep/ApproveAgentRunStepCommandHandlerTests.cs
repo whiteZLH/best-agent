@@ -93,6 +93,50 @@ public class ApproveAgentRunStepCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ShouldUseTenantApprovalPolicy_ForApproverRoleAuthorization()
+    {
+        var now = DateTime.UtcNow;
+        var run = CreateWaitingApprovalRun(now) with
+        {
+            TenantId = "tenant-a"
+        };
+        var pendingStep = CreatePendingApprovalStep(run, now, "internal_write");
+        var services = new ServiceCollection();
+        services.AddApplication(
+            new ApprovalPolicyOptions
+            {
+                AllowedApproverRoles = ["admin"],
+                RoleRequiredSideEffectLevels = ["internal_write"]
+            },
+            tenantApprovalPolicyOptions: new TenantApprovalPolicyOptions
+            {
+                PoliciesByTenantId = new Dictionary<string, ApprovalPolicyOptions>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["tenant-a"] = new()
+                    {
+                        AllowedApproverRoles = ["security"],
+                        RoleRequiredSideEffectLevels = ["internal_write"]
+                    }
+                }
+            });
+        services.AddSingleton(_agentRunRepo);
+        services.AddSingleton(_agentStepRepo);
+        services.AddSingleton(_agentRunChannel);
+        services.AddSingleton(_agentDefinitionRepo);
+        var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+        _agentRunRepo.GetByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(run);
+        _agentStepRepo.GetLastByRunIdAsync("run-1", Arg.Any<CancellationToken>()).Returns(pendingStep);
+
+        var result = await mediator.Send(new ApproveAgentRunStepCommand("run-1", pendingStep.StepId, "u-1", "Alice", "security", "Looks good"));
+
+        Assert.Equal("Running", result.Status);
+        await _agentRunChannel.Received(1).EnqueueAsync(
+            Arg.Is<ApproveAgentRunStepMessage>(msg => msg.ApproverRole == "security"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Handle_ShouldUseStricterParentApprovalPolicy_ForChildRunAuthorization()
     {
         var now = DateTime.UtcNow;

@@ -82,6 +82,7 @@ public class ProgramCompositionTests
         Assert.IsType<AgentMetrics>(provider.GetRequiredService<IAgentMetrics>());
         Assert.NotNull(provider.GetRequiredService<ApprovalPolicyOptions>());
         Assert.NotNull(provider.GetRequiredService<HumanTakeoverPolicyOptions>());
+        Assert.NotNull(provider.GetRequiredService<TenantApprovalPolicyOptions>());
         Assert.IsType<HmacWebhookRequestAuthorizer>(provider.GetRequiredService<IWebhookRequestAuthorizer>());
         Assert.IsType<RuntimeContextComposer>(provider.GetRequiredService<IRuntimeContextComposer>());
         Assert.IsType<RuntimeMemoryWriter>(provider.GetRequiredService<IRuntimeMemoryWriter>());
@@ -177,5 +178,32 @@ public class ProgramCompositionTests
         var options = provider.GetRequiredService<HumanTakeoverPolicyOptions>();
 
         Assert.Equal(["Operator", "admin"], options.AllowedHumanOperatorRoles);
+    }
+
+    [Fact]
+    public void AddApplication_ShouldNormalizeTenantApprovalPolicyOptions()
+    {
+        var services = new ServiceCollection();
+
+        services.AddApplication(
+            tenantApprovalPolicyOptions: new TenantApprovalPolicyOptions
+            {
+                PoliciesByTenantId = new Dictionary<string, ApprovalPolicyOptions>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [" tenant-a "] = new()
+                    {
+                        AllowedApproverRoles = [" Security ", "security"],
+                        RoleRequiredSideEffectLevels = ["InternalWrite"]
+                    }
+                }
+            });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<TenantApprovalPolicyOptions>();
+
+        var policy = Assert.Single(options.PoliciesByTenantId);
+        Assert.Equal("tenant-a", policy.Key);
+        Assert.Equal(["Security"], policy.Value.AllowedApproverRoles);
+        Assert.Equal(["internal_write"], policy.Value.RoleRequiredSideEffectLevels);
     }
 }

@@ -12,6 +12,8 @@ public static class AgentRunApprovalPolicyResolver
         IAgentRunRepository agentRunRepository,
         IAgentStepRepository agentStepRepository,
         AgentRun agentRun,
+        ApprovalPolicyOptions? globalApprovalPolicyOptions,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions,
         CancellationToken cancellationToken)
     {
         var resolvedDefinition = await ResolveDefinitionForRunAsync(
@@ -21,9 +23,35 @@ public static class AgentRunApprovalPolicyResolver
             agentRun,
             cancellationToken);
 
-        return resolvedDefinition is null
-            ? null
-            : ApprovalPolicyParser.ParseOptional(resolvedDefinition.Version.ApprovalPolicy);
+        return ResolveEffectivePolicy(
+            agentRun,
+            resolvedDefinition?.Version.ApprovalPolicy,
+            globalApprovalPolicyOptions,
+            tenantApprovalPolicyOptions);
+    }
+
+    public static ApprovalPolicyOptions ResolveEffectivePolicy(
+        AgentRun agentRun,
+        string? versionApprovalPolicy,
+        ApprovalPolicyOptions? globalApprovalPolicyOptions,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions)
+    {
+        var normalizedGlobalPolicy = ApprovalPolicyOptionsNormalizer.Normalize(globalApprovalPolicyOptions);
+        var tenantPolicy = ResolveTenantPolicy(agentRun.TenantId, tenantApprovalPolicyOptions);
+        var versionPolicy = ApprovalPolicyParser.ParseOptional(versionApprovalPolicy);
+
+        if (tenantPolicy is null)
+        {
+            return ApprovalPolicyParser.Merge(normalizedGlobalPolicy, versionPolicy);
+        }
+
+        var tenantResolvedPolicy = ApprovalPolicyParser.Merge(normalizedGlobalPolicy, tenantPolicy);
+        if (versionPolicy is null)
+        {
+            return tenantResolvedPolicy;
+        }
+
+        return MergeTenantBoundary(tenantResolvedPolicy, tenantPolicy, versionPolicy);
     }
 
     private static async Task<ResolvedAgentDefinition?> ResolveDefinitionForRunAsync(
@@ -130,5 +158,62 @@ public static class AgentRunApprovalPolicyResolver
 
         var merged = ApprovalPolicyInheritance.MergeStricter(parentPolicy, currentPolicy);
         return JsonSerializer.Serialize(merged);
+    }
+
+    private static ApprovalPolicyOptions? ResolveTenantPolicy(
+        string? tenantId,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions)
+    {
+        var normalizedTenantId = string.IsNullOrWhiteSpace(tenantId) ? null : tenantId.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedTenantId)
+            || tenantApprovalPolicyOptions?.PoliciesByTenantId is null
+            || tenantApprovalPolicyOptions.PoliciesByTenantId.Count == 0
+            || !tenantApprovalPolicyOptions.PoliciesByTenantId.TryGetValue(normalizedTenantId, out var policy))
+        {
+            return null;
+        }
+
+        return ApprovalPolicyOptionsNormalizer.Normalize(policy);
+    }
+
+    private static ApprovalPolicyOptions MergeTenantBoundary(
+        ApprovalPolicyOptions tenantResolvedPolicy,
+        ApprovalPolicyOptions tenantPolicy,
+        ApprovalPolicyOptions versionPolicy)
+    {
+        var normalizedTenantResolvedPolicy = ApprovalPolicyOptionsNormalizer.Normalize(tenantResolvedPolicy);
+        var normalizedTenantPolicy = ApprovalPolicyOptionsNormalizer.Normalize(tenantPolicy);
+        var normalizedVersionPolicy = ApprovalPolicyOptionsNormalizer.Normalize(versionPolicy);
+
+        var effectiveAllowedRoles = normalizedTenantPolicy.AllowedApproverRoles.Count > 0
+            ? normalizedVersionPolicy.AllowedApproverRoles.Count > 0
+                ? normalizedTenantResolvedPolicy.AllowedApproverRoles
+                    .Where(role => normalizedVersionPolicy.AllowedApproverRoles.Contains(role, StringComparer.OrdinalIgnoreCase))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()
+                : normalizedTenantResolvedPolicy.AllowedApproverRoles.ToArray()
+            : normalizedVersionPolicy.AllowedApproverRoles.Count > 0
+                ? normalizedVersionPolicy.AllowedApproverRoles.ToArray()
+                : normalizedTenantResolvedPolicy.AllowedApproverRoles.ToArray();
+
+        return ApprovalPolicyOptionsNormalizer.Normalize(new ApprovalPolicyOptions
+        {
+            ApprovalRequiredSideEffectLevels = normalizedTenantResolvedPolicy.ApprovalRequiredSideEffectLevels
+                .Concat(normalizedVersionPolicy.ApprovalRequiredSideEffectLevels)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            RoleRequiredSideEffectLevels = normalizedTenantResolvedPolicy.RoleRequiredSideEffectLevels
+                .Concat(normalizedVersionPolicy.RoleRequiredSideEffectLevels)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            AllowedApproverRoles = effectiveAllowedRoles,
+            ParameterApprovalRules = normalizedTenantResolvedPolicy.ParameterApprovalRules
+                .Concat(normalizedVersionPolicy.ParameterApprovalRules)
+                .GroupBy(
+                    rule => $"{rule.ToolName}|{rule.InputPath}|{rule.ExpectedValue}|{rule.OverrideSideEffectLevel}",
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToArray()
+        });
     }
 }

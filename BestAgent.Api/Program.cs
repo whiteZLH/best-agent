@@ -33,6 +33,9 @@ var humanTakeoverPolicyOptions = new HumanTakeoverPolicyOptions
         "HumanTakeover:AllowedRoles",
         Array.Empty<string>())
 };
+var tenantApprovalPolicyOptions = ReadTenantApprovalPolicyOptions(
+    builder.Configuration,
+    "Approval:TenantPolicies");
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
@@ -74,7 +77,10 @@ builder.Services.AddSingleton(new WebhookSecurityOptions
         : builder.Configuration["WebhookSecurity:SignatureHeaderName"]!
 });
 builder.Services.AddSingleton<IWebhookRequestAuthorizer, HmacWebhookRequestAuthorizer>();
-builder.Services.AddApplication(approvalPolicyOptions, humanTakeoverPolicyOptions);
+builder.Services.AddApplication(
+    approvalPolicyOptions,
+    humanTakeoverPolicyOptions,
+    tenantApprovalPolicyOptions);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddAutoMapper(
     _ => { },
@@ -144,6 +150,45 @@ static ApprovalParameterRule[] ReadApprovalParameterRules(
             !string.IsNullOrWhiteSpace(rule.ToolName)
             && !string.IsNullOrWhiteSpace(rule.InputPath))
         .ToArray();
+}
+
+static TenantApprovalPolicyOptions ReadTenantApprovalPolicyOptions(
+    IConfiguration configuration,
+    string sectionPath)
+{
+    var policies = new Dictionary<string, ApprovalPolicyOptions>(StringComparer.OrdinalIgnoreCase);
+    foreach (var section in configuration.GetSection(sectionPath).GetChildren())
+    {
+        var tenantId = NormalizeOptional(section["TenantId"]);
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            continue;
+        }
+
+        policies[tenantId] = new ApprovalPolicyOptions
+        {
+            ApprovalRequiredSideEffectLevels = ReadStringList(
+                section,
+                "ApprovalRequiredSideEffectLevels",
+                Array.Empty<string>()),
+            RoleRequiredSideEffectLevels = ReadStringList(
+                section,
+                "RoleRequiredSideEffectLevels",
+                Array.Empty<string>()),
+            AllowedApproverRoles = ReadStringList(
+                section,
+                "AllowedApproverRoles",
+                Array.Empty<string>()),
+            ParameterApprovalRules = ReadApprovalParameterRules(
+                section,
+                "ParameterApprovalRules")
+        };
+    }
+
+    return new TenantApprovalPolicyOptions
+    {
+        PoliciesByTenantId = policies
+    };
 }
 
 static BestAgentAuthenticatedUser[] ReadAuthenticationUsers(

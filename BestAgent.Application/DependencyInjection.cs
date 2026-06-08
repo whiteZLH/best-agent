@@ -12,10 +12,12 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(
         this IServiceCollection services,
         ApprovalPolicyOptions? approvalPolicyOptions = null,
-        HumanTakeoverPolicyOptions? humanTakeoverPolicyOptions = null)
+        HumanTakeoverPolicyOptions? humanTakeoverPolicyOptions = null,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions = null)
     {
         var normalizedApprovalPolicyOptions = ApprovalPolicyOptionsNormalizer.Normalize(approvalPolicyOptions);
         var normalizedHumanTakeoverPolicyOptions = HumanTakeoverPolicyOptionsNormalizer.Normalize(humanTakeoverPolicyOptions);
+        var normalizedTenantApprovalPolicyOptions = TenantApprovalPolicyOptionsNormalizer.Normalize(tenantApprovalPolicyOptions);
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly));
         services.AddSingleton<IStepDecisionParser, StepDecisionParser>();
@@ -23,6 +25,7 @@ public static class DependencyInjection
         services.AddSingleton<IAgentRunEventBus, AgentRunEventBus>();
         services.TryAddSingleton(normalizedApprovalPolicyOptions);
         services.TryAddSingleton(normalizedHumanTakeoverPolicyOptions);
+        services.TryAddSingleton(normalizedTenantApprovalPolicyOptions);
         services.TryAddSingleton<IAgentMetrics>(NullAgentMetrics.Instance);
         services.AddSingleton<IApprovalAuthorizer, DefaultApprovalAuthorizer>();
         services.AddSingleton<IHumanTakeoverAuthorizer, DefaultHumanTakeoverAuthorizer>();

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using BestAgent.Api.Tests.Observability;
+using BestAgent.Application.AgentRuns.Approvals;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Models;
 using BestAgent.Application.Observability;
@@ -5862,6 +5863,99 @@ public class AgentRunWorkerTests
             services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<AgentRunWorker>.Instance,
             new ApprovalTimeoutOptions { TimeoutMinutes = 15 });
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(run.RunId), cts.Token);
+
+        var waitingRun = await WaitForUpdatedRunAsync(agentRunRepo, expectedStatus: "WaitingApproval");
+        var createdApproval = await WaitForAddedApprovalAsync(agentApprovalRepo);
+        await WaitForEventAsync(eventBus, eventType: "waiting_approval");
+
+        Assert.Equal("WaitingApproval", waitingRun.Status);
+        Assert.Equal("destructive", createdApproval.RiskLevel);
+        await toolExecutor.DidNotReceive().ExecuteAsync(
+            Arg.Any<string>(),
+            Arg.Any<string?>(),
+            Arg.Any<ToolExecutionContext>(),
+            Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldUseTenantApprovalPolicy_WhenWaitingForApproval()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var run = CreateRunningRun() with
+        {
+            TenantId = "tenant-a"
+        };
+        var resolvedDefinition = CreateResolvedDefinition();
+
+        agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        agentDefinitionRepo.GetEnabledByCodeAsync(run.AgentCode, Arg.Any<CancellationToken>()).Returns(resolvedDefinition);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("tool-decision"));
+        stepDecisionParser.Parse("tool-decision")
+            .Returns(StepDecision.ToolCall("weather", "{\"city\":\"Shanghai\"}"));
+        toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(new ToolDefinition
+            {
+                Id = "tool-1",
+                ToolName = "weather",
+                DisplayName = "Weather",
+                Description = "Weather tool",
+                Enabled = true,
+                SideEffectLevel = "read_only"
+            });
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance,
+            new ApprovalTimeoutOptions { TimeoutMinutes = 15 },
+            tenantApprovalPolicyOptions: new TenantApprovalPolicyOptions
+            {
+                PoliciesByTenantId = new Dictionary<string, ApprovalPolicyOptions>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["tenant-a"] = new()
+                    {
+                        ApprovalRequiredSideEffectLevels = [],
+                        ParameterApprovalRules =
+                        [
+                            new ApprovalParameterRule
+                            {
+                                ToolName = "weather",
+                                InputPath = "city",
+                                ExpectedValue = "Shanghai",
+                                OverrideSideEffectLevel = "destructive"
+                            }
+                        ]
+                    }
+                }
+            });
         using var cts = new CancellationTokenSource();
 
         await worker.StartAsync(cts.Token);

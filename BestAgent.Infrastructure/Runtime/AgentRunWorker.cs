@@ -25,6 +25,7 @@ public class AgentRunWorker : BackgroundService
     private readonly ILogger<AgentRunWorker> _logger;
     private readonly ApprovalTimeoutOptions _approvalTimeoutOptions;
     private readonly ApprovalPolicyOptions _approvalPolicyOptions;
+    private readonly TenantApprovalPolicyOptions _tenantApprovalPolicyOptions;
     private readonly IAgentMetrics _agentMetrics;
     private readonly ConcurrentDictionary<string, byte> _activeRuns = new();
 
@@ -35,7 +36,8 @@ public class AgentRunWorker : BackgroundService
         ILogger<AgentRunWorker> logger,
         ApprovalTimeoutOptions? approvalTimeoutOptions = null,
         ApprovalPolicyOptions? approvalPolicyOptions = null,
-        IAgentMetrics? agentMetrics = null)
+        IAgentMetrics? agentMetrics = null,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions = null)
     {
         _channel = channel;
         _eventBus = eventBus;
@@ -43,6 +45,7 @@ public class AgentRunWorker : BackgroundService
         _logger = logger;
         _approvalTimeoutOptions = approvalTimeoutOptions ?? new ApprovalTimeoutOptions();
         _approvalPolicyOptions = ApprovalPolicyOptionsNormalizer.Normalize(approvalPolicyOptions);
+        _tenantApprovalPolicyOptions = TenantApprovalPolicyOptionsNormalizer.Normalize(tenantApprovalPolicyOptions);
         _agentMetrics = agentMetrics ?? NullAgentMetrics.Instance;
     }
 
@@ -188,7 +191,7 @@ public class AgentRunWorker : BackgroundService
             stoppingToken,
             evt => PublishEventAsync(evt.RunId, evt.EventType, agentRun.Status, evt.Data, stoppingToken),
             runtimeContextComposer,
-            ResolveApprovalPolicyOptions(resolvedDefinition),
+            ResolveApprovalPolicyOptions(agentRun, resolvedDefinition),
             routeRuleRepository);
 
         await ApplyLoopResult(
@@ -454,7 +457,7 @@ public class AgentRunWorker : BackgroundService
             stoppingToken,
             evt => PublishEventAsync(evt.RunId, evt.EventType, agentRun.Status, evt.Data, stoppingToken),
             runtimeContextComposer,
-            ResolveApprovalPolicyOptions(resolvedDefinition),
+            ResolveApprovalPolicyOptions(agentRun, resolvedDefinition),
             routeRuleRepository);
 
         await ApplyLoopResult(
@@ -650,7 +653,7 @@ public class AgentRunWorker : BackgroundService
                 stoppingToken,
                 evt => PublishEventAsync(evt.RunId, evt.EventType, agentRun.Status, evt.Data, stoppingToken),
                 runtimeContextComposer,
-                ResolveApprovalPolicyOptions(resolvedDefinition),
+                ResolveApprovalPolicyOptions(agentRun, resolvedDefinition),
                 routeRuleRepository);
 
             await ApplyLoopResult(
@@ -905,7 +908,7 @@ public class AgentRunWorker : BackgroundService
             stoppingToken,
             evt => PublishEventAsync(evt.RunId, evt.EventType, agentRun.Status, evt.Data, stoppingToken),
             runtimeContextComposer,
-            ResolveApprovalPolicyOptions(resolvedDefinition),
+            ResolveApprovalPolicyOptions(agentRun, resolvedDefinition),
             routeRuleRepository);
 
         await ApplyLoopResult(
@@ -1305,7 +1308,7 @@ public class AgentRunWorker : BackgroundService
                 stoppingToken,
                 evt => PublishEventAsync(evt.RunId, evt.EventType, agentRun.Status, evt.Data, stoppingToken),
                 runtimeContextComposer,
-                ResolveApprovalPolicyOptions(resolvedDefinition),
+                ResolveApprovalPolicyOptions(agentRun, resolvedDefinition),
                 routeRuleRepository);
 
             await ApplyLoopResult(
@@ -1526,7 +1529,7 @@ public class AgentRunWorker : BackgroundService
                 stoppingToken,
                 evt => PublishEventAsync(evt.RunId, evt.EventType, parentRun.Status, evt.Data, stoppingToken),
                 runtimeContextComposer,
-                ResolveApprovalPolicyOptions(resolvedDefinition),
+                ResolveApprovalPolicyOptions(parentRun, resolvedDefinition),
                 routeRuleRepository);
 
             await ApplyLoopResult(
@@ -2823,10 +2826,13 @@ public class AgentRunWorker : BackgroundService
         }
     }
 
-    private ApprovalPolicyOptions ResolveApprovalPolicyOptions(ResolvedAgentDefinition resolvedDefinition)
+    private ApprovalPolicyOptions ResolveApprovalPolicyOptions(AgentRun agentRun, ResolvedAgentDefinition resolvedDefinition)
     {
-        var versionPolicy = ApprovalPolicyParser.ParseOptional(resolvedDefinition.Version.ApprovalPolicy);
-        return ApprovalPolicyParser.Merge(_approvalPolicyOptions, versionPolicy);
+        return AgentRunApprovalPolicyResolver.ResolveEffectivePolicy(
+            agentRun,
+            resolvedDefinition.Version.ApprovalPolicy,
+            _approvalPolicyOptions,
+            _tenantApprovalPolicyOptions);
     }
 
     private static async Task<ToolOutputValidationFailure?> ValidateToolOutputAsync(

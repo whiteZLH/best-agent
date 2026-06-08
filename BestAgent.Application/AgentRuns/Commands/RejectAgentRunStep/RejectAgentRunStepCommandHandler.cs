@@ -14,19 +14,25 @@ public class RejectAgentRunStepCommandHandler : IRequestHandler<RejectAgentRunSt
     private readonly IAgentRunChannel _agentRunChannel;
     private readonly IApprovalAuthorizer _approvalAuthorizer;
     private readonly IAgentDefinitionRepository _agentDefinitionRepository;
+    private readonly ApprovalPolicyOptions _approvalPolicyOptions;
+    private readonly TenantApprovalPolicyOptions _tenantApprovalPolicyOptions;
 
     public RejectAgentRunStepCommandHandler(
         IAgentRunRepository agentRunRepository,
         IAgentStepRepository agentStepRepository,
         IAgentRunChannel agentRunChannel,
         IApprovalAuthorizer approvalAuthorizer,
-        IAgentDefinitionRepository agentDefinitionRepository)
+        IAgentDefinitionRepository agentDefinitionRepository,
+        ApprovalPolicyOptions? approvalPolicyOptions = null,
+        TenantApprovalPolicyOptions? tenantApprovalPolicyOptions = null)
     {
         _agentRunRepository = agentRunRepository;
         _agentStepRepository = agentStepRepository;
         _agentRunChannel = agentRunChannel;
         _approvalAuthorizer = approvalAuthorizer;
         _agentDefinitionRepository = agentDefinitionRepository;
+        _approvalPolicyOptions = ApprovalPolicyOptionsNormalizer.Normalize(approvalPolicyOptions);
+        _tenantApprovalPolicyOptions = TenantApprovalPolicyOptionsNormalizer.Normalize(tenantApprovalPolicyOptions);
     }
 
     public async Task<RejectAgentRunStepResult> Handle(RejectAgentRunStepCommand request, CancellationToken cancellationToken)
@@ -47,19 +53,20 @@ public class RejectAgentRunStepCommandHandler : IRequestHandler<RejectAgentRunSt
 
         var resolvedDefinition = await ResolveDefinitionForRunAsync(agentRun, cancellationToken);
         _approvalAuthorizer.Authorize(new ApprovalAuthorizationContext(
-            request.RunId,
-            request.StepId,
-            approvalContext!.RequestedAction,
-            approvalContext.SideEffectLevel,
-            request.ApproverId,
-            request.ApproverName,
-            request.ApproverRole,
-            resolvedDefinition?.Version.ApprovalPolicy,
-            await AgentRunApprovalPolicyResolver.ResolveEffectivePolicyAsync(
+            RunId: request.RunId,
+            StepId: request.StepId,
+            ToolName: approvalContext!.RequestedAction,
+            SideEffectLevel: approvalContext.SideEffectLevel,
+            ApproverId: request.ApproverId,
+            ApproverName: request.ApproverName,
+            ApproverRole: request.ApproverRole,
+            ApprovalPolicyOptions: await AgentRunApprovalPolicyResolver.ResolveEffectivePolicyAsync(
                 _agentDefinitionRepository,
                 _agentRunRepository,
                 _agentStepRepository,
                 agentRun,
+                _approvalPolicyOptions,
+                _tenantApprovalPolicyOptions,
                 cancellationToken)));
 
         agentRun = agentRun with
