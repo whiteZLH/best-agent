@@ -285,6 +285,80 @@ public class RuntimeContextComposerTests
     }
 
     [Fact]
+    public async Task ComposeModelInputAsync_ShouldRewriteApprovalFollowUpInput_ForRetrievalQuery()
+    {
+        var composer = CreateComposer();
+        var context = new AgentLoopContext(
+            CreateRun() with
+            {
+                TenantId = "tenant-1",
+                SessionId = "session-1",
+                UserId = "user-1"
+            },
+            CreateDefinition().Version,
+            """
+            Original user input:
+            Can I issue a refund for this hotel booking?
+
+            Approval granted for:
+            issue refund
+
+            Side effect level: external_write
+
+            Approval request payload:
+            {"amount":120,"currency":"USD"}
+
+            Approval note:
+            Approved by supervisor
+
+            Use the approval result to continue planning and answer the user.
+            """,
+            3,
+            0);
+        var definition = CreateDefinition(
+            knowledgeSources: """
+            ["faq"]
+            """,
+            memoryPolicy: """
+            {"maxKnowledgeChunks":1,"knowledgeCandidateCount":4}
+            """);
+
+        _knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
+                "tenant-1",
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Is<string>(query =>
+                    query.Contains("Can I issue a refund for this hotel booking?", StringComparison.Ordinal) &&
+                    query.Contains("issue refund", StringComparison.Ordinal) &&
+                    query.Contains("{\"amount\":120,\"currency\":\"USD\"}", StringComparison.Ordinal) &&
+                    query.Contains("Approved by supervisor", StringComparison.Ordinal) &&
+                    !query.Contains("Use the approval result to continue planning and answer the user.", StringComparison.Ordinal)),
+                4,
+                1,
+                Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new KnowledgeChunk
+                {
+                    Id = "chunk-1",
+                    DocumentId = "doc-1",
+                    TenantId = "tenant-1",
+                    ChunkNo = 1,
+                    Content = "Refunds above 100 USD require supervisor approval.",
+                    Source = "faq/doc-1#1"
+                }
+            ]);
+
+        var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
+
+        Assert.Contains("Reference knowledge:", result.ModelInput);
+        Assert.NotNull(result.Retrieval);
+        Assert.True(result.Retrieval!.WasRewritten);
+        Assert.Equal(
+            "Can I issue a refund for this hotel booking? issue refund {\"amount\":120,\"currency\":\"USD\"} Approved by supervisor",
+            result.Retrieval.QueryText);
+    }
+
+    [Fact]
     public async Task ComposeModelInputAsync_ShouldSkipKnowledgeLookup_WhenMemoryPolicyDisablesKnowledge()
     {
         var composer = CreateComposer();

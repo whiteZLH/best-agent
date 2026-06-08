@@ -271,6 +271,9 @@ public class RuntimeContextComposer : IRuntimeContextComposer
             ["Current user input:"] = "currentInput",
             ["Original user input:"] = "originalInput",
             ["Retrieval query:"] = "retrievalQuery",
+            ["Approval granted for:"] = "approvalAction",
+            ["Approval request payload:"] = "approvalPayload",
+            ["Approval note:"] = "approvalComment",
             ["Tool called:"] = "toolName",
             ["Tool result:"] = "toolResult"
         };
@@ -332,6 +335,16 @@ public class RuntimeContextComposer : IRuntimeContextComposer
                     continue;
                 }
 
+                if (string.Equals(line, "Use the approval result to continue planning and answer the user.", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (line.StartsWith("Side effect level:", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 if (currentSection is null)
                 {
                     continue;
@@ -350,6 +363,9 @@ public class RuntimeContextComposer : IRuntimeContextComposer
                 ReadSection(sections, "retrievalQuery", 240),
                 ReadSection(sections, "currentInput", 360),
                 ReadSection(sections, "originalInput", 360),
+                ReadSection(sections, "approvalAction", 120),
+                ReadSection(sections, "approvalPayload", 240),
+                ReadSection(sections, "approvalComment", 160),
                 ReadSection(sections, "toolName", 80),
                 ReadSection(sections, "toolResult", 420)
             };
