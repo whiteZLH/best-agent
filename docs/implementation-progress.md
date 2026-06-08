@@ -25,7 +25,7 @@
 - 已补上独立 `ToolResolver`，将工具绑定解析从 `ToolExecutor` 中拆出
 - 工具运行时输入 schema 校验 MVP：执行前按 `ToolDefinition.InputSchema` 校验 `type`、`required`、`properties`、`enum` 以及 `additionalProperties` 的布尔/对象形态
 - 工具运行时输出 schema 校验 MVP：同步完成结果会按 `ToolDefinition.OutputSchema` 校验 `type`、`required`、`properties`、`enum` 以及 `additionalProperties` 的布尔/对象形态，pending 结果暂跳过即时校验
-- 工具 schema 校验能力已扩展常用约束：`items`、`prefixItems`、legacy `items: []` 元组写法、`additionalItems`、`minItems`、`maxItems`、`contains`、`minContains`、`maxContains`、`uniqueItems`、`minLength`、`maxLength`、`minimum`、`maximum`、`exclusiveMinimum`、`exclusiveMaximum`、`multipleOf`、`minProperties`、`maxProperties`、`propertyNames`、`patternProperties`、`dependentRequired`、`dependentSchemas`、`pattern`、`const`、`allOf`、`anyOf`、`oneOf`、`not`、`if/then/else` 与最小 `format`
+- 工具 schema 校验能力已扩展常用约束：`items`、`prefixItems`、legacy `items: []` 元组写法、`additionalItems`、`minItems`、`maxItems`、`contains`、`minContains`、`maxContains`、`uniqueItems`、`minLength`、`maxLength`、`minimum`、`maximum`、`exclusiveMinimum`、`exclusiveMaximum`、`multipleOf`、`minProperties`、`maxProperties`、`propertyNames`、`patternProperties`、`dependentRequired`、`dependentSchemas`、`pattern`、`const`、`allOf`、`anyOf`、`oneOf`、`not`、`if/then/else` 与最小 `format`；当前 `format` 已覆盖 `email`、`uri`、`uri-reference`、`date-time`、`date`、`uuid`、`ipv4`、`ipv6` 与 `hostname`
 - 工具参数级安全策略当前也已开始进入主链路：`ParameterPolicy` / 结构化 `Policies.Parameter` 可声明 `allowedPaths` / `deniedPaths`，运行时会在 schema 校验通过后继续按输入路径级规则拦截未放行或显式禁用的参数
 - HTTP webhook 工具最小 `RetryPolicy` 执行：支持结构化 `{"maxAttempts":N,"delayMs":N}` 与 legacy `retry-once` / `retry-twice`，覆盖超时、网络异常、`408`、`429` 和 `5xx`
 - HTTP webhook 工具返回协议兼容增强：除 legacy `output/isPending/waitToken` 外，也支持最小标准结果信封 `status/data/error/meta`
@@ -571,7 +571,7 @@
 - `ToolDefinition` 创建/更新阶段对显式 binding 与 legacy webhook flat 字段冲突输入的拒绝行为，以及非 webhook 绑定拒绝 legacy webhook 字段的行为
 - `ToolExecutor` 的运行时输入 schema 校验行为（缺必填字段、类型错误、额外字段拦截以及合法输入放行）
 - `ToolExecutor` 的运行时输出 schema 校验行为（结果类型不匹配拦截、合法对象结果放行、pending 结果跳过即时校验；异步恢复与人工替代工具结果路径已补上后置校验）
-- `ToolExecutor` 对数组 / 字符串 / 数值 / 对象常用 schema 约束与最小 `format` 的运行时校验行为（`items`、`prefixItems`、legacy `items: []` 元组写法、`additionalItems`、`min/maxItems`、`contains`、`min/maxContains`、`min/maxLength`、`minimum/maximum`、`exclusiveMinimum/exclusiveMaximum`、`min/maxProperties`、`pattern`、`const`、`email/uri/date-time/date/uuid`）
+- `ToolExecutor` 对数组 / 字符串 / 数值 / 对象常用 schema 约束与最小 `format` 的运行时校验行为（`items`、`prefixItems`、legacy `items: []` 元组写法、`additionalItems`、`min/maxItems`、`contains`、`min/maxContains`、`min/maxLength`、`minimum/maximum`、`exclusiveMinimum/exclusiveMaximum`、`min/maxProperties`、`pattern`、`const`、`email/uri/uri-reference/date-time/date/uuid/ipv4/ipv6/hostname`）
 - `ToolExecutor` 对 `additionalProperties` 对象形态、无显式 `properties` 时的 `additionalProperties: false` 约束，以及 `dependentSchemas` 的运行时校验行为
 - `ToolExecutor` 对最小组合关键字的运行时校验行为（`allOf`、`anyOf`、`oneOf`、`not`）
 - `HttpToolInvoker` 的 HTTP 调用与响应处理

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Globalization;
 using System.Net.Mail;
+using System.Net;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 
 namespace BestAgent.Infrastructure.Tools;
@@ -946,6 +948,7 @@ internal static class JsonSchemaToolValidation
         {
             "email" => MatchesEmail(value),
             "uri" => Uri.TryCreate(value, UriKind.Absolute, out _),
+            "uri-reference" => Uri.TryCreate(value, UriKind.RelativeOrAbsolute, out _),
             "date-time" => DateTimeOffset.TryParse(
                 value,
                 CultureInfo.InvariantCulture,
@@ -958,6 +961,9 @@ internal static class JsonSchemaToolValidation
                 DateTimeStyles.None,
                 out _),
             "uuid" => Guid.TryParse(value, out _),
+            "ipv4" => MatchesIpAddress(value, AddressFamily.InterNetwork),
+            "ipv6" => MatchesIpAddress(value, AddressFamily.InterNetworkV6),
+            "hostname" => MatchesHostname(value),
             _ => true
         };
     }
@@ -973,5 +979,47 @@ internal static class JsonSchemaToolValidation
         {
             return false;
         }
+    }
+
+    private static bool MatchesIpAddress(string value, AddressFamily addressFamily)
+    {
+        return IPAddress.TryParse(value, out var address)
+            && address.AddressFamily == addressFamily;
+    }
+
+    private static bool MatchesHostname(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)
+            || value.Length > 253
+            || value.EndsWith(".", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var labels = value.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (labels.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (var label in labels)
+        {
+            if (label.Length is < 1 or > 63
+                || label.StartsWith("-", StringComparison.Ordinal)
+                || label.EndsWith("-", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            foreach (var character in label)
+            {
+                if (!char.IsLetterOrDigit(character) && character != '-')
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 }

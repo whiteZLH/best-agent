@@ -619,6 +619,30 @@ public class ToolExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldRejectInputIpv4NotMatchingFormat()
+    {
+        var definition = CreateToolDefinition(
+            inputSchema:
+            """
+            {
+              "type": "object",
+              "required": ["ipAddress"],
+              "properties": {
+                "ipAddress": { "type": "string", "format": "ipv4" }
+              }
+            }
+            """);
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(definition);
+        var executor = CreateExecutor();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            executor.ExecuteAsync("weather", "{\"ipAddress\":\"2001:db8::1\"}", _context, CancellationToken.None));
+
+        Assert.Equal("Input for tool 'weather' at '$.ipAddress' must match format 'ipv4'.", exception.Message);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldRejectInputArrayWithDuplicateItems_WhenUniqueItemsEnabled()
     {
         var definition = CreateToolDefinition(
@@ -909,6 +933,35 @@ public class ToolExecutorTests
         var result = await executor.ExecuteAsync(
             "weather",
             "{\"scheduledAt\":\"2026-06-08T10:30:00Z\"}",
+            _context,
+            CancellationToken.None);
+
+        Assert.Equal("from-webhook", result.Output);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldAllowInputHostnameMatchingFormat()
+    {
+        var definition = CreateToolDefinition(
+            inputSchema:
+            """
+            {
+              "type": "object",
+              "required": ["host"],
+              "properties": {
+                "host": { "type": "string", "format": "hostname" }
+              }
+            }
+            """);
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(definition);
+        _httpToolInvoker.InvokeAsync(Arg.Any<HttpToolInvocationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ToolExecutionResult.Completed("weather", "from-webhook"));
+        var executor = CreateExecutor();
+
+        var result = await executor.ExecuteAsync(
+            "weather",
+            "{\"host\":\"api.internal.example\"}",
             _context,
             CancellationToken.None);
 
@@ -1338,6 +1391,31 @@ public class ToolExecutorTests
             executor.ExecuteAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None));
 
         Assert.Equal("Output for tool 'weather' at '$.downloadUrl' must match format 'uri'.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldAllowOutputUriReferenceMatchingFormat()
+    {
+        var definition = CreateToolDefinition(
+            outputSchema:
+            """
+            {
+              "type": "object",
+              "required": ["downloadPath"],
+              "properties": {
+                "downloadPath": { "type": "string", "format": "uri-reference" }
+              }
+            }
+            """);
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(definition);
+        _httpToolInvoker.InvokeAsync(Arg.Any<HttpToolInvocationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ToolExecutionResult.Completed("weather", "{\"downloadPath\":\"../downloads/result.json?version=1#part\"}"));
+        var executor = CreateExecutor();
+
+        var result = await executor.ExecuteAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None);
+
+        Assert.Equal("{\"downloadPath\":\"../downloads/result.json?version=1#part\"}", result.Output);
     }
 
     [Fact]
