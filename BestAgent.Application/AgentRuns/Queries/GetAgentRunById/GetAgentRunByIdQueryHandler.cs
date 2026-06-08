@@ -1,6 +1,7 @@
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
 using MediatR;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 
@@ -35,6 +36,10 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
         var waitStepType = default(string);
         var currentInvocationId = default(string);
         var currentApprovalId = default(string);
+        ToolInvocationInfo? currentToolInvocation = null;
+        ApprovalInfo? currentApproval = null;
+        HumanWaitInfo? currentHumanWait = null;
+        HandoffInfo? currentHandoff = null;
         var currentStep = agentRun.CurrentStepNo > 0
             ? await _agentStepRepository.GetLastByRunIdAsync(request.RunId, cancellationToken)
             : null;
@@ -52,12 +57,16 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
                     currentStep.StepId,
                     cancellationToken);
                 currentInvocationId = pendingInvocation?.InvocationId;
+                currentToolInvocation = AgentRunStepDataMapper.MapToolInvocation(pendingInvocation);
 
                 var approval = await _agentApprovalRepository.GetByRunIdAndStepIdAsync(
                     request.RunId,
                     currentStep.StepId,
                     cancellationToken);
                 currentApprovalId = approval?.ApprovalId;
+                currentApproval = AgentRunStepDataMapper.MapApproval(approval, currentStep.DecisionPayload);
+                currentHumanWait = AgentRunStepDataMapper.MapHumanWait(currentStep.DecisionPayload);
+                currentHandoff = AgentRunStepDataMapper.MapHandoff(currentStep.DecisionPayload);
             }
         }
 
@@ -84,6 +93,10 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
             currentStepId,
             waitStepType,
             currentInvocationId,
-            currentApprovalId);
+            currentApprovalId,
+            currentToolInvocation,
+            currentApproval,
+            currentHumanWait,
+            currentHandoff);
     }
 }

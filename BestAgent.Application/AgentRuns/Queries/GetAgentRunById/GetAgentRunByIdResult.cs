@@ -1,5 +1,7 @@
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+
 public record GetAgentRunByIdResult(
     string RunId,
     string AgentCode,
@@ -23,4 +25,8 @@ public record GetAgentRunByIdResult(
     string? CurrentStepId = null,
     string? WaitStepType = null,
     string? CurrentInvocationId = null,
-    string? CurrentApprovalId = null);
+    string? CurrentApprovalId = null,
+    ToolInvocationInfo? CurrentToolInvocation = null,
+    ApprovalInfo? CurrentApproval = null,
+    HumanWaitInfo? CurrentHumanWait = null,
+    HandoffInfo? CurrentHandoff = null);

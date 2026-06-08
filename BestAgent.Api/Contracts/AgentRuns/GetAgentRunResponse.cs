@@ -23,4 +23,8 @@ public record GetAgentRunResponse(
     string? CurrentStepId = null,
     string? WaitStepType = null,
     string? CurrentInvocationId = null,
-    string? CurrentApprovalId = null);
+    string? CurrentApprovalId = null,
+    ToolInvocationInfoResponse? CurrentToolInvocation = null,
+    ApprovalInfoResponse? CurrentApproval = null,
+    HumanWaitInfoResponse? CurrentHumanWait = null,
+    HandoffInfoResponse? CurrentHandoff = null);

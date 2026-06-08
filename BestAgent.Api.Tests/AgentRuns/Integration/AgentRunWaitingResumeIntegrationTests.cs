@@ -111,6 +111,12 @@ public class AgentRunWaitingResumeIntegrationTests
         Assert.Equal("tool_call", waitingSnapshot.WaitStepType);
         Assert.Equal(waitingApproval.ApprovalId, waitingSnapshot.CurrentApprovalId);
         Assert.Null(waitingSnapshot.CurrentInvocationId);
+        Assert.NotNull(waitingSnapshot.CurrentApproval);
+        Assert.Equal("weather", waitingSnapshot.CurrentApproval!.ToolName);
+        Assert.Equal("Pending", waitingSnapshot.CurrentApproval.Decision);
+        Assert.Null(waitingSnapshot.CurrentToolInvocation);
+        Assert.Null(waitingSnapshot.CurrentHumanWait);
+        Assert.Null(waitingSnapshot.CurrentHandoff);
 
         var approveResult = await mediator.Send(new ApproveAgentRunStepCommand(createResult.RunId, pendingStep.StepId, "u-1", "Alice", "admin", "Looks good"), cts.Token);
         Assert.Equal("Running", approveResult.Status);
@@ -125,6 +131,10 @@ public class AgentRunWaitingResumeIntegrationTests
         Assert.Null(completedSnapshot.WaitStepType);
         Assert.Null(completedSnapshot.CurrentInvocationId);
         Assert.Null(completedSnapshot.CurrentApprovalId);
+        Assert.Null(completedSnapshot.CurrentToolInvocation);
+        Assert.Null(completedSnapshot.CurrentApproval);
+        Assert.Null(completedSnapshot.CurrentHumanWait);
+        Assert.Null(completedSnapshot.CurrentHandoff);
 
         var completedSteps = await mediator.Send(new GetAgentRunStepsQuery(createResult.RunId), cts.Token);
         Assert.Contains(completedSteps, step =>

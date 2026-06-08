@@ -218,6 +218,10 @@ public class AgentRunsControllerTests
                 "step-4",
                 "tool_call",
                 "invocation-1",
+                null,
+                new ToolInvocationInfo("invocation-1", "weather", "async", "Pending", "wait-1", now, null, 0),
+                null,
+                null,
                 null));
         var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
@@ -244,6 +248,11 @@ public class AgentRunsControllerTests
         Assert.Equal("tool_call", response.WaitStepType);
         Assert.Equal("invocation-1", response.CurrentInvocationId);
         Assert.Null(response.CurrentApprovalId);
+        Assert.Equal("weather", response.CurrentToolInvocation!.ToolName);
+        Assert.Equal("wait-1", response.CurrentToolInvocation.CallbackToken);
+        Assert.Null(response.CurrentApproval);
+        Assert.Null(response.CurrentHumanWait);
+        Assert.Null(response.CurrentHandoff);
     }
 
     [Fact]

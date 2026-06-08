@@ -1,5 +1,6 @@
 using BestAgent.Application;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
 using MediatR;
@@ -74,6 +75,12 @@ public class GetAgentRunByIdQueryHandlerTests
         Assert.Equal("tool_call", result.WaitStepType);
         Assert.Equal("invocation-1", result.CurrentInvocationId);
         Assert.Null(result.CurrentApprovalId);
+        Assert.NotNull(result.CurrentToolInvocation);
+        Assert.Equal("weather", result.CurrentToolInvocation!.ToolName);
+        Assert.Equal("Pending", result.CurrentToolInvocation.Status);
+        Assert.Null(result.CurrentApproval);
+        Assert.Null(result.CurrentHumanWait);
+        Assert.Null(result.CurrentHandoff);
     }
 
     [Fact]
@@ -140,5 +147,129 @@ public class GetAgentRunByIdQueryHandlerTests
         Assert.Equal("approval_request", result.WaitStepType);
         Assert.Null(result.CurrentInvocationId);
         Assert.Equal("approval-1", result.CurrentApprovalId);
+        Assert.NotNull(result.CurrentApproval);
+        Assert.Equal("issue_refund", result.CurrentApproval!.ToolName);
+        Assert.Equal("approval-1", result.CurrentApproval.ApprovalId);
+        Assert.Null(result.CurrentToolInvocation);
+        Assert.Null(result.CurrentHumanWait);
+        Assert.Null(result.CurrentHandoff);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldReturnCurrentHumanAndHandoffContexts_WhenRunIsWaitingHumanOrHandoff()
+    {
+        var runRepository = Substitute.For<IAgentRunRepository>();
+        var stepRepository = Substitute.For<IAgentStepRepository>();
+        var approvalRepository = Substitute.For<IAgentApprovalRepository>();
+        var toolInvocationRepository = Substitute.For<IToolInvocationRepository>();
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddSingleton(runRepository);
+        services.AddSingleton(stepRepository);
+        services.AddSingleton(approvalRepository);
+        services.AddSingleton(toolInvocationRepository);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var mediator = serviceProvider.GetRequiredService<IMediator>();
+        var now = new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc);
+        var humanRun = new AgentRun
+        {
+            RunId = "run-3",
+            AgentCode = "writer",
+            Status = "WaitingHuman",
+            InputPayload = "hello",
+            CurrentStepNo = 6,
+            CurrentWaitToken = "human-wait-1",
+            CreateTime = now,
+            LastModifyTime = now
+        };
+        var humanStep = new AgentStep
+        {
+            StepId = "step-6",
+            RunId = humanRun.RunId,
+            StepNo = 6,
+            StepType = "human_wait",
+            Status = "Pending",
+            DecisionPayload = HumanApprovalPayloadSerializer.Serialize(
+                HumanApprovalPayloadSerializer.CreatePending(
+                    "Need operator input",
+                    sourceType: "tool_wait",
+                    sourceStepId: "step-4",
+                    sourceInvocationId: "invocation-1",
+                    sourceToolName: "weather",
+                    sourceToolInput: "{\"password\":\"secret-1\"}",
+                    sourceToolOutput: "{\"authorization\":\"secret-2\"}",
+                    sourceToolStatus: "Pending",
+                    continueAsToolResult: true)),
+            CreateTime = now,
+            LastModifyTime = now
+        };
+        var handoffRun = new AgentRun
+        {
+            RunId = "run-4",
+            AgentCode = "writer",
+            Status = "WaitingHandoff",
+            InputPayload = "hello",
+            CurrentStepNo = 7,
+            CurrentWaitToken = "handoff-wait-1",
+            CreateTime = now,
+            LastModifyTime = now
+        };
+        var handoffStep = new AgentStep
+        {
+            StepId = "step-7",
+            RunId = handoffRun.RunId,
+            StepNo = 7,
+            StepType = "handoff",
+            Status = "Pending",
+            DecisionPayload = HandoffPayloadSerializer.Serialize(
+                HandoffPayloadSerializer.CreatePending(
+                    "handoff-wait-1",
+                    "support_agent",
+                    "Handle refund request",
+                    "delegate_and_merge",
+                    "child-run-1",
+                    routeRuleId: "route-rule-1",
+                    contextScope: "{\"mode\":\"summary_only\"}",
+                    memoryScope: "{\"mode\":\"read_only\"}",
+                    toolScope: "{\"allowed\":[\"faq_search\"]}",
+                    knowledgeScope: "{\"allowed\":[\"faq\"]}",
+                    approvalRequired: false,
+                    reason: "Route to refund specialist",
+                    confidence: 0.91,
+                    contextOverrides: "{\"mode\":\"summary_only\"}",
+                    memoryOverrides: "{\"mode\":\"read_only\"}",
+                    toolOverrides: "{\"allowed\":[\"faq_search\"]}",
+                    knowledgeOverrides: "{\"allowed\":[\"faq\"]}",
+                    mergeStrategy: "first_success")),
+            CreateTime = now,
+            LastModifyTime = now
+        };
+
+        runRepository.GetByRunIdAsync("run-3", Arg.Any<CancellationToken>()).Returns(humanRun);
+        runRepository.GetByRunIdAsync("run-4", Arg.Any<CancellationToken>()).Returns(handoffRun);
+        stepRepository.GetLastByRunIdAsync("run-3", Arg.Any<CancellationToken>()).Returns(humanStep);
+        stepRepository.GetLastByRunIdAsync("run-4", Arg.Any<CancellationToken>()).Returns(handoffStep);
+        toolInvocationRepository.GetPendingByRunIdAndStepIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((ToolInvocation?)null);
+        approvalRepository.GetByRunIdAndStepIdAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((AgentApproval?)null);
+
+        var humanResult = await mediator.Send(new GetAgentRunByIdQuery("run-3"));
+        var handoffResult = await mediator.Send(new GetAgentRunByIdQuery("run-4"));
+
+        Assert.NotNull(humanResult);
+        Assert.NotNull(humanResult!.CurrentHumanWait);
+        Assert.Equal("tool_wait", humanResult.CurrentHumanWait!.SourceType);
+        Assert.Equal("{\"password\":\"***\"}", humanResult.CurrentHumanWait.SourceToolInput);
+        Assert.Equal("{\"authorization\":\"***\"}", humanResult.CurrentHumanWait.SourceToolOutput);
+        Assert.True(humanResult.CurrentHumanWait.ContinueAsToolResult);
+        Assert.Null(humanResult.CurrentHandoff);
+
+        Assert.NotNull(handoffResult);
+        Assert.NotNull(handoffResult!.CurrentHandoff);
+        Assert.Equal("support_agent", handoffResult.CurrentHandoff!.TargetAgent);
+        Assert.Equal("delegate_and_merge", handoffResult.CurrentHandoff.Mode);
+        Assert.Equal("first_success", handoffResult.CurrentHandoff.MergeStrategy);
+        Assert.Null(handoffResult.CurrentHumanWait);
     }
 }
