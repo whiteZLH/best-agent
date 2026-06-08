@@ -20,6 +20,16 @@ public sealed class NullAgentMetrics : IAgentMetrics
     {
     }
 
+    public void RecordRetrieval(
+        string status,
+        bool queryRewritten,
+        int sourceCount,
+        int candidateCount,
+        int selectedCount,
+        TimeSpan duration)
+    {
+    }
+
     public void RecordModelCall(
         string model,
         string status,

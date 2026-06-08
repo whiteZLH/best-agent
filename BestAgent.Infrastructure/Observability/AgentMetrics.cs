@@ -12,6 +12,10 @@ public sealed class AgentMetrics : IAgentMetrics
     private readonly Histogram<double> _runTotalCostHistogram;
     private readonly Counter<long> _toolExecutionCounter;
     private readonly Histogram<double> _toolExecutionDurationMs;
+    private readonly Counter<long> _retrievalCounter;
+    private readonly Histogram<double> _retrievalDurationMs;
+    private readonly Histogram<long> _retrievalCandidateHistogram;
+    private readonly Histogram<long> _retrievalSelectedHistogram;
     private readonly Counter<long> _modelCallCounter;
     private readonly Histogram<double> _modelCallDurationMs;
     private readonly Counter<long> _modelTokensCounter;
@@ -27,6 +31,10 @@ public sealed class AgentMetrics : IAgentMetrics
         _runTotalCostHistogram = _meter.CreateHistogram<double>("bestagent.run.total_cost", unit: "usd");
         _toolExecutionCounter = _meter.CreateCounter<long>("bestagent.tool.executions");
         _toolExecutionDurationMs = _meter.CreateHistogram<double>("bestagent.tool.duration.ms", unit: "ms");
+        _retrievalCounter = _meter.CreateCounter<long>("bestagent.retrieval.calls");
+        _retrievalDurationMs = _meter.CreateHistogram<double>("bestagent.retrieval.duration.ms", unit: "ms");
+        _retrievalCandidateHistogram = _meter.CreateHistogram<long>("bestagent.retrieval.candidates");
+        _retrievalSelectedHistogram = _meter.CreateHistogram<long>("bestagent.retrieval.selected_chunks");
         _modelCallCounter = _meter.CreateCounter<long>("bestagent.model.calls");
         _modelCallDurationMs = _meter.CreateHistogram<double>("bestagent.model.duration.ms", unit: "ms");
         _modelTokensCounter = _meter.CreateCounter<long>("bestagent.model.tokens");
@@ -71,6 +79,27 @@ public sealed class AgentMetrics : IAgentMetrics
 
         _toolExecutionCounter.Add(1, tags);
         _toolExecutionDurationMs.Record(ClampDuration(duration), tags);
+    }
+
+    public void RecordRetrieval(
+        string status,
+        bool queryRewritten,
+        int sourceCount,
+        int candidateCount,
+        int selectedCount,
+        TimeSpan duration)
+    {
+        var tags = new TagList
+        {
+            { "status", NormalizeStatus(status) },
+            { "query_rewritten", queryRewritten ? "true" : "false" },
+            { "source_count", Math.Max(0, sourceCount).ToString() }
+        };
+
+        _retrievalCounter.Add(1, tags);
+        _retrievalDurationMs.Record(ClampDuration(duration), tags);
+        _retrievalCandidateHistogram.Record(Math.Max(0, candidateCount), tags);
+        _retrievalSelectedHistogram.Record(Math.Max(0, selectedCount), tags);
     }
 
     public void RecordModelCall(

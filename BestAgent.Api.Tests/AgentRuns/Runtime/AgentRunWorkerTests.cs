@@ -1575,7 +1575,8 @@ public class AgentRunWorkerTests
             summaryMemoryRepository,
             knowledgeChunkRepository,
             sessionMemoryRepository,
-            userMemoryRepository);
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
         var parentRun = CreateRunningRun();
         var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
         AgentRun? waitingParentRun = null;
@@ -1790,7 +1791,8 @@ public class AgentRunWorkerTests
             summaryMemoryRepository,
             knowledgeChunkRepository,
             sessionMemoryRepository,
-            userMemoryRepository);
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
         var parentRun = CreateRunningRun();
         var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
         AgentRun? waitingParentRun = null;
@@ -2005,7 +2007,8 @@ public class AgentRunWorkerTests
             summaryMemoryRepository,
             knowledgeChunkRepository,
             sessionMemoryRepository,
-            userMemoryRepository);
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
         var parentRun = CreateRunningRun() with { InputPayload = "User wants a refund and extra account details" };
         var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
         AgentRun? waitingParentRun = null;
@@ -2244,7 +2247,8 @@ public class AgentRunWorkerTests
             summaryMemoryRepository,
             knowledgeChunkRepository,
             sessionMemoryRepository,
-            userMemoryRepository);
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
         var parentRun = CreateRunningRun() with { InputPayload = "User asks for a refund on order #123" };
         var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
         AgentRun? waitingParentRun = null;

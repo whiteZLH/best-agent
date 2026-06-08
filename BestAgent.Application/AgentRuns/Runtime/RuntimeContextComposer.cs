@@ -2,6 +2,8 @@ using System.Text;
 using System.Text.Json;
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.Knowledge;
+using BestAgent.Application.Observability;
+using System.Diagnostics;
 
 namespace BestAgent.Application.AgentRuns.Runtime;
 
@@ -11,17 +13,20 @@ public class RuntimeContextComposer : IRuntimeContextComposer
     private readonly IKnowledgeChunkRepository _knowledgeChunkRepository;
     private readonly ISessionMemoryRepository _sessionMemoryRepository;
     private readonly IUserMemoryRepository _userMemoryRepository;
+    private readonly IAgentMetrics _agentMetrics;
 
     public RuntimeContextComposer(
         ISummaryMemoryRepository summaryMemoryRepository,
         IKnowledgeChunkRepository knowledgeChunkRepository,
         ISessionMemoryRepository sessionMemoryRepository,
-        IUserMemoryRepository userMemoryRepository)
+        IUserMemoryRepository userMemoryRepository,
+        IAgentMetrics agentMetrics)
     {
         _summaryMemoryRepository = summaryMemoryRepository;
         _knowledgeChunkRepository = knowledgeChunkRepository;
         _sessionMemoryRepository = sessionMemoryRepository;
         _userMemoryRepository = userMemoryRepository;
+        _agentMetrics = agentMetrics;
     }
 
     public async Task<string> ComposeModelInputAsync(
@@ -52,13 +57,49 @@ public class RuntimeContextComposer : IRuntimeContextComposer
             && knowledgeSources.Count > 0
             && policy.MaxKnowledgeChunks > 0)
         {
-            chunks = await _knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
-                context.Run.TenantId,
-                knowledgeSources,
-                retrievalQuery.QueryText,
-                retrievalQuery.CandidateCount,
-                policy.MaxKnowledgeChunks,
-                cancellationToken);
+            var startedAt = DateTime.UtcNow;
+            using var activity = AgentTracing.Source.StartActivity(AgentTracing.RetrievalActivityName, ActivityKind.Internal);
+            activity?.SetTag("bestagent.run_id", context.Run.RunId);
+            activity?.SetTag("bestagent.agent_code", context.Run.AgentCode);
+            activity?.SetTag("bestagent.tenant_id", context.Run.TenantId);
+            activity?.SetTag("bestagent.retrieval_query", retrievalQuery.QueryText);
+            activity?.SetTag("bestagent.retrieval_query_rewritten", retrievalQuery.WasRewritten);
+            activity?.SetTag("bestagent.retrieval_source_count", knowledgeSources.Count);
+            activity?.SetTag("bestagent.retrieval_candidate_count", retrievalQuery.CandidateCount);
+            activity?.SetTag("bestagent.retrieval_limit", policy.MaxKnowledgeChunks);
+
+            try
+            {
+                chunks = await _knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
+                    context.Run.TenantId,
+                    knowledgeSources,
+                    retrievalQuery.QueryText,
+                    retrievalQuery.CandidateCount,
+                    policy.MaxKnowledgeChunks,
+                    cancellationToken);
+
+                activity?.SetTag("bestagent.retrieval_status", "completed");
+                activity?.SetTag("bestagent.retrieval_selected_count", chunks.Count);
+                _agentMetrics.RecordRetrieval(
+                    "completed",
+                    retrievalQuery.WasRewritten,
+                    knowledgeSources.Count,
+                    retrievalQuery.CandidateCount,
+                    chunks.Count,
+                    DateTime.UtcNow - startedAt);
+            }
+            catch
+            {
+                activity?.SetTag("bestagent.retrieval_status", "failed");
+                _agentMetrics.RecordRetrieval(
+                    "failed",
+                    retrievalQuery.WasRewritten,
+                    knowledgeSources.Count,
+                    retrievalQuery.CandidateCount,
+                    0,
+                    DateTime.UtcNow - startedAt);
+                throw;
+            }
         }
 
         if (summaryMemory is null && chunks.Count == 0 && sessionMemories.Count == 0 && userMemories.Count == 0)
@@ -188,7 +229,7 @@ public class RuntimeContextComposer : IRuntimeContextComposer
         }
     }
 
-    private sealed record RetrievalQuery(string QueryText, int CandidateCount);
+    private sealed record RetrievalQuery(string QueryText, int CandidateCount, bool WasRewritten);
 
     private static class RetrievalQueryBuilder
     {
@@ -205,7 +246,7 @@ public class RuntimeContextComposer : IRuntimeContextComposer
             var normalizedCandidateCount = Math.Max(0, candidateCount);
             if (string.IsNullOrWhiteSpace(currentInput))
             {
-                return new RetrievalQuery(string.Empty, normalizedCandidateCount);
+                return new RetrievalQuery(string.Empty, normalizedCandidateCount, false);
             }
 
             var normalized = currentInput
@@ -214,11 +255,11 @@ public class RuntimeContextComposer : IRuntimeContextComposer
             var rewritten = TryRewriteStructuredFollowUp(normalized);
             if (!string.IsNullOrWhiteSpace(rewritten))
             {
-                return new RetrievalQuery(rewritten, normalizedCandidateCount);
+                return new RetrievalQuery(rewritten, normalizedCandidateCount, true);
             }
 
             var condensed = NormalizeFreeformQuery(normalized);
-            return new RetrievalQuery(condensed, normalizedCandidateCount);
+            return new RetrievalQuery(condensed, normalizedCandidateCount, false);
         }
 
         private static string? TryRewriteStructuredFollowUp(string input)

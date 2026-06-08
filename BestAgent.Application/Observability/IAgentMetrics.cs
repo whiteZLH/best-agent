@@ -8,6 +8,14 @@ public interface IAgentMetrics
 
     void RecordToolExecution(string toolName, string status, TimeSpan duration);
 
+    void RecordRetrieval(
+        string status,
+        bool queryRewritten,
+        int sourceCount,
+        int candidateCount,
+        int selectedCount,
+        TimeSpan duration);
+
     void RecordModelCall(
         string model,
         string status,

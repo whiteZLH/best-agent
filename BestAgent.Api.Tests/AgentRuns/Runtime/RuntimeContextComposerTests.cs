@@ -1,4 +1,6 @@
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Observability;
+using BestAgent.Api.Tests.Observability;
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Knowledge;
@@ -13,6 +15,7 @@ public class RuntimeContextComposerTests
     private readonly IKnowledgeChunkRepository _knowledgeChunkRepository = Substitute.For<IKnowledgeChunkRepository>();
     private readonly ISessionMemoryRepository _sessionMemoryRepository = Substitute.For<ISessionMemoryRepository>();
     private readonly IUserMemoryRepository _userMemoryRepository = Substitute.For<IUserMemoryRepository>();
+    private readonly IAgentMetrics _agentMetrics = Substitute.For<IAgentMetrics>();
 
     [Fact]
     public async Task ComposeModelInputAsync_ShouldReturnOriginalInput_WhenNoSummaryOrKnowledgeFound()
@@ -130,6 +133,7 @@ public class RuntimeContextComposerTests
     [Fact]
     public async Task ComposeModelInputAsync_ShouldRewriteStructuredFollowUpInput_ForRetrievalQuery()
     {
+        using var collector = new ActivityTestCollector(AgentTracing.SourceName);
         var composer = CreateComposer();
         var context = new AgentLoopContext(
             CreateRun() with
@@ -196,6 +200,12 @@ public class RuntimeContextComposerTests
             4,
             1,
             Arg.Any<CancellationToken>());
+        _agentMetrics.Received(1).RecordRetrieval("completed", true, 1, 4, 1, Arg.Any<TimeSpan>());
+        var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.RetrievalActivityName);
+        Assert.Equal("run-001", activity.GetTagItem("bestagent.run_id"));
+        Assert.Equal("completed", activity.GetTagItem("bestagent.retrieval_status"));
+        Assert.Equal(1, activity.GetTagItem("bestagent.retrieval_selected_count"));
+        Assert.Equal(true, activity.GetTagItem("bestagent.retrieval_query_rewritten"));
     }
 
     [Fact]
@@ -289,7 +299,8 @@ public class RuntimeContextComposerTests
             _summaryMemoryRepository,
             _knowledgeChunkRepository,
             _sessionMemoryRepository,
-            _userMemoryRepository);
+            _userMemoryRepository,
+            _agentMetrics);
     }
 
     private static AgentLoopContext CreateContext()
