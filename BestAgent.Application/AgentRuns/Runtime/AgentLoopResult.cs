@@ -48,7 +48,8 @@ public sealed record AgentLoopWaitingHandoff(
     string? HandoffInput,
     string HandoffMode,
     string ChildRunId,
-    decimal TotalCostDelta = 0m) : AgentLoopResult;
+    decimal TotalCostDelta = 0m,
+    string? MergeStrategy = null) : AgentLoopResult;
 
 public sealed record AgentLoopFailed(
     int FailedAtStepNo,

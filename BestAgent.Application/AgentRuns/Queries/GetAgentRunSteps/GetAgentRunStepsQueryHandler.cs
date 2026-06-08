@@ -143,7 +143,8 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
             payload.Confidence,
             payload.ContextOverrides,
             payload.MemoryOverrides,
-            payload.ToolOverrides);
+            payload.ToolOverrides,
+            payload.MergeStrategy);
     }
 
     private static HumanWaitInfo? MapHumanWait(string? decisionPayload)

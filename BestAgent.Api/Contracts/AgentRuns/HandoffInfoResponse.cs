@@ -21,4 +21,5 @@ public record HandoffInfoResponse(
     double? Confidence,
     string? ContextOverrides,
     string? MemoryOverrides,
-    string? ToolOverrides);
+    string? ToolOverrides,
+    string? MergeStrategy = null);

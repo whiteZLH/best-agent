@@ -145,7 +145,7 @@ public class GetAgentRunStepsQueryHandlerTests
                         "handoff-wait-1",
                         "support_agent",
                         "Please help with refund",
-                        "delegate_and_wait",
+                        "delegate_and_merge",
                         "child-run-1",
                         "route-rule-1",
                         "{\"mode\":\"summary_only\"}",
@@ -157,7 +157,8 @@ public class GetAgentRunStepsQueryHandlerTests
                         0.91,
                         "{\"mode\":\"summary_only\"}",
                         "{\"mode\":\"read_only\"}",
-                        "{\"allowed\":[\"faq_search\"]}"),
+                        "{\"allowed\":[\"faq_search\"]}",
+                        "first_success"),
                     "Completed",
                     "Child answer"))
         };
@@ -177,7 +178,7 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal("handoff", item.Handoff!.WaitType);
         Assert.Equal("support_agent", item.Handoff.TargetAgent);
         Assert.Equal("Please help with refund", item.Handoff.HandoffInput);
-        Assert.Equal("delegate_and_wait", item.Handoff.Mode);
+        Assert.Equal("delegate_and_merge", item.Handoff.Mode);
         Assert.Equal("child-run-1", item.Handoff.ChildRunId);
         Assert.Equal("Approved", item.Handoff.Decision);
         Assert.Equal("Completed", item.Handoff.ChildStatus);
@@ -193,6 +194,7 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal("{\"mode\":\"summary_only\"}", item.Handoff.ContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", item.Handoff.MemoryOverrides);
         Assert.Equal("{\"allowed\":[\"faq_search\"]}", item.Handoff.ToolOverrides);
+        Assert.Equal("first_success", item.Handoff.MergeStrategy);
     }
 
     [Fact]

@@ -4,7 +4,7 @@
 
 路由与多 Agent 模块负责“该交给谁做”和“多个 Agent 结果如何协同”。它不是具体执行层，而是围绕 handoff、上下文边界、权限继承和结果整合建立可控协作机制。
 
-> 当前实现状态：该模块已开始进入最小可执行阶段。当前已落地 `handoff` 结构化决策、`route_only` / `delegate_and_wait` / `delegate_and_merge` 最小运行时闭环、父子 Run 关系写入与基础读侧可见性；`RouteRule` 当前也已开始进入最小 Runtime 自动路由切片：当版本级 `RoutingPolicy.strategy == "handoff-first"` 且存在匹配当前输入的启用规则时，Runtime 可在首轮模型调用前直接进入 handoff；但 Router Agent、Supervisor Agent、更细上下文裁剪与更丰富结果合并策略仍未完整落地。
+> 当前实现状态：该模块已开始进入最小可执行阶段。当前已落地 `handoff` 结构化决策、`route_only` / `delegate_and_wait` / `delegate_and_merge` 最小运行时闭环、父子 Run 关系写入与基础读侧可见性；`RouteRule` 当前也已开始进入最小 Runtime 自动路由切片：当版本级 `RoutingPolicy.strategy == "handoff-first"` 且存在匹配当前输入的启用规则时，Runtime 可在首轮模型调用前直接进入 handoff；`delegate_and_merge` 当前也已开始支持单子 Run 的显式 `merge_strategy`（默认 `supervisor_summary`，并支持 `first_success` / `all_results`）；但 Router Agent、Supervisor Agent、更细上下文裁剪与更丰富的多结果合并策略仍未完整落地。
 
 ## 2. 设计目标
 
@@ -162,8 +162,13 @@
 - 当前已支持：
   - `route_only`：子 Run 完成后，父 Run 直接以子结果完成
   - `delegate_and_wait`：子 Run 完成后，父 Run 会将子结果作为 follow-up context 继续生成最终答复
-  - `delegate_and_merge`：子 Run 完成后，父 Run 会以显式 merge follow-up context 再生成最终答复
-- 当前仍没有更丰富的多结果回收与显式 merge strategy（如 `first_success` / `all_results` / `majority_vote` / `supervisor_summary`）
+  - `delegate_and_merge`：当前已支持单子 Run 的显式 `merge_strategy`
+    - `supervisor_summary`：默认策略；子 Run 完成后，父 Run 会以显式 merge follow-up context 再生成最终答复
+    - `first_success`：父 Run 直接以子结果完成，跳过额外 merge 模型调用
+    - `all_results`：父 Run 会以更明确的“汇总全部子结果” follow-up context 再生成最终答复
+- 当前仍未落地：
+  - `majority_vote` 等更复杂 merge strategy
+  - 多子 Run / 多结果回收场景下的真正汇聚与裁决逻辑
 
 ## 9. 关键流程
 
@@ -186,8 +191,8 @@
   4. 子 Run 完成后：
      - `route_only` 会直接完成父 Run
      - `delegate_and_wait` 会自动恢复父 Run 并继续规划/答复
-     - `delegate_and_merge` 会自动恢复父 Run，并基于显式 merge context 生成最终答复
-- 当前 `approval_required` 也已不再只是 handoff 审计元数据：命中后可真正进入 `WaitingApproval`，并支持 approve / reject / timeout / request-human 收尾；但显式上下文范围固化与更复杂结果整合策略仍未落地
+     - `delegate_and_merge` 会按 `merge_strategy` 恢复父 Run：`first_success` 直接完成，`supervisor_summary` / `all_results` 则基于不同 merge context 继续生成最终答复
+- 当前 `approval_required` 也已不再只是 handoff 审计元数据：命中后可真正进入 `WaitingApproval`，并支持 approve / reject / timeout / request-human 收尾；但显式上下文范围固化与多子 Run 结果整合策略仍未落地
 
 ## 10. 风险控制点
 
@@ -204,7 +209,7 @@
   - handoff 目标必须命中 `AllowedHandoffs`
   - 子 Run 继承父 Run 的租户 / 用户 / session 边界
   - handoff 当前已开始具备最小链路深度治理：可按版本级 `ExecutionPolicy.maxHandoffDepth`（默认 `3`）限制继续委派层级
-  - 当前三种模式都只支持单子 Run 的最小恢复/合成路径，`delegate_and_merge` 仍未扩展到多结果汇聚策略
+  - 当前三种模式都只支持单子 Run 的最小恢复/合成路径；`delegate_and_merge` 虽已支持显式 `merge_strategy`，但仍未扩展到多结果汇聚策略
 - 防无限 handoff 链、父子更严格权限叠加与上下文泄露防护仍主要停留在设计层
 
 ## 11. 验收重点

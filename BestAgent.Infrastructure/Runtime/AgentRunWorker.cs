@@ -1379,6 +1379,25 @@ public class AgentRunWorker : BackgroundService
                 return;
             }
 
+            var mergeStrategy = HandoffPayloadSerializer.NormalizeMergeStrategy(handoffPayload.Mode, handoffPayload.MergeStrategy);
+            if (string.Equals(handoffPayload.Mode, "delegate_and_merge", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(mergeStrategy, "first_success", StringComparison.OrdinalIgnoreCase))
+            {
+                await CompleteRunAsync(
+                    agentRunRepo,
+                    agentStepRepo,
+                    parentRun with
+                    {
+                        CurrentWaitToken = string.Empty
+                    },
+                    resolvedDefinition,
+                    childRun.OutputPayload ?? string.Empty,
+                    runtimeMemoryWriter,
+                    agentOutputValidator,
+                    stoppingToken);
+                return;
+            }
+
             parentRun = parentRun with
             {
                 Status = "Running",
@@ -1392,7 +1411,8 @@ public class AgentRunWorker : BackgroundService
                 ? BuildHandoffMergeFollowUpInput(
                     parentRun.InputPayload ?? string.Empty,
                     handoffPayload.TargetAgent,
-                    childRun.OutputPayload ?? string.Empty)
+                    childRun.OutputPayload ?? string.Empty,
+                    mergeStrategy)
                 : BuildHandoffFollowUpInput(
                     parentRun.InputPayload ?? string.Empty,
                     handoffPayload.TargetAgent,
@@ -2032,8 +2052,27 @@ public class AgentRunWorker : BackgroundService
     private static string BuildHandoffMergeFollowUpInput(
         string originalInput,
         string targetAgent,
-        string childOutput)
+        string childOutput,
+        string? mergeStrategy)
     {
+        var normalizedMergeStrategy = HandoffPayloadSerializer.NormalizeMergeStrategy("delegate_and_merge", mergeStrategy);
+        if (string.Equals(normalizedMergeStrategy, "all_results", StringComparison.OrdinalIgnoreCase))
+        {
+            return
+                $"""
+                Original user input:
+                {originalInput}
+
+                Child results to consolidate:
+                [1] Agent: {targetAgent}
+                Status: completed
+                Output:
+                {childOutput}
+
+                Consolidate all child results into the final user-facing answer. Preserve material facts from the child output, resolve obvious duplication, and respond directly to the user.
+                """;
+        }
+
         return
             $"""
             Original user input:

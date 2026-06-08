@@ -24,7 +24,8 @@ public record HandoffPayload(
     double? Confidence,
     string? ContextOverrides,
     string? MemoryOverrides,
-    string? ToolOverrides);
+    string? ToolOverrides,
+    string? MergeStrategy = null);
 
 public static class HandoffPayloadSerializer
 {
@@ -49,14 +50,16 @@ public static class HandoffPayloadSerializer
         double? confidence = null,
         string? contextOverrides = null,
         string? memoryOverrides = null,
-        string? toolOverrides = null)
+        string? toolOverrides = null,
+        string? mergeStrategy = null)
     {
+        var normalizedMode = NormalizeMode(mode);
         return new HandoffPayload(
             "handoff",
             NormalizeRequired(waitToken, nameof(waitToken)),
             targetAgent,
             handoffInput,
-            NormalizeMode(mode),
+            normalizedMode,
             childRunId,
             ApprovalDecisions.Pending,
             null,
@@ -73,7 +76,8 @@ public static class HandoffPayloadSerializer
             confidence,
             Normalize(contextOverrides),
             Normalize(memoryOverrides),
-            Normalize(toolOverrides));
+            Normalize(toolOverrides),
+            NormalizeMergeStrategy(normalizedMode, mergeStrategy));
     }
 
     public static HandoffPayload Parse(string? payload)
@@ -95,7 +99,8 @@ public static class HandoffPayloadSerializer
 
         return handoffPayload with
         {
-            Mode = NormalizeMode(handoffPayload.Mode)
+            Mode = NormalizeMode(handoffPayload.Mode),
+            MergeStrategy = NormalizeMergeStrategy(handoffPayload.Mode, handoffPayload.MergeStrategy)
         };
     }
 
@@ -122,8 +127,32 @@ public static class HandoffPayloadSerializer
     {
         return JsonSerializer.Serialize(payload with
         {
-            Mode = NormalizeMode(payload.Mode)
+            Mode = NormalizeMode(payload.Mode),
+            MergeStrategy = NormalizeMergeStrategy(payload.Mode, payload.MergeStrategy)
         });
+    }
+
+    public static string? NormalizeMergeStrategy(string? mode, string? mergeStrategy)
+    {
+        var normalizedMode = NormalizeMode(mode);
+        if (!string.Equals(normalizedMode, "delegate_and_merge", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var normalized = Normalize(mergeStrategy);
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return "supervisor_summary";
+        }
+
+        return normalized switch
+        {
+            "supervisor_summary" => "supervisor_summary",
+            "first_success" => "first_success",
+            "all_results" => "all_results",
+            _ => throw new InvalidOperationException($"Unsupported handoff merge strategy '{normalized}'.")
+        };
     }
 
     public static HandoffPayload MarkCompleted(

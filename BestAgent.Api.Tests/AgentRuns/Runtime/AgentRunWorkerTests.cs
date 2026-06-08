@@ -3607,6 +3607,7 @@ public class AgentRunWorkerTests
         Assert.Equal("Completed", parentHandoffStep!.Status);
         Assert.Equal("Child answer", parentHandoffStep.OutputPayload);
         Assert.Contains("\"Mode\":\"delegate_and_merge\"", parentHandoffStep.DecisionPayload);
+        Assert.Contains("\"MergeStrategy\":\"supervisor_summary\"", parentHandoffStep.DecisionPayload);
         Assert.Contains(eventBus.Events, evt => evt.EventType == "waiting_handoff");
         Assert.Contains(eventBus.Events, evt => evt.EventType == "done" && evt.Data.Output == "Child answer");
         Assert.Contains(eventBus.Events, evt => evt.EventType == "done" && evt.Data.Output == "Merged parent answer");
@@ -3619,6 +3620,297 @@ public class AgentRunWorkerTests
         await runtimeMemoryWriter.Received(1).RecordRunCompletionSummaryAsync(
             Arg.Is<AgentRun>(value => value.RunId == parentRun.RunId && value.Status == "Completed"),
             "Merged parent answer",
+            Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldCompleteParentDirectly_WhenMergeStrategyIsFirstSuccess()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var parentRun = CreateRunningRun();
+        var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
+        AgentRun? waitingParentRun = null;
+        AgentRun? childRun = null;
+
+        var parentDefinition = CreateResolvedDefinition(
+            versionId: "ver-1",
+            allowedHandoffs: "[\"support_agent\"]");
+        var childDefinition = CreateResolvedDefinition(
+            versionId: "ver-2",
+            agentCode: "support_agent",
+            allowedHandoffs: "[]");
+
+        agentRunRepo.GetByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => waitingParentRun ?? parentRun);
+        agentRunRepo.GetLatestChildByParentRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => childRun);
+        agentDefinitionRepo.GetEnabledByCodeAsync("writer", Arg.Any<CancellationToken>())
+            .Returns(parentDefinition);
+        agentDefinitionRepo.GetEnabledByCodeAsync("support_agent", Arg.Any<CancellationToken>())
+            .Returns(childDefinition);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new GenerateTextResult("handoff-decision"),
+                new GenerateTextResult("child-final"));
+        stepDecisionParser.Parse("handoff-decision")
+            .Returns(StepDecision.Handoff("support_agent", "please help", "delegate_and_merge", mergeStrategy: "first_success"));
+        stepDecisionParser.Parse("child-final")
+            .Returns(StepDecision.Respond("Child answer"));
+
+        agentRunRepo.When(repo => repo.AddAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var added = call.Arg<AgentRun>();
+                if (added.RunId != parentRun.RunId)
+                {
+                    childRun = added;
+                    childRunStore[added.RunId] = added;
+                }
+            });
+        agentRunRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var updated = call.Arg<AgentRun>();
+                if (updated.RunId == parentRun.RunId)
+                {
+                    waitingParentRun = updated;
+                }
+                else
+                {
+                    childRun = updated;
+                    childRunStore[updated.RunId] = updated;
+                }
+            });
+        agentRunRepo.GetByRunIdAsync(Arg.Is<string>(id => childRunStore.ContainsKey(id)), Arg.Any<CancellationToken>())
+            .Returns(call => childRunStore[call.Arg<string>()]);
+
+        AgentStep? parentHandoffStep = null;
+        agentStepRepo.GetLastByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => parentHandoffStep);
+        agentStepRepo.When(repo => repo.AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (step.RunId == parentRun.RunId && step.StepType == "handoff")
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (parentHandoffStep is not null && step.StepId == parentHandoffStep.StepId)
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.ListByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var steps = new List<AgentStep>();
+                if (parentHandoffStep is not null)
+                {
+                    steps.Add(AgentRunLoop.CreateStep(parentRun.RunId, 3, "model_call", "Completed", "hello", "handoff-decision", null, DateTime.UtcNow, DateTime.UtcNow));
+                    steps.Add(parentHandoffStep);
+                }
+
+                return (IReadOnlyList<AgentStep>)steps;
+            });
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(parentRun.RunId), cts.Token);
+
+        var completedChildRun = await WaitForChildRunCompletionAsync(agentRunRepo, parentRun.RunId);
+        var completedParentRun = await WaitForParentCompletionWithOutputAsync(agentRunRepo, parentRun.RunId, "Child answer");
+
+        Assert.Equal("Child answer", completedChildRun.OutputPayload);
+        Assert.Equal("Completed", completedParentRun.Status);
+        Assert.Equal("Child answer", completedParentRun.OutputPayload);
+        Assert.Contains("\"MergeStrategy\":\"first_success\"", parentHandoffStep!.DecisionPayload);
+        await modelGateway.Received(2).GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>());
+        await runtimeMemoryWriter.Received(1).RecordRunCompletionSummaryAsync(
+            Arg.Is<AgentRun>(value => value.RunId == parentRun.RunId && value.Status == "Completed"),
+            "Child answer",
+            Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldUseAllResultsMergePrompt_WhenMergeStrategyIsAllResults()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var parentRun = CreateRunningRun();
+        var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
+        AgentRun? waitingParentRun = null;
+        AgentRun? childRun = null;
+
+        var parentDefinition = CreateResolvedDefinition(
+            versionId: "ver-1",
+            allowedHandoffs: "[\"support_agent\"]");
+        var childDefinition = CreateResolvedDefinition(
+            versionId: "ver-2",
+            agentCode: "support_agent",
+            allowedHandoffs: "[]");
+
+        agentRunRepo.GetByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => waitingParentRun ?? parentRun);
+        agentRunRepo.GetLatestChildByParentRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => childRun);
+        agentDefinitionRepo.GetEnabledByCodeAsync("writer", Arg.Any<CancellationToken>())
+            .Returns(parentDefinition);
+        agentDefinitionRepo.GetEnabledByCodeAsync("support_agent", Arg.Any<CancellationToken>())
+            .Returns(childDefinition);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new GenerateTextResult("handoff-decision"),
+                new GenerateTextResult("child-final"),
+                new GenerateTextResult("merge-final"));
+        stepDecisionParser.Parse("handoff-decision")
+            .Returns(StepDecision.Handoff("support_agent", "please help", "delegate_and_merge", mergeStrategy: "all_results"));
+        stepDecisionParser.Parse("child-final")
+            .Returns(StepDecision.Respond("Child answer"));
+        stepDecisionParser.Parse("merge-final")
+            .Returns(StepDecision.Respond("Merged parent answer"));
+
+        agentRunRepo.When(repo => repo.AddAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var added = call.Arg<AgentRun>();
+                if (added.RunId != parentRun.RunId)
+                {
+                    childRun = added;
+                    childRunStore[added.RunId] = added;
+                }
+            });
+        agentRunRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var updated = call.Arg<AgentRun>();
+                if (updated.RunId == parentRun.RunId)
+                {
+                    waitingParentRun = updated;
+                }
+                else
+                {
+                    childRun = updated;
+                    childRunStore[updated.RunId] = updated;
+                }
+            });
+        agentRunRepo.GetByRunIdAsync(Arg.Is<string>(id => childRunStore.ContainsKey(id)), Arg.Any<CancellationToken>())
+            .Returns(call => childRunStore[call.Arg<string>()]);
+
+        AgentStep? parentHandoffStep = null;
+        agentStepRepo.GetLastByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => parentHandoffStep);
+        agentStepRepo.When(repo => repo.AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (step.RunId == parentRun.RunId && step.StepType == "handoff")
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (parentHandoffStep is not null && step.StepId == parentHandoffStep.StepId)
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.ListByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var steps = new List<AgentStep>();
+                if (parentHandoffStep is not null)
+                {
+                    steps.Add(AgentRunLoop.CreateStep(parentRun.RunId, 3, "model_call", "Completed", "hello", "handoff-decision", null, DateTime.UtcNow, DateTime.UtcNow));
+                    steps.Add(parentHandoffStep);
+                }
+
+                return (IReadOnlyList<AgentStep>)steps;
+            });
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(parentRun.RunId), cts.Token);
+
+        var completedChildRun = await WaitForChildRunCompletionAsync(agentRunRepo, parentRun.RunId);
+        var completedParentRun = await WaitForParentCompletionWithOutputAsync(agentRunRepo, parentRun.RunId, "Merged parent answer");
+
+        Assert.Equal("Child answer", completedChildRun.OutputPayload);
+        Assert.Equal("Merged parent answer", completedParentRun.OutputPayload);
+        Assert.Contains("\"MergeStrategy\":\"all_results\"", parentHandoffStep!.DecisionPayload);
+        await modelGateway.Received(3).GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>());
+        await modelGateway.Received(1).GenerateTextAsync(
+            Arg.Is<GenerateTextRequest>(request =>
+                request.Input.Contains("Child results to consolidate:") &&
+                request.Input.Contains("[1] Agent: support_agent") &&
+                request.Input.Contains("Output:\nChild answer") &&
+                request.Input.Contains("Consolidate all child results into the final user-facing answer.")),
             Arg.Any<CancellationToken>());
 
         cts.Cancel();
@@ -5598,7 +5890,8 @@ public class AgentRunWorkerTests
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"route_only\"} to route directly to another allowed agent.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"delegate_and_wait\"} to delegate to another allowed agent and then continue.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"delegate_and_merge\"} to delegate and then merge the child result into the final answer.") &&
-                request.SystemPrompt.Contains("Optional handoff fields: \"reason\", \"confidence\", \"context_overrides\", \"memory_overrides\", \"tool_overrides\", \"approval_required\".")),
+                request.SystemPrompt.Contains("Optional handoff fields: \"reason\", \"confidence\", \"context_overrides\", \"memory_overrides\", \"tool_overrides\", \"approval_required\", \"merge_strategy\".") &&
+                request.SystemPrompt.Contains("Supported merge_strategy values for delegate_and_merge: \"supervisor_summary\", \"first_success\", \"all_results\".")),
             Arg.Any<CancellationToken>());
 
         cts.Cancel();

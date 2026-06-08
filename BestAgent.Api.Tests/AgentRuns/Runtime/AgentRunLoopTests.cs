@@ -1040,7 +1040,7 @@ public class AgentRunLoopTests
         _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
             .Returns(new GenerateTextResult("handoff-decision"));
         _stepDecisionParser.Parse("handoff-decision")
-            .Returns(StepDecision.Handoff("support_agent", "please handle refund", "delegate_and_merge"));
+            .Returns(StepDecision.Handoff("support_agent", "please handle refund", "delegate_and_merge", mergeStrategy: "all_results"));
 
         var result = await AgentRunLoop.ExecuteAsync(
             context,
@@ -1057,6 +1057,7 @@ public class AgentRunLoopTests
         Assert.Equal("support_agent", waiting.TargetAgent);
         Assert.Equal("please handle refund", waiting.HandoffInput);
         Assert.Equal("delegate_and_merge", waiting.HandoffMode);
+        Assert.Equal("all_results", waiting.MergeStrategy);
         Assert.Equal(4, waiting.SuspendedAtStepNo);
         Assert.False(string.IsNullOrWhiteSpace(waiting.WaitToken));
         Assert.False(string.IsNullOrWhiteSpace(waiting.StepId));
@@ -1072,6 +1073,7 @@ public class AgentRunLoopTests
                 step.InputPayload == "please handle refund" &&
                 step.DecisionPayload != null &&
                 step.DecisionPayload.Contains("\"Mode\":\"delegate_and_merge\"") &&
+                step.DecisionPayload.Contains("\"MergeStrategy\":\"all_results\"") &&
                 step.DecisionPayload.Contains("\"ChildRunId\":\"" + waiting.ChildRunId + "\"")),
             Arg.Any<CancellationToken>());
     }

@@ -22,7 +22,8 @@ public class StepDecisionParserTests
               "context_overrides": {"mode":"summary_only"},
               "memory_overrides": {"mode":"read_only"},
               "tool_overrides": {"allowed":["faq_search"]},
-              "approval_required": true
+              "approval_required": true,
+              "merge_strategy": "first_success"
             }
             """;
 
@@ -38,6 +39,7 @@ public class StepDecisionParserTests
         Assert.Equal("{\"mode\":\"read_only\"}", decision.HandoffMemoryOverrides);
         Assert.Equal("{\"allowed\":[\"faq_search\"]}", decision.HandoffToolOverrides);
         Assert.True(decision.HandoffApprovalRequired);
+        Assert.Equal("first_success", decision.HandoffMergeStrategy);
     }
 
     [Fact]
@@ -50,13 +52,14 @@ public class StepDecisionParserTests
               "handoff": {
                 "targetAgent": "support_agent",
                 "handoffInput": "please handle refund",
-                "handoffMode": "route_only",
+                "handoffMode": "delegate_and_merge",
                 "reason": "Specialized refund agent",
                 "confidence": "0.75",
                 "contextOverrides": {"mode":"summary_only"},
                 "memoryOverrides": {"mode":"read_only"},
                 "toolOverrides": {"inherit":false},
-                "approvalRequired": "false"
+                "approvalRequired": "false",
+                "mergeStrategy": "all_results"
               }
             }
             """;
@@ -65,13 +68,14 @@ public class StepDecisionParserTests
 
         Assert.Equal("support_agent", decision.TargetAgent);
         Assert.Equal("please handle refund", decision.HandoffInput);
-        Assert.Equal("route_only", decision.HandoffMode);
+        Assert.Equal("delegate_and_merge", decision.HandoffMode);
         Assert.Equal("Specialized refund agent", decision.HandoffReason);
         Assert.Equal(0.75, decision.HandoffConfidence);
         Assert.Equal("{\"mode\":\"summary_only\"}", decision.HandoffContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", decision.HandoffMemoryOverrides);
         Assert.Equal("{\"inherit\":false}", decision.HandoffToolOverrides);
         Assert.False(decision.HandoffApprovalRequired);
+        Assert.Equal("all_results", decision.HandoffMergeStrategy);
     }
 
     [Fact]

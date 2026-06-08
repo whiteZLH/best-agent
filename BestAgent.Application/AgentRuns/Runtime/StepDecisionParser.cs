@@ -128,6 +128,10 @@ public class StepDecisionParser : IStepDecisionParser
                     ?? GetString(root, "tool_overrides")
                     ?? GetNestedString(root, "handoff", "toolOverrides")
                     ?? GetNestedString(root, "handoff", "tool_overrides");
+                var mergeStrategy = GetString(root, "mergeStrategy")
+                    ?? GetString(root, "merge_strategy")
+                    ?? GetNestedString(root, "handoff", "mergeStrategy")
+                    ?? GetNestedString(root, "handoff", "merge_strategy");
                 var approvalRequired = GetBoolean(root, "approvalRequired")
                     ?? GetBoolean(root, "approval_required")
                     ?? GetNestedBoolean(root, "handoff", "approvalRequired")
@@ -142,7 +146,8 @@ public class StepDecisionParser : IStepDecisionParser
                     contextOverrides?.Trim(),
                     memoryOverrides?.Trim(),
                     toolOverrides?.Trim(),
-                    approvalRequired);
+                    approvalRequired,
+                    mergeStrategy?.Trim());
                 return true;
             }
 

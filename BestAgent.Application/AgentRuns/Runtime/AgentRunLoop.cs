@@ -20,7 +20,8 @@ public static class AgentRunLoop
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"route_only"} to route directly to another allowed agent.
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"delegate_and_wait"} to delegate to another allowed agent and then continue.
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"delegate_and_merge"} to delegate and then merge the child result into the final answer.
-        Optional handoff fields: "reason", "confidence", "context_overrides", "memory_overrides", "tool_overrides", "approval_required".
+        Optional handoff fields: "reason", "confidence", "context_overrides", "memory_overrides", "tool_overrides", "approval_required", "merge_strategy".
+        Supported merge_strategy values for delegate_and_merge: "supervisor_summary", "first_success", "all_results".
         Use {"action":"request_human","comment":"..."} when a human operator must review or provide the answer.
         Use {"action":"fail","errorCode":"...","message":"..."} when the run cannot continue automatically.
         """;
@@ -178,7 +179,8 @@ public static class AgentRunLoop
                     decision.HandoffToolOverrides,
                     cancellationToken,
                     decision.HandoffConfidence,
-                    totalCostDelta);
+                    totalCostDelta,
+                    decision.HandoffMergeStrategy);
             }
 
             if (string.Equals(decision.Action, "request_human", StringComparison.OrdinalIgnoreCase))
@@ -823,7 +825,8 @@ public static class AgentRunLoop
         string? toolOverrides,
         CancellationToken cancellationToken,
         double? confidence = null,
-        decimal totalCostDelta = 0m)
+        decimal totalCostDelta = 0m,
+        string? mergeStrategy = null)
     {
         var handoffWaitToken = Guid.NewGuid().ToString("N");
         var childRunId = Guid.NewGuid().ToString("N");
@@ -855,7 +858,8 @@ public static class AgentRunLoop
                     confidence,
                     contextOverrides,
                     memoryOverrides,
-                    toolOverrides))
+                    toolOverrides,
+                    mergeStrategy))
         };
 
         await agentStepRepository.AddAsync(pendingStep, cancellationToken);
@@ -880,7 +884,8 @@ public static class AgentRunLoop
             handoffInput,
             handoffMode,
             childRunId,
-            totalCostDelta);
+            totalCostDelta,
+            HandoffPayloadSerializer.NormalizeMergeStrategy(handoffMode, mergeStrategy));
     }
 
     private static AgentLoopFailed CreateMaxCostExceededResult(int failedAtStepNo, AgentRun run, decimal totalCostDelta)
