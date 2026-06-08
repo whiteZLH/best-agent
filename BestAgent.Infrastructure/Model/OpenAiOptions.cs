@@ -12,6 +12,8 @@ public class OpenAiOptions
 
     public int? MaxOutputTokens { get; init; }
 
+    public decimal? TopP { get; init; }
+
     public int TimeoutSeconds { get; init; } = 60;
 
     public decimal PromptTokenPricePerMillion { get; init; }

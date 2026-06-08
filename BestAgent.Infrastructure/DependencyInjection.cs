@@ -35,6 +35,9 @@ public static class DependencyInjection
             MaxOutputTokens = int.TryParse(configuration["OpenAI:MaxOutputTokens"], out var maxOutputTokens)
                 ? maxOutputTokens
                 : null,
+            TopP = decimal.TryParse(configuration["OpenAI:TopP"], out var topP)
+                ? topP
+                : null,
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60

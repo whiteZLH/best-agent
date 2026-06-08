@@ -58,19 +58,22 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
             var temperature = NormalizeTemperature(request.Temperature ?? _options.Temperature);
             var maxOutputTokens = NormalizeMaxOutputTokens(request.MaxOutputTokens ?? _options.MaxOutputTokens);
+            var topP = NormalizeTopP(request.TopP ?? _options.TopP);
 
             var payload = new
             {
                 model,
                 messages = BuildMessages(request),
                 temperature,
-                max_tokens = maxOutputTokens
+                max_tokens = maxOutputTokens,
+                top_p = topP
             };
             _logger.LogDebug(
-                "Calling model {Model} with temperature {Temperature}, max tokens {MaxOutputTokens}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 temperature,
                 maxOutputTokens,
+                topP,
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
 
@@ -219,6 +222,16 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return maxOutputTokens;
+    }
+
+    private static decimal? NormalizeTopP(decimal? topP)
+    {
+        if (topP is null || topP <= 0m)
+        {
+            return null;
+        }
+
+        return topP > 1m ? 1m : topP;
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)
