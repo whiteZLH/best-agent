@@ -80,7 +80,7 @@
 - `AgentRunsController` 当前也已开始最小消费 `tenant/user/session` scope：创建 Run 时会优先继承已认证身份字段，并兼容 `X-BestAgent-Tenant-Id` / `X-BestAgent-User-Id` / `X-BestAgent-Session-Id` 显式 scope headers；Run 查询、恢复、取消、审批、人机协同、外部 tool/approval complete 回调与 SSE stream 入口在存在上述 scope 时也会校验当前 Run 是否仍处于相同 tenant/user/session 边界内
 - 已补上最小记忆写回闭环：可信工具完成结果可按 `MemoryPolicy` 最小 allowlist 门禁写入 `session_memory`，run 完成时可写入模板化 `summary_memory`
 - `MemoryPolicy` 写侧已细化为独立开关：`session_memory` 工具结果写入、结构化 `user_memory` 写入与 `summary_memory` 写入可分别控制
-- 检索链路已从固定顺序注入升级到最小 lexical retrieval：支持 query 归一化、候选召回、词法重排、prompt citation 注入与最终答复 `References` 追加
+- 检索链路已从固定顺序注入升级到最小 lexical retrieval：支持 query 归一化、候选召回、词法重排、prompt citation 注入与最终答复 `References` 追加；`model_call` 审计与 `GetAgentRunSteps` 当前也已开始回显最小 retrieval query / sources / citations 结构化信息
 - `user_memory` 已开始支持最小可信写入：仅消费工具结果中显式声明的结构化 memory 条目，并按 `memory_key` 覆写更新
 - 基础单元测试、控制器测试与部分集成 / 基础设施测试
 
@@ -616,7 +616,7 @@ dotnet run --project BestAgent.Api
 
 - 多 Agent / Router / handoff：当前已落地 `handoff` 决策、`AllowedHandoffs` 运行时校验、父子 Run 关系写入、`WaitingHandoff` 与最小 `route_only` / `delegate_and_wait` / `delegate_and_merge` 恢复闭环、最小 handoff 深度治理，以及 run/step 读侧、子 Run 查询与递归 run tree 查询的 handoff 可观测性；`RouteRule` 当前也已进入最小定义管理态并可按版本创建/查询，handoff Runtime 也已开始最小消费命中规则的默认 `handoff_mode`、`delegate_and_merge` 下的规则级 `merge_strategy` 与边界审计元数据；`summary_only`、`memory_scope={"mode":"read_only"}` 与 `memory_scope={"mode":"disabled"}` 也已开始形成真实子 Agent 上下文/记忆边界执行；`delegate_and_merge` 当前也已开始支持单子 Run 的显式 `merge_strategy`（默认 `supervisor_summary`，并支持 `first_success` / `all_results`）；模型 handoff 决策的最小路由元数据也已进入审计链路，但 Router Agent、Supervisor Agent、更细上下文边界的真正执行约束、更丰富权限继承治理、完整 `RouteRule` 自动路由，以及 `majority_vote` / 多子 Run 汇聚等更复杂 merge strategy 仍未完整落地
 - 更细粒度的人机协同：当前已落地 `WaitingHuman` 最小闭环，并已支持替代挂起工具结果继续 loop；当前也已支持对已完成 `tool_call` 结果发起人工覆盖，并保留原工具结果后再用人工结果继续生成最终答复；当前已补上“仅允许覆盖当前 run 最新已完成且仍为当前步骤的 `tool_call` 结果”的最小服务端保护，并要求 `request-human` / `complete-human` 具备明确人工操作者身份；审批策略配置当前也已开始做合法 side effect level 规范化，但更细粒度权限边界与正式认证鉴权仍未实现
-- 更完整的记忆、检索与长期知识库：当前已完成最小 memory write、`effective_at/expires_at` 活跃窗口过滤、相对 TTL (`ttlSeconds`) 写入、轻量 query rewrite、query-aware lexical retrieval、词法重排、prompt citation 注入与最终答复 `References` 追加，但更复杂的长期记忆治理、向量检索、更强语义 rewrite 和更细粒度写入策略仍未完整落地
+- 更完整的记忆、检索与长期知识库：当前已完成最小 memory write、`effective_at/expires_at` 活跃窗口过滤、相对 TTL (`ttlSeconds`) 写入、轻量 query rewrite、query-aware lexical retrieval、词法重排、prompt citation 注入、`model_call` / steps 读侧的最小 retrieval 审计注入，以及最终答复 `References` 追加，但更复杂的长期记忆治理、向量检索、更强语义 rewrite 和更细粒度写入策略仍未完整落地
 - 可观测性：当前已补上最小 Metrics 闭环，`IAgentMetrics` + `System.Diagnostics.Metrics` 已开始覆盖 Run 创建/终态、模型调用耗时与 token/cost、工具执行耗时、检索耗时/候选数/命中数，以及审批等待/超时时长；同时也已开始用统一 `ActivitySource` 为 `AgentRun`、`ModelCall`、`ToolExecution`、`Retrieval`、`Approval` 与 `Handoff` 链路补最小 tracing span，并开始为 `BestAgentRequestLoggingMiddleware`、`OpenAiCompatibleModelGateway`、`ToolExecutor` 与 `DefaultApprovalAuthorizer` 补最小结构化日志，但更完整的日志规范、跨实例 exporter / dashboard、trace 传播与更细粒度经营指标仍未完整落地
 - 跨实例事件分发、外部队列发布与更完整的 outbox 投递语义
 - 正式认证鉴权中间件、后台管理界面与更完整的租户隔离治理：当前已开始落地最小 ASP.NET Core 认证管道，支持配置化 `Bearer` token 用户 / 服务身份，并在请求显式携带无效 `Authorization` 时于控制器前返回 `401`；Run API 也会继续消费这些 claims 做 scope 继承与边界校验，但强制鉴权策略、更细粒度授权模型和完整租户隔离治理仍未完成

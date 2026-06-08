@@ -9,11 +9,21 @@ public sealed record ModelCallPayload(
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
-    decimal Cost);
+    decimal Cost,
+    ModelCallRetrievalPayload? Retrieval = null);
+
+public sealed record ModelCallRetrievalPayload(
+    string QueryText,
+    bool WasRewritten,
+    int CandidateCount,
+    int SelectedCount,
+    IReadOnlyList<string> RequestedSources,
+    IReadOnlyList<string> SelectedSources,
+    IReadOnlyList<string> Citations);
 
 public static class ModelCallPayloadSerializer
 {
-    public static string Create(string model, GenerateTextResult result)
+    public static string Create(string model, GenerateTextResult result, RuntimeRetrievalAudit? retrieval = null)
     {
         return JsonSerializer.Serialize(new ModelCallPayload(
             "model_call",
@@ -21,7 +31,17 @@ public static class ModelCallPayloadSerializer
             Math.Max(0, result.PromptTokens),
             Math.Max(0, result.CompletionTokens),
             Math.Max(0, result.TotalTokens),
-            result.Cost < 0m ? 0m : result.Cost));
+            result.Cost < 0m ? 0m : result.Cost,
+            retrieval is null
+                ? null
+                : new ModelCallRetrievalPayload(
+                    retrieval.QueryText,
+                    retrieval.WasRewritten,
+                    Math.Max(0, retrieval.CandidateCount),
+                    Math.Max(0, retrieval.SelectedCount),
+                    retrieval.RequestedSources.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    retrieval.SelectedSources.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                    retrieval.Citations.Distinct(StringComparer.Ordinal).ToArray())));
     }
 
     public static bool TryParse(string? payload, out ModelCallPayload? modelCallPayload)

@@ -805,7 +805,7 @@ public class AgentRunLoopTests
         var context = CreateLoopContext();
         var resolvedDefinition = CreateResolvedDefinition();
         _runtimeContextComposer.ComposeModelInputAsync(context, resolvedDefinition, Arg.Any<CancellationToken>())
-            .Returns("composed context");
+            .Returns(new RuntimeContextComposition("composed context"));
         _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
             .Returns(new GenerateTextResult("final-answer"));
         _stepDecisionParser.Parse("final-answer")
@@ -841,7 +841,7 @@ public class AgentRunLoopTests
         var context = CreateLoopContext();
         var resolvedDefinition = CreateResolvedDefinition();
         _runtimeContextComposer.ComposeModelInputAsync(context, resolvedDefinition, Arg.Any<CancellationToken>())
-            .Returns(
+            .Returns(new RuntimeContextComposition(
                 """
                 Current user input:
                 hello
@@ -850,7 +850,7 @@ public class AgentRunLoopTests
                 [1] Flights can be changed within 24 hours.
                 Citation: score=3; source=faq/doc-1#1; chunk=1
                 Source: faq/doc-1#1
-                """);
+                """));
         _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
             .Returns(new GenerateTextResult("final-answer"));
         _stepDecisionParser.Parse("final-answer")
@@ -885,7 +885,7 @@ public class AgentRunLoopTests
         var context = CreateLoopContext();
         var resolvedDefinition = CreateResolvedDefinition(contextPolicy: "{\"citations\":false}");
         _runtimeContextComposer.ComposeModelInputAsync(context, resolvedDefinition, Arg.Any<CancellationToken>())
-            .Returns(
+            .Returns(new RuntimeContextComposition(
                 """
                 Current user input:
                 hello
@@ -894,7 +894,7 @@ public class AgentRunLoopTests
                 [1] Flights can be changed within 24 hours.
                 Citation: score=3; source=faq/doc-1#1; chunk=1
                 Source: faq/doc-1#1
-                """);
+                """));
         _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
             .Returns(new GenerateTextResult("final-answer"));
         _stepDecisionParser.Parse("final-answer")

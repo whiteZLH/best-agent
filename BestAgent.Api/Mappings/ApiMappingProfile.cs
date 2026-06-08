@@ -101,6 +101,7 @@ public class ApiMappingProfile : Profile
         CreateMap<ApprovalInfo, ApprovalInfoResponse>();
         CreateMap<HumanWaitInfo, HumanWaitInfoResponse>();
         CreateMap<ToolInvocationInfo, ToolInvocationInfoResponse>();
+        CreateMap<ModelCallRetrievalInfo, ModelCallRetrievalInfoResponse>();
         CreateMap<ModelCallInfo, ModelCallInfoResponse>();
         CreateMap<ModelFailureInfo, ModelFailureInfoResponse>();
         CreateMap<ToolFailureCompensationInfo, ToolFailureCompensationInfoResponse>();

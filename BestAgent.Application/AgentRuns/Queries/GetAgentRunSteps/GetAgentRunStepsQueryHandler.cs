@@ -186,7 +186,17 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
             payload.PromptTokens,
             payload.CompletionTokens,
             payload.TotalTokens,
-            payload.Cost);
+            payload.Cost,
+            payload.Retrieval is null
+                ? null
+                : new ModelCallRetrievalInfo(
+                    payload.Retrieval.QueryText,
+                    payload.Retrieval.WasRewritten,
+                    payload.Retrieval.CandidateCount,
+                    payload.Retrieval.SelectedCount,
+                    payload.Retrieval.RequestedSources,
+                    payload.Retrieval.SelectedSources,
+                    payload.Retrieval.Citations));
     }
 
     private static ModelFailureInfo? MapModelFailure(string? errorPayload)

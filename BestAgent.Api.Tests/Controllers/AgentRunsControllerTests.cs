@@ -409,7 +409,20 @@ public class AgentRunsControllerTests
                     new ApprovalInfo("approval", "weather", "{}", "internal_write", "Pending", null, null, "approval-1", "u-1", "Alice", "admin"),
                     new HumanWaitInfo("human", "Pending", "Need operator input", null, "u-2", "Bob", "operator", null, "tool_wait", "step-0", "invocation-0", "weather", "{}", null, "Pending", true),
                     new ToolInvocationInfo("invocation-1", "weather", "async", "Pending", "wait-1", now, null, 0),
-                    new ModelCallInfo("gpt-4o-mini", 120, 45, 165, 0.0042m),
+                    new ModelCallInfo(
+                        "gpt-4o-mini",
+                        120,
+                        45,
+                        165,
+                        0.0042m,
+                        new ModelCallRetrievalInfo(
+                            "refund manager approval",
+                            true,
+                            4,
+                            1,
+                            ["faq"],
+                            ["faq/doc-1#1"],
+                            ["score=3; source=faq/doc-1#1; chunk=1"])),
                     new ModelFailureInfo("upstream_unavailable", "Planner could not continue."),
                     new ToolFailureInfo("weather", "execution", "tool backend crashed", new ToolFailureCompensationInfo("manual")),
                     now,
@@ -479,6 +492,10 @@ public class AgentRunsControllerTests
         Assert.Equal(45, step.ModelCall.CompletionTokens);
         Assert.Equal(165, step.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, step.ModelCall.Cost);
+        Assert.Equal("refund manager approval", step.ModelCall.Retrieval!.QueryText);
+        Assert.True(step.ModelCall.Retrieval.WasRewritten);
+        Assert.Equal(4, step.ModelCall.Retrieval.CandidateCount);
+        Assert.Equal("faq/doc-1#1", Assert.Single(step.ModelCall.Retrieval.SelectedSources));
         Assert.Equal("upstream_unavailable", step.ModelFailure!.ErrorCode);
         Assert.Equal("Planner could not continue.", step.ModelFailure.Message);
         Assert.Equal("weather", step.ToolFailure!.ToolName);

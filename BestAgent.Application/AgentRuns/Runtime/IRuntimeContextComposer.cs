@@ -4,7 +4,7 @@ namespace BestAgent.Application.AgentRuns.Runtime;
 
 public interface IRuntimeContextComposer
 {
-    Task<string> ComposeModelInputAsync(
+    Task<RuntimeContextComposition> ComposeModelInputAsync(
         AgentLoopContext context,
         ResolvedAgentDefinition resolvedDefinition,
         CancellationToken cancellationToken);

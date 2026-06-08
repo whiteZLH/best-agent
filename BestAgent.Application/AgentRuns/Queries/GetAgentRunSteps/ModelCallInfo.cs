@@ -5,4 +5,14 @@ public record ModelCallInfo(
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
-    decimal Cost);
+    decimal Cost,
+    ModelCallRetrievalInfo? Retrieval = null);
+
+public record ModelCallRetrievalInfo(
+    string QueryText,
+    bool WasRewritten,
+    int CandidateCount,
+    int SelectedCount,
+    IReadOnlyList<string> RequestedSources,
+    IReadOnlyList<string> SelectedSources,
+    IReadOnlyList<string> Citations);

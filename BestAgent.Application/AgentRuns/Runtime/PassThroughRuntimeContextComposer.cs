@@ -4,11 +4,11 @@ namespace BestAgent.Application.AgentRuns.Runtime;
 
 public class PassThroughRuntimeContextComposer : IRuntimeContextComposer
 {
-    public Task<string> ComposeModelInputAsync(
+    public Task<RuntimeContextComposition> ComposeModelInputAsync(
         AgentLoopContext context,
         ResolvedAgentDefinition resolvedDefinition,
         CancellationToken cancellationToken)
     {
-        return Task.FromResult(context.CurrentInput);
+        return Task.FromResult(new RuntimeContextComposition(context.CurrentInput));
     }
 }

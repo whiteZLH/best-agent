@@ -29,7 +29,7 @@ public class RuntimeContextComposer : IRuntimeContextComposer
         _agentMetrics = agentMetrics;
     }
 
-    public async Task<string> ComposeModelInputAsync(
+    public async Task<RuntimeContextComposition> ComposeModelInputAsync(
         AgentLoopContext context,
         ResolvedAgentDefinition resolvedDefinition,
         CancellationToken cancellationToken)
@@ -102,9 +102,15 @@ public class RuntimeContextComposer : IRuntimeContextComposer
             }
         }
 
+        var retrievalAudit = policy.IncludeKnowledge
+            && knowledgeSources.Count > 0
+            && policy.MaxKnowledgeChunks > 0
+            ? BuildRetrievalAudit(retrievalQuery, knowledgeSources, chunks)
+            : null;
+
         if (summaryMemory is null && chunks.Count == 0 && sessionMemories.Count == 0 && userMemories.Count == 0)
         {
-            return currentInput;
+            return new RuntimeContextComposition(currentInput, retrievalAudit);
         }
 
         var builder = new StringBuilder();
@@ -162,7 +168,7 @@ public class RuntimeContextComposer : IRuntimeContextComposer
             }
         }
 
-        return builder.ToString().TrimEnd();
+        return new RuntimeContextComposition(builder.ToString().TrimEnd(), retrievalAudit);
     }
 
     private async Task<IReadOnlyList<SessionMemory>> LoadSessionMemoriesAsync(
@@ -227,6 +233,33 @@ public class RuntimeContextComposer : IRuntimeContextComposer
         {
             return true;
         }
+    }
+
+    private static RuntimeRetrievalAudit? BuildRetrievalAudit(
+        RetrievalQuery retrievalQuery,
+        IReadOnlyList<string> knowledgeSources,
+        IReadOnlyList<KnowledgeChunk> chunks)
+    {
+        if (knowledgeSources.Count == 0)
+        {
+            return null;
+        }
+
+        return new RuntimeRetrievalAudit(
+            retrievalQuery.QueryText,
+            retrievalQuery.WasRewritten,
+            retrievalQuery.CandidateCount,
+            chunks.Count,
+            knowledgeSources.ToArray(),
+            chunks
+                .Select(chunk => string.IsNullOrWhiteSpace(chunk.Source) ? chunk.DocumentId : chunk.Source!)
+                .Where(source => !string.IsNullOrWhiteSpace(source))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
+            chunks
+                .Select(chunk => CitationFormatter.Format(chunk, retrievalQuery.QueryText))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray());
     }
 
     private sealed record RetrievalQuery(string QueryText, int CandidateCount, bool WasRewritten);

@@ -83,12 +83,13 @@ public static class AgentRunLoop
                     totalCostDelta);
             }
 
-            var modelInput = runtimeContextComposer is null
-                ? currentInput
+            var runtimeContext = runtimeContextComposer is null
+                ? new RuntimeContextComposition(currentInput)
                 : await runtimeContextComposer.ComposeModelInputAsync(
                     context with { CurrentInput = currentInput },
                     resolvedDefinition,
                     cancellationToken);
+            var modelInput = runtimeContext.ModelInput;
             var startedAt = DateTime.UtcNow;
             var modelResponse = await modelGateway.GenerateTextAsync(
                 new GenerateTextRequest(version.DefaultModel, BuildRuntimePrompt(version.SystemPromptTemplate), modelInput),
@@ -102,7 +103,7 @@ public static class AgentRunLoop
                 modelInput, modelResponse.Output, null,
                 startedAt, endedAt) with
             {
-                DecisionPayload = ModelCallPayloadSerializer.Create(version.DefaultModel, modelResponse)
+                DecisionPayload = ModelCallPayloadSerializer.Create(version.DefaultModel, modelResponse, runtimeContext.Retrieval)
             }, cancellationToken);
             if (onEvent is not null)
             {

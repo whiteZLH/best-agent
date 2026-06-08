@@ -26,7 +26,8 @@ public class RuntimeContextComposerTests
 
         var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
 
-        Assert.Equal("hello", result);
+        Assert.Equal("hello", result.ModelInput);
+        Assert.Null(result.Retrieval);
     }
 
     [Fact]
@@ -117,17 +118,25 @@ public class RuntimeContextComposerTests
 
         var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
 
-        var normalized = result.Replace("\r\n", "\n", StringComparison.Ordinal);
+        var normalized = result.ModelInput.Replace("\r\n", "\n", StringComparison.Ordinal);
 
         Assert.Contains("Current user input:\nhello", normalized);
         Assert.Contains("Conversation summary:\nUser is trying to plan a trip.", normalized);
         Assert.Contains("Session memory:\n- {\"lastTool\":\"weather\"}", normalized);
         Assert.Contains("User memory:\n- seat_preference: \"aisle\"", normalized);
-        Assert.Contains("[1] Flights can be changed within 24 hours.", result);
-        Assert.Contains("Citation: score=", result);
-        Assert.Contains("Source: faq/doc-1#1", result);
-        Assert.Contains("[2] Hotel refunds require manager approval.", result);
-        Assert.Contains("Source: sop/doc-2#1", result);
+        Assert.Contains("[1] Flights can be changed within 24 hours.", result.ModelInput);
+        Assert.Contains("Citation: score=", result.ModelInput);
+        Assert.Contains("Source: faq/doc-1#1", result.ModelInput);
+        Assert.Contains("[2] Hotel refunds require manager approval.", result.ModelInput);
+        Assert.Contains("Source: sop/doc-2#1", result.ModelInput);
+        Assert.NotNull(result.Retrieval);
+        Assert.Equal("hello", result.Retrieval!.QueryText);
+        Assert.False(result.Retrieval.WasRewritten);
+        Assert.Equal(6, result.Retrieval.CandidateCount);
+        Assert.Equal(2, result.Retrieval.SelectedCount);
+        Assert.Equal(["faq", "sop"], result.Retrieval.RequestedSources);
+        Assert.Equal(["faq/doc-1#1", "sop/doc-2#1"], result.Retrieval.SelectedSources);
+        Assert.Equal(2, result.Retrieval.Citations.Count);
     }
 
     [Fact]
@@ -192,7 +201,13 @@ public class RuntimeContextComposerTests
 
         var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
 
-        Assert.Contains("Reference knowledge:", result);
+        Assert.Contains("Reference knowledge:", result.ModelInput);
+        Assert.NotNull(result.Retrieval);
+        Assert.True(result.Retrieval!.WasRewritten);
+        Assert.Equal(4, result.Retrieval.CandidateCount);
+        Assert.Equal(1, result.Retrieval.SelectedCount);
+        Assert.Equal(["faq"], result.Retrieval.RequestedSources);
+        Assert.Equal(["faq/doc-1#1"], result.Retrieval.SelectedSources);
         await _knowledgeChunkRepository.Received(1).ListByKnowledgeSourceCodesAsync(
             "tenant-1",
             Arg.Any<IReadOnlyList<string>>(),
@@ -231,7 +246,8 @@ public class RuntimeContextComposerTests
 
         var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
 
-        Assert.Equal("hello", result);
+        Assert.Equal("hello", result.ModelInput);
+        Assert.Null(result.Retrieval);
         await _knowledgeChunkRepository.DidNotReceive().ListByKnowledgeSourceCodesAsync(
             Arg.Any<string>(),
             Arg.Any<IReadOnlyList<string>>(),
@@ -287,10 +303,12 @@ public class RuntimeContextComposerTests
 
         var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
 
-        Assert.Contains("Reference knowledge:", result);
-        Assert.Contains("[1] Flights can be changed within 24 hours.", result);
-        Assert.DoesNotContain("Citation:", result);
-        Assert.DoesNotContain("Source:", result);
+        Assert.Contains("Reference knowledge:", result.ModelInput);
+        Assert.Contains("[1] Flights can be changed within 24 hours.", result.ModelInput);
+        Assert.DoesNotContain("Citation:", result.ModelInput);
+        Assert.DoesNotContain("Source:", result.ModelInput);
+        Assert.NotNull(result.Retrieval);
+        Assert.Single(result.Retrieval!.Citations);
     }
 
     private RuntimeContextComposer CreateComposer()
