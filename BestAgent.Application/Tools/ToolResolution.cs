@@ -5,7 +5,8 @@ namespace BestAgent.Application.Tools;
 public enum ToolExecutionKind
 {
     LocalHandler,
-    Webhook
+    Webhook,
+    InlineResult
 }
 
 public record ToolResolution(
@@ -13,4 +14,10 @@ public record ToolResolution(
     string ToolName,
     ToolDefinition? Definition,
     Func<string?, ToolExecutionContext, CancellationToken, Task<ToolExecutionResult>>? LocalHandler,
-    HttpToolInvocationRequest? WebhookRequest);
+    HttpToolInvocationRequest? WebhookRequest,
+    InlineToolInvocationRequest? InlineResultRequest);
+
+public sealed record InlineToolInvocationRequest(
+    string ToolName,
+    string Output,
+    string? Meta);

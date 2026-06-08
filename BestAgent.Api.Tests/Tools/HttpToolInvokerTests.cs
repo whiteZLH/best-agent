@@ -20,6 +20,7 @@ public class HttpToolInvokerTests
         HttpMethod? capturedMethod = null;
         string? capturedUri = null;
         string[]? capturedAuthValues = null;
+        string[]? capturedIdempotencyValues = null;
         JsonElement? capturedPayload = null;
         using var client = CreateClient(async request =>
         {
@@ -28,6 +29,10 @@ public class HttpToolInvokerTests
             if (request.Headers.TryGetValues("Authorization", out var authValues))
             {
                 capturedAuthValues = authValues.ToArray();
+            }
+            if (request.Headers.TryGetValues("Idempotency-Key", out var idempotencyValues))
+            {
+                capturedIdempotencyValues = idempotencyValues.ToArray();
             }
 
             capturedPayload = await ReadJsonAsync(request.Content!);
@@ -47,6 +52,8 @@ public class HttpToolInvokerTests
         Assert.Equal("https://example.com/tools/weather", capturedUri);
         Assert.NotNull(capturedAuthValues);
         Assert.Equal("Bearer token", Assert.Single(capturedAuthValues!));
+        Assert.NotNull(capturedIdempotencyValues);
+        Assert.Equal("tool-idempotency-key", Assert.Single(capturedIdempotencyValues!));
         Assert.True(capturedPayload.HasValue);
 
         var payload = capturedPayload.Value;
@@ -74,6 +81,82 @@ public class HttpToolInvokerTests
 
         Assert.False(result.IsPending);
         Assert.Equal("Tool webhook failed with HTTP 502: upstream error", result.Output);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldRetryRetryableHttpFailure_AndReturnSuccessfulAttempt()
+    {
+        var attempts = 0;
+        using var client = CreateClient(_ =>
+        {
+            attempts++;
+            return Task.FromResult(attempts == 1
+                ? new HttpResponseMessage(HttpStatusCode.BadGateway)
+                {
+                    Content = new StringContent("upstream error", Encoding.UTF8, "text/plain")
+                }
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"output\":\"recovered\"}", Encoding.UTF8, "application/json")
+                });
+        });
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(retryPolicy: "{\"maxAttempts\":2,\"delayMs\":0}"), CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.False(result.IsPending);
+        Assert.Equal("recovered", result.Output);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldNotRetryNonRetryableHttpFailure()
+    {
+        var attempts = 0;
+        using var client = CreateClient(_ =>
+        {
+            attempts++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent("bad input", Encoding.UTF8, "text/plain")
+            });
+        });
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(retryPolicy: "{\"maxAttempts\":3,\"delayMs\":0}"), CancellationToken.None);
+
+        Assert.Equal(1, attempts);
+        Assert.False(result.IsPending);
+        Assert.Equal("Tool webhook failed with HTTP 400: bad input", result.Output);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldRetryTimeout_AndReturnSuccessfulAttempt()
+    {
+        var attempts = 0;
+        using var client = CreateClient(async (_, cancellationToken) =>
+        {
+            attempts++;
+            if (attempts == 1)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"output\":\"after-timeout\"}", Encoding.UTF8, "application/json")
+            };
+        });
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(timeoutMs: 10, retryPolicy: "retry-once"), CancellationToken.None);
+
+        Assert.Equal(2, attempts);
+        Assert.False(result.IsPending);
+        Assert.Equal("after-timeout", result.Output);
     }
 
     [Fact]
@@ -146,16 +229,102 @@ public class HttpToolInvokerTests
         Assert.Matches("^[a-f0-9]{32}$", result.WaitToken!);
     }
 
-    private HttpToolInvocationRequest CreateRequest(int timeoutMs = 5000)
+    [Fact]
+    public async Task InvokeAsync_ShouldReturnCompletedData_WhenResponseUsesStandardSucceededEnvelope()
+    {
+        using var client = CreateClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"status\":\"succeeded\",\"data\":{\"temperature\":26.5,\"unit\":\"celsius\"},\"meta\":{\"durationMs\":320}}",
+                Encoding.UTF8,
+                "application/json")
+        }));
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.False(result.IsPending);
+        Assert.Equal("{\"temperature\":26.5,\"unit\":\"celsius\"}", result.Output);
+        Assert.Equal("succeeded", result.Status);
+        Assert.Null(result.Error);
+        Assert.Equal("{\"durationMs\":320}", result.Meta);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldReturnPending_WhenResponseUsesStandardPendingEnvelope()
+    {
+        using var client = CreateClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"status\":\"pending\",\"meta\":{\"waitToken\":\"wait-456\"}}",
+                Encoding.UTF8,
+                "application/json")
+        }));
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.True(result.IsPending);
+        Assert.Equal("wait-456", result.WaitToken);
+        Assert.Equal(string.Empty, result.Output);
+        Assert.Equal("pending", result.Status);
+        Assert.Null(result.Error);
+        Assert.Equal("{\"waitToken\":\"wait-456\"}", result.Meta);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldReturnCompletedError_WhenResponseUsesStandardFailedEnvelope()
+    {
+        using var client = CreateClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                "{\"status\":\"failed\",\"error\":{\"code\":\"upstream_failed\",\"message\":\"tool backend crashed\"}}",
+                Encoding.UTF8,
+                "application/json")
+        }));
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.False(result.IsPending);
+        Assert.True(result.IsFailed);
+        Assert.Equal("{\"code\":\"upstream_failed\",\"message\":\"tool backend crashed\"}", result.Output);
+        Assert.Equal("failed", result.Status);
+        Assert.Equal("{\"code\":\"upstream_failed\",\"message\":\"tool backend crashed\"}", result.Error);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldReturnFailedResult_WhenLegacyHttpResponseIsNotSuccess()
+    {
+        using var client = CreateClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)
+        {
+            Content = new StringContent("upstream error", Encoding.UTF8, "text/plain")
+        }));
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory);
+
+        var result = await invoker.InvokeAsync(CreateRequest(), CancellationToken.None);
+
+        Assert.True(result.IsFailed);
+        Assert.Equal("failed", result.Status);
+        Assert.Equal("Tool webhook failed with HTTP 502: upstream error", result.Error);
+    }
+
+    private HttpToolInvocationRequest CreateRequest(int timeoutMs = 5000, string? retryPolicy = null)
     {
         return new HttpToolInvocationRequest(
             "weather",
             "https://example.com/tools/weather",
             "POST",
             "{\"Authorization\":\"Bearer token\"}",
+            "tool-idempotency-key",
             "{\"city\":\"Shanghai\"}",
             "{\"type\":\"object\"}",
             "{\"type\":\"string\"}",
+            retryPolicy,
             _context,
             timeoutMs);
     }

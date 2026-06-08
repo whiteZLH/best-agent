@@ -37,6 +37,33 @@ public class UpdateToolDefinitionCommandHandler : IRequestHandler<UpdateToolDefi
             throw new InvalidOperationException("Timeout must be greater than zero.");
         }
 
+        var executionSettings = ToolExecutionBindingHelper.ResolvePersistedExecutionSettings(
+            request.ExecutionKind,
+            request.ExecutionBinding,
+            request.EndpointUrl,
+            request.HttpMethod,
+            request.AuthHeaders,
+            nameof(request.ExecutionKind),
+            nameof(request.ExecutionBinding),
+            nameof(request.EndpointUrl),
+            nameof(request.HttpMethod),
+            nameof(request.AuthHeaders));
+        var policySettings = ToolPolicySettingsHelper.NormalizePersistedPolicySettings(
+            request.RetryPolicy,
+            request.AuthPolicy,
+            request.ParameterPolicy,
+            request.IdempotencyPolicy,
+            request.CompensationPolicy,
+            request.ConsistencyMode,
+            request.SideEffectLevel,
+            nameof(request.RetryPolicy),
+            nameof(request.AuthPolicy),
+            nameof(request.ParameterPolicy),
+            nameof(request.IdempotencyPolicy),
+            nameof(request.CompensationPolicy),
+            nameof(request.ConsistencyMode),
+            nameof(request.SideEffectLevel));
+
         var now = DateTime.UtcNow;
         var updated = existing with
         {
@@ -44,17 +71,21 @@ public class UpdateToolDefinitionCommandHandler : IRequestHandler<UpdateToolDefi
             Description = request.Description?.Trim(),
             InputSchema = ToolDefinitionJsonValidator.NormalizeOptionalJson(request.InputSchema, nameof(request.InputSchema)),
             OutputSchema = ToolDefinitionJsonValidator.NormalizeOptionalJson(request.OutputSchema, nameof(request.OutputSchema)),
-            EndpointUrl = string.IsNullOrWhiteSpace(request.EndpointUrl) ? null : request.EndpointUrl.Trim(),
-            HttpMethod = string.IsNullOrWhiteSpace(request.HttpMethod) ? "POST" : request.HttpMethod.Trim().ToUpperInvariant(),
-            AuthHeaders = ToolDefinitionJsonValidator.NormalizeOptionalJsonObject(request.AuthHeaders, nameof(request.AuthHeaders)),
-            SideEffectLevel = request.SideEffectLevel.Trim(),
+            ExecutionKind = executionSettings.ExecutionKind,
+            ExecutionBinding = executionSettings.ExecutionBinding,
+            EndpointUrl = executionSettings.EndpointUrl,
+            HttpMethod = executionSettings.HttpMethod,
+            AuthHeaders = executionSettings.AuthHeaders,
+            CallbackSecret = string.IsNullOrWhiteSpace(request.CallbackSecret) ? null : request.CallbackSecret.Trim(),
+            SideEffectLevel = policySettings.SideEffectLevel,
             TimeoutMs = request.TimeoutMs,
-            RetryPolicy = request.RetryPolicy,
-            AuthPolicy = request.AuthPolicy,
-            IdempotencyPolicy = request.IdempotencyPolicy,
+            RetryPolicy = policySettings.RetryPolicy,
+            AuthPolicy = policySettings.AuthPolicy,
+            ParameterPolicy = policySettings.ParameterPolicy,
+            IdempotencyPolicy = policySettings.IdempotencyPolicy,
             AsyncSupported = request.AsyncSupported,
-            ConsistencyMode = request.ConsistencyMode.Trim(),
-            CompensationPolicy = request.CompensationPolicy,
+            ConsistencyMode = policySettings.ConsistencyMode,
+            CompensationPolicy = policySettings.CompensationPolicy,
             Enabled = request.Enabled,
             LastModifier = "system",
             LastModifierName = "system",

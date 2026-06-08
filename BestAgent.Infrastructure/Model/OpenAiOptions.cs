@@ -9,4 +9,8 @@ public class OpenAiOptions
     public string Model { get; init; } = string.Empty;
 
     public int TimeoutSeconds { get; init; } = 60;
+
+    public decimal PromptTokenPricePerMillion { get; init; }
+
+    public decimal CompletionTokenPricePerMillion { get; init; }
 }

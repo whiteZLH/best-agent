@@ -2,9 +2,15 @@ using System.Threading.Channels;
 
 namespace BestAgent.Application.AgentRuns.Runtime;
 
+public interface IAgentRunEventSubscription : IAsyncDisposable
+{
+    IAsyncEnumerable<AgentRunEvent> ReadAllAsync(CancellationToken cancellationToken);
+}
+
 public interface IAgentRunEventBus
 {
     void Publish(AgentRunEvent evt);
+    IAgentRunEventSubscription Subscribe(string runId);
     IAsyncEnumerable<AgentRunEvent> SubscribeAsync(string runId, CancellationToken cancellationToken);
 }
 
@@ -17,9 +23,14 @@ public class AgentRunEventBus : IAgentRunEventBus
         _subscriptions.Write(evt.RunId, evt);
     }
 
+    public IAgentRunEventSubscription Subscribe(string runId)
+    {
+        return _subscriptions.Subscribe(runId);
+    }
+
     public IAsyncEnumerable<AgentRunEvent> SubscribeAsync(string runId, CancellationToken cancellationToken)
     {
-        return _subscriptions.Subscribe(runId, cancellationToken);
+        return SubscribeCoreAsync(runId, cancellationToken);
     }
 
     private sealed class ConcurrentSubscriptions
@@ -42,7 +53,7 @@ public class AgentRunEventBus : IAgentRunEventBus
                 foreach (var ch in subscribers)
                     ch.Writer.TryWrite(evt);
 
-                if (evt.EventType is "done" or "error")
+                if (evt.EventType is "done" or "error" or "cancelled")
                 {
                     foreach (var ch in subscribers)
                         ch.Writer.TryComplete();
@@ -50,11 +61,9 @@ public class AgentRunEventBus : IAgentRunEventBus
             }
         }
 
-        public async IAsyncEnumerable<AgentRunEvent> Subscribe(
-            string runId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public IAgentRunEventSubscription Subscribe(string runId)
         {
             var channel = Channel.CreateUnbounded<AgentRunEvent>();
-
             lock (_lock)
             {
                 if (!_channels.TryGetValue(runId, out var list))
@@ -62,28 +71,67 @@ public class AgentRunEventBus : IAgentRunEventBus
                     list = new List<Channel<AgentRunEvent>>();
                     _channels[runId] = list;
                 }
+
                 lock (list) { list.Add(channel); }
             }
 
-            try
+            return new Subscription(channel, () => Remove(runId, channel));
+        }
+
+        private void Remove(string runId, Channel<AgentRunEvent> channel)
+        {
+            lock (_lock)
             {
-                await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken))
-                    yield return evt;
-            }
-            finally
-            {
-                lock (_lock)
+                if (_channels.TryGetValue(runId, out var list))
                 {
-                    if (_channels.TryGetValue(runId, out var list))
+                    lock (list)
                     {
-                        lock (list)
-                        {
-                            list.Remove(channel);
-                            if (list.Count == 0) _channels.Remove(runId);
-                        }
+                        list.Remove(channel);
+                        if (list.Count == 0) _channels.Remove(runId);
                     }
                 }
             }
+        }
+
+        private sealed class Subscription : IAgentRunEventSubscription
+        {
+            private readonly Channel<AgentRunEvent> _channel;
+            private readonly Action _unsubscribe;
+            private int _disposed;
+
+            public Subscription(Channel<AgentRunEvent> channel, Action unsubscribe)
+            {
+                _channel = channel;
+                _unsubscribe = unsubscribe;
+            }
+
+            public IAsyncEnumerable<AgentRunEvent> ReadAllAsync(CancellationToken cancellationToken)
+            {
+                return _channel.Reader.ReadAllAsync(cancellationToken);
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                {
+                    return ValueTask.CompletedTask;
+                }
+
+                _unsubscribe();
+                _channel.Writer.TryComplete();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<AgentRunEvent> SubscribeCoreAsync(
+        string runId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await using var subscription = Subscribe(runId);
+        await foreach (var evt in subscription.ReadAllAsync(cancellationToken))
+        {
+            yield return evt;
         }
     }
 }

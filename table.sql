@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS agent_definition_version (
     system_prompt_template TEXT,
     default_model VARCHAR(128) NOT NULL DEFAULT '',
     allowed_tools JSONB,
+    denied_tools JSONB,
     knowledge_sources JSONB,
     memory_policy JSONB,
     routing_policy JSONB,
@@ -73,6 +74,8 @@ CREATE TABLE IF NOT EXISTS tool_definition (
     description TEXT,
     input_schema JSONB,
     output_schema JSONB,
+    execution_kind VARCHAR(32),
+    execution_binding JSONB,
     endpoint_url VARCHAR(2048),
     http_method VARCHAR(16) NOT NULL DEFAULT 'POST',
     auth_headers JSONB,
@@ -80,6 +83,7 @@ CREATE TABLE IF NOT EXISTS tool_definition (
     timeout_ms INT NOT NULL DEFAULT 30000,
     retry_policy JSONB,
     auth_policy JSONB,
+    parameter_policy JSONB,
     idempotency_policy JSONB,
     async_supported BOOLEAN NOT NULL DEFAULT FALSE,
     consistency_mode VARCHAR(32) NOT NULL DEFAULT 'eventual',
@@ -105,6 +109,7 @@ CREATE TABLE IF NOT EXISTS route_rule (
     match_expression JSONB,
     handoff_mode VARCHAR(32) NOT NULL DEFAULT 'route_only',
     context_scope JSONB,
+    memory_scope JSONB,
     tool_scope JSONB,
     knowledge_scope JSONB,
     approval_required BOOLEAN NOT NULL DEFAULT FALSE,
@@ -575,6 +580,7 @@ CREATE INDEX IF NOT EXISTS idx_session_memory_deleted ON session_memory (deleted
 CREATE UNIQUE INDEX IF NOT EXISTS uk_user_memory_key ON user_memory (tenant_id, user_id, memory_key);
 CREATE INDEX IF NOT EXISTS idx_user_memory_scope ON user_memory (memory_scope);
 CREATE INDEX IF NOT EXISTS idx_user_memory_type ON user_memory (memory_type);
+CREATE INDEX IF NOT EXISTS idx_user_memory_effective ON user_memory (effective_at);
 CREATE INDEX IF NOT EXISTS idx_user_memory_expires ON user_memory (expires_at);
 CREATE INDEX IF NOT EXISTS idx_user_memory_deleted ON user_memory (deleted);
 

@@ -30,48 +30,76 @@ public class ToolResolver : IToolResolver
                 throw new InvalidOperationException($"Tool '{toolName}' is disabled.");
             }
 
-            if (!string.IsNullOrWhiteSpace(definition.EndpointUrl))
+            var executionKind = ToolExecutionBindingHelper.NormalizeExecutionKind(definition.ExecutionKind, nameof(definition.ExecutionKind));
+            if (executionKind == ToolExecutionBindingHelper.Webhook)
             {
+                var webhookBinding = ToolExecutionBindingHelper.ParseWebhookBinding(definition.ExecutionBinding, nameof(definition.ExecutionBinding));
+                return ResolveWebhook(toolName, input, context, definition, webhookBinding);
+            }
+
+            if (executionKind == ToolExecutionBindingHelper.LocalHandler)
+            {
+                var localBinding = ToolExecutionBindingHelper.ParseLocalHandlerBinding(definition.ExecutionBinding, nameof(definition.ExecutionBinding));
+                if (_toolHandlerRegistry.TryGetHandler(localBinding.HandlerName, out var localHandler) && localHandler is not null)
+                {
+                    return new ToolResolution(
+                        ToolExecutionKind.LocalHandler,
+                        toolName,
+                        definition,
+                        localHandler,
+                        null,
+                        null);
+                }
+
+                throw new InvalidOperationException($"Tool '{toolName}' is defined with local handler '{localBinding.HandlerName}' but no registered handler exists.");
+            }
+
+            if (executionKind == ToolExecutionBindingHelper.InlineResult)
+            {
+                var inlineBinding = ToolExecutionBindingHelper.ParseInlineResultBinding(definition.ExecutionBinding, nameof(definition.ExecutionBinding));
                 return new ToolResolution(
-                    ToolExecutionKind.Webhook,
+                    ToolExecutionKind.InlineResult,
                     toolName,
                     definition,
                     null,
-                    new HttpToolInvocationRequest(
-                        definition.ToolName,
-                        definition.EndpointUrl,
-                        definition.HttpMethod,
-                        definition.AuthHeaders,
-                        input,
-                        definition.InputSchema,
-                        definition.OutputSchema,
-                        context,
-                        definition.TimeoutMs));
+                    null,
+                    new InlineToolInvocationRequest(toolName, inlineBinding.Output ?? string.Empty, inlineBinding.Meta));
             }
 
-            if (_toolHandlerRegistry.TryGetHandler(toolName, out var fallbackHandler) && fallbackHandler is not null)
-            {
-                return new ToolResolution(
-                    ToolExecutionKind.LocalHandler,
-                    toolName,
-                    definition,
-                    fallbackHandler,
-                    null);
-            }
-
-            throw new InvalidOperationException($"Tool '{toolName}' is defined but has no endpoint URL configured and no registered handler.");
+            throw new InvalidOperationException($"Tool '{toolName}' is defined but has no explicit execution binding configured.");
         }
 
-        if (_toolHandlerRegistry.TryGetHandler(toolName, out var handler) && handler is not null)
-        {
-            return new ToolResolution(
-                ToolExecutionKind.LocalHandler,
-                toolName,
-                null,
-                handler,
-                null);
-        }
+        throw new InvalidOperationException($"Tool '{toolName}' has no persisted tool definition.");
+    }
 
-        throw new InvalidOperationException($"Tool '{toolName}' has no tool definition and no registered handler.");
+    private static ToolResolution ResolveWebhook(
+        string toolName,
+        string? input,
+        ToolExecutionContext context,
+        ToolDefinition definition,
+        WebhookExecutionBinding webhookBinding)
+    {
+        var idempotencyKey = ToolIdempotencyPolicyHelper.IsEnabled(definition.ToolName, definition.IdempotencyPolicy)
+            ? Guid.NewGuid().ToString("N")
+            : null;
+
+        return new ToolResolution(
+            ToolExecutionKind.Webhook,
+            toolName,
+            definition,
+            null,
+            new HttpToolInvocationRequest(
+                definition.ToolName,
+                webhookBinding.EndpointUrl,
+                webhookBinding.HttpMethod,
+                webhookBinding.AuthHeaders,
+                idempotencyKey,
+                input,
+                definition.InputSchema,
+                definition.OutputSchema,
+                definition.RetryPolicy,
+                context,
+                definition.TimeoutMs),
+            null);
     }
 }

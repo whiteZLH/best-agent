@@ -32,6 +32,13 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
             agentRun.CreateTime,
             agentRun.LastModifyTime,
             agentRun.StartedAt,
-            agentRun.EndedAt);
+            agentRun.EndedAt,
+            agentRun.CurrentStepNo,
+            string.IsNullOrWhiteSpace(agentRun.ParentRunId) ? null : agentRun.ParentRunId,
+            string.IsNullOrWhiteSpace(agentRun.RootRunId) ? null : agentRun.RootRunId,
+            string.IsNullOrWhiteSpace(agentRun.DelegatedByRunId) ? null : agentRun.DelegatedByRunId,
+            string.IsNullOrWhiteSpace(agentRun.DelegatedByAgent) ? null : agentRun.DelegatedByAgent,
+            string.IsNullOrWhiteSpace(agentRun.InterruptReason) ? null : agentRun.InterruptReason,
+            string.IsNullOrWhiteSpace(agentRun.CurrentWaitToken) ? null : agentRun.CurrentWaitToken);
     }
 }

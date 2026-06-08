@@ -12,4 +12,11 @@ public record GetAgentRunByIdResult(
     DateTime CreateTime,
     DateTime LastModifyTime,
     DateTime? StartedAt,
-    DateTime? EndedAt);
+    DateTime? EndedAt,
+    int CurrentStepNo,
+    string? ParentRunId,
+    string? RootRunId,
+    string? DelegatedByRunId,
+    string? DelegatedByAgent,
+    string? InterruptReason,
+    string? WaitToken);

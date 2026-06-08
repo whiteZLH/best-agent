@@ -5,8 +5,10 @@ public record HttpToolInvocationRequest(
     string EndpointUrl,
     string HttpMethod,
     string? AuthHeaders,
+    string? IdempotencyKey,
     string? Input,
     string? InputSchema,
     string? OutputSchema,
+    string? RetryPolicy,
     ToolExecutionContext Context,
     int TimeoutMs);

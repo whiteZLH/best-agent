@@ -14,6 +14,7 @@ public record class RouteRule : AuditedEntity
     public string? MatchExpression { get; init; }
     public string HandoffMode { get; init; } = string.Empty;
     public string? ContextScope { get; init; }
+    public string? MemoryScope { get; init; }
     public string? ToolScope { get; init; }
     public string? KnowledgeScope { get; init; }
     public bool ApprovalRequired { get; init; }

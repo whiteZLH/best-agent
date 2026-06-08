@@ -33,6 +33,7 @@ public class AgentRunWaitingResumeIntegrationTests
         var agentRunRepo = new InMemoryAgentRunRepository();
         var agentStepRepo = new InMemoryAgentStepRepository();
         var agentApprovalRepo = new InMemoryAgentApprovalRepository();
+        var toolInvocationRepo = new InMemoryToolInvocationRepository();
         var eventBus = new RecordingEventBus();
         var channel = new AgentRunChannel();
         var resolvedDefinition = CreateResolvedDefinition();
@@ -69,6 +70,7 @@ public class AgentRunWaitingResumeIntegrationTests
         services.AddSingleton<IAgentRunRepository>(agentRunRepo);
         services.AddSingleton<IAgentStepRepository>(agentStepRepo);
         services.AddSingleton<IAgentApprovalRepository>(agentApprovalRepo);
+        services.AddSingleton<IToolInvocationRepository>(toolInvocationRepo);
         services.AddSingleton<IModelGateway>(modelGateway);
         services.AddSingleton<IToolExecutor>(toolExecutor);
         services.AddSingleton<IToolDefinitionRepository>(toolDefinitionRepository);
@@ -122,6 +124,9 @@ public class AgentRunWaitingResumeIntegrationTests
             step.StepType == "tool_call" &&
             step.Status == "Completed" &&
             step.Output == "sunny" &&
+            step.ToolInvocation != null &&
+            step.ToolInvocation.Status == "Completed" &&
+            step.ToolInvocation.Mode == "sync" &&
             step.Approval != null &&
             step.Approval.Decision == "Approved" &&
             step.Approval.ApproverName == "Alice");
@@ -150,6 +155,7 @@ public class AgentRunWaitingResumeIntegrationTests
         var agentRunRepo = new InMemoryAgentRunRepository();
         var agentStepRepo = new InMemoryAgentStepRepository();
         var agentApprovalRepo = new InMemoryAgentApprovalRepository();
+        var toolInvocationRepo = new InMemoryToolInvocationRepository();
         var eventBus = new RecordingEventBus();
         var channel = new AgentRunChannel();
         var resolvedDefinition = CreateResolvedDefinition();
@@ -177,6 +183,7 @@ public class AgentRunWaitingResumeIntegrationTests
         services.AddSingleton<IAgentRunRepository>(agentRunRepo);
         services.AddSingleton<IAgentStepRepository>(agentStepRepo);
         services.AddSingleton<IAgentApprovalRepository>(agentApprovalRepo);
+        services.AddSingleton<IToolInvocationRepository>(toolInvocationRepo);
         services.AddSingleton<IModelGateway>(modelGateway);
         services.AddSingleton<IToolExecutor>(toolExecutor);
         services.AddSingleton<IToolDefinitionRepository>(toolDefinitionRepository);
@@ -308,6 +315,38 @@ public class AgentRunWaitingResumeIntegrationTests
             }
         }
 
+        public Task<AgentRun?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                var run = _runs.Values.SingleOrDefault(x => x.IdempotencyKey == idempotencyKey);
+                return Task.FromResult(run);
+            }
+        }
+
+        public Task<IReadOnlyList<AgentRun>> ListByParentRunIdAsync(string parentRunId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult((IReadOnlyList<AgentRun>)_runs.Values
+                    .Where(x => x.ParentRunId == parentRunId)
+                    .OrderBy(x => x.CreateTime)
+                    .ToList());
+            }
+        }
+
+        public Task<AgentRun?> GetLatestChildByParentRunIdAsync(string parentRunId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult(_runs.Values
+                    .Where(x => x.ParentRunId == parentRunId)
+                    .OrderByDescending(x => x.CreateTime)
+                    .ThenByDescending(x => x.RunId)
+                    .FirstOrDefault());
+            }
+        }
+
         public Task UpdateAsync(AgentRun agentRun, CancellationToken cancellationToken)
         {
             lock (_lock)
@@ -356,6 +395,14 @@ public class AgentRunWaitingResumeIntegrationTests
             }
         }
 
+        public Task<AgentStep?> GetByStepIdAsync(string stepId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult(_steps.FirstOrDefault(step => step.StepId == stepId));
+            }
+        }
+
         public Task UpdateAsync(AgentStep agentStep, CancellationToken cancellationToken)
         {
             lock (_lock)
@@ -394,6 +441,14 @@ public class AgentRunWaitingResumeIntegrationTests
             }
         }
 
+        public Task<AgentApproval?> GetByApprovalIdAsync(string approvalId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult(_approvals.FirstOrDefault(x => x.ApprovalId == approvalId && !x.Deleted));
+            }
+        }
+
         public Task<IReadOnlyList<AgentApproval>> ListByRunIdAsync(string runId, CancellationToken cancellationToken)
         {
             lock (_lock)
@@ -401,6 +456,23 @@ public class AgentRunWaitingResumeIntegrationTests
                 return Task.FromResult((IReadOnlyList<AgentApproval>)_approvals
                     .Where(x => x.RunId == runId && !x.Deleted)
                     .OrderBy(x => x.CreateTime)
+                    .ToList());
+            }
+        }
+
+        public Task<IReadOnlyList<AgentApproval>> ListExpiredPendingAsync(DateTime utcNow, int limit, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult((IReadOnlyList<AgentApproval>)_approvals
+                    .Where(x =>
+                        !x.Deleted &&
+                        x.ExpiresAt != null &&
+                        x.ExpiresAt <= utcNow &&
+                        x.Decision == "Pending")
+                    .OrderBy(x => x.ExpiresAt)
+                    .ThenBy(x => x.CreateTime)
+                    .Take(limit)
                     .ToList());
             }
         }
@@ -420,6 +492,71 @@ public class AgentRunWaitingResumeIntegrationTests
         }
     }
 
+    private sealed class InMemoryToolInvocationRepository : IToolInvocationRepository
+    {
+        private readonly List<ToolInvocation> _invocations = [];
+        private readonly object _lock = new();
+
+        public Task AddAsync(ToolInvocation invocation, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                _invocations.Add(invocation);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<ToolInvocation?> GetByInvocationIdAsync(string invocationId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult(_invocations.FirstOrDefault(x => x.InvocationId == invocationId && !x.Deleted));
+            }
+        }
+
+        public Task<ToolInvocation?> GetPendingByRunIdAndStepIdAsync(string runId, string stepId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult(_invocations.FirstOrDefault(x =>
+                    x.RunId == runId &&
+                    x.StepId == stepId &&
+                    x.Status == "Pending" &&
+                    !x.Deleted));
+            }
+        }
+
+        public Task<IReadOnlyList<ToolInvocation>> ListByRunIdAsync(string runId, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                return Task.FromResult((IReadOnlyList<ToolInvocation>)_invocations
+                    .Where(x => x.RunId == runId && !x.Deleted)
+                    .OrderBy(x => x.CreateTime)
+                    .ToList());
+            }
+        }
+
+        public Task UpdateAsync(ToolInvocation invocation, CancellationToken cancellationToken)
+        {
+            lock (_lock)
+            {
+                var index = _invocations.FindIndex(x => x.InvocationId == invocation.InvocationId);
+                if (index >= 0)
+                {
+                    _invocations[index] = invocation;
+                }
+                else
+                {
+                    _invocations.Add(invocation);
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class RecordingEventBus : IAgentRunEventBus
     {
         public List<AgentRunEvent> Events { get; } = [];
@@ -432,10 +569,33 @@ public class AgentRunWaitingResumeIntegrationTests
             }
         }
 
+        public IAgentRunEventSubscription Subscribe(string runId)
+        {
+            return new EmptySubscription();
+        }
+
         public async IAsyncEnumerable<AgentRunEvent> SubscribeAsync(string runId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            await Task.CompletedTask;
-            yield break;
+            await using var subscription = Subscribe(runId);
+            await foreach (var evt in subscription.ReadAllAsync(cancellationToken))
+            {
+                yield return evt;
+            }
+        }
+
+        private sealed class EmptySubscription : IAgentRunEventSubscription
+        {
+            public async IAsyncEnumerable<AgentRunEvent> ReadAllAsync(
+                [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+            {
+                await Task.CompletedTask;
+                yield break;
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                return ValueTask.CompletedTask;
+            }
         }
     }
 }

@@ -8,5 +8,7 @@ public interface IAgentStepRepository
 
     Task<AgentStep?> GetLastByRunIdAsync(string runId, CancellationToken cancellationToken);
 
+    Task<AgentStep?> GetByStepIdAsync(string stepId, CancellationToken cancellationToken);
+
     Task UpdateAsync(AgentStep agentStep, CancellationToken cancellationToken);
 }

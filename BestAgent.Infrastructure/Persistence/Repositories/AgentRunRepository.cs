@@ -25,6 +25,32 @@ public class AgentRunRepository : IAgentRunRepository
             .SingleOrDefaultAsync(x => x.RunId == runId && !x.Deleted, cancellationToken);
     }
 
+    public Task<AgentRun?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken)
+    {
+        return _dbContext.AgentRuns
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.IdempotencyKey == idempotencyKey && !x.Deleted, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AgentRun>> ListByParentRunIdAsync(string parentRunId, CancellationToken cancellationToken)
+    {
+        return await _dbContext.AgentRuns
+            .AsNoTracking()
+            .Where(x => x.ParentRunId == parentRunId && !x.Deleted)
+            .OrderBy(x => x.CreateTime)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<AgentRun?> GetLatestChildByParentRunIdAsync(string parentRunId, CancellationToken cancellationToken)
+    {
+        return _dbContext.AgentRuns
+            .AsNoTracking()
+            .Where(x => x.ParentRunId == parentRunId && !x.Deleted)
+            .OrderByDescending(x => x.CreateTime)
+            .ThenByDescending(x => x.RunId)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task UpdateAsync(AgentRun agentRun, CancellationToken cancellationToken)
     {
         _dbContext.AgentRuns.Update(agentRun);

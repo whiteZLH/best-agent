@@ -42,6 +42,26 @@ public class AgentDefinitionRepository : IAgentDefinitionRepository
         return await ResolveDefinitionAsync(definition, cancellationToken);
     }
 
+    public async Task<ResolvedAgentDefinition?> GetByVersionIdAsync(string versionId, CancellationToken cancellationToken)
+    {
+        var version = await _dbContext.AgentDefinitionVersions
+            .AsNoTracking()
+            .Where(x => x.Id == versionId && !x.Deleted)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (version is null)
+        {
+            return null;
+        }
+
+        var definition = await _dbContext.AgentDefinitions
+            .AsNoTracking()
+            .Where(x => x.Id == version.AgentDefinitionId && !x.Deleted)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return definition is null ? null : new ResolvedAgentDefinition(definition, version);
+    }
+
     public async Task<IReadOnlyList<ResolvedAgentDefinition>> GetAllAsync(CancellationToken cancellationToken)
     {
         var definitions = await _dbContext.AgentDefinitions

@@ -26,6 +26,115 @@ public class ToolResolverTests
         Assert.NotNull(resolution.WebhookRequest);
         Assert.Null(resolution.LocalHandler);
         Assert.Equal("https://example.com/tools/weather", resolution.WebhookRequest!.EndpointUrl);
+        Assert.Null(resolution.WebhookRequest.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldUseExplicitWebhookBinding_WhenExecutionKindPresent()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.Webhook,
+                executionBinding: ToolExecutionBindingHelper.CreateWebhookBinding(
+                    "https://binding.example.com/weather",
+                    "PATCH",
+                    "{\"Authorization\":\"Bearer binding-token\"}")));
+        var resolver = CreateResolver();
+
+        var resolution = await resolver.ResolveAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None);
+
+        Assert.Equal(ToolExecutionKind.Webhook, resolution.ExecutionKind);
+        Assert.NotNull(resolution.WebhookRequest);
+        Assert.Equal("https://binding.example.com/weather", resolution.WebhookRequest!.EndpointUrl);
+        Assert.Equal("PATCH", resolution.WebhookRequest.HttpMethod);
+        Assert.Equal("{\"Authorization\":\"Bearer binding-token\"}", resolution.WebhookRequest.AuthHeaders);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldAcceptLegacyWebhookBindingShape_WhenExecutionKindPresent()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.Webhook,
+                executionBinding: "{\"endpointUrl\":\"https://legacy.example.com/weather\",\"httpMethod\":\"patch\",\"authHeaders\":\"{\\\"Authorization\\\":\\\"Bearer legacy-token\\\"}\"}"));
+        var resolver = CreateResolver();
+
+        var resolution = await resolver.ResolveAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None);
+
+        Assert.Equal(ToolExecutionKind.Webhook, resolution.ExecutionKind);
+        Assert.NotNull(resolution.WebhookRequest);
+        Assert.Equal("https://legacy.example.com/weather", resolution.WebhookRequest!.EndpointUrl);
+        Assert.Equal("PATCH", resolution.WebhookRequest.HttpMethod);
+        Assert.Equal("{\"Authorization\":\"Bearer legacy-token\"}", resolution.WebhookRequest.AuthHeaders);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldGenerateIdempotencyKey_WhenPolicyEnabled()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(idempotencyPolicy: "idempotent"));
+        var resolver = CreateResolver();
+
+        var resolution = await resolver.ResolveAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None);
+
+        Assert.NotNull(resolution.WebhookRequest);
+        Assert.False(string.IsNullOrWhiteSpace(resolution.WebhookRequest!.IdempotencyKey));
+        Assert.Matches("^[a-f0-9]{32}$", resolution.WebhookRequest.IdempotencyKey!);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldNotGenerateIdempotencyKey_WhenPolicyDisabled()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(idempotencyPolicy: "non-idempotent"));
+        var resolver = CreateResolver();
+
+        var resolution = await resolver.ResolveAsync("weather", "{\"city\":\"Shanghai\"}", _context, CancellationToken.None);
+
+        Assert.NotNull(resolution.WebhookRequest);
+        Assert.Null(resolution.WebhookRequest!.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldUseExplicitLocalHandlerBinding_WhenExecutionKindPresent()
+    {
+        _toolRegistry.RegisterHandler("custom-weather-handler", (_, _, _) => Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.LocalHandler,
+                executionBinding: ToolExecutionBindingHelper.CreateLocalHandlerBinding("custom-weather-handler")));
+        var resolver = CreateResolver();
+
+        var resolution = await resolver.ResolveAsync("weather", "input", _context, CancellationToken.None);
+
+        Assert.Equal(ToolExecutionKind.LocalHandler, resolution.ExecutionKind);
+        Assert.NotNull(resolution.LocalHandler);
+        Assert.Null(resolution.WebhookRequest);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldUseExplicitInlineResultBinding_WhenExecutionKindPresent()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.InlineResult,
+                executionBinding: ToolExecutionBindingHelper.CreateInlineResultBinding(
+                    "{\"temperature\":26.5}",
+                    "{\"source\":\"inline\"}")));
+        var resolver = CreateResolver();
+
+        var resolution = await resolver.ResolveAsync("weather", "input", _context, CancellationToken.None);
+
+        Assert.Equal(ToolExecutionKind.InlineResult, resolution.ExecutionKind);
+        Assert.NotNull(resolution.InlineResultRequest);
+        Assert.Null(resolution.LocalHandler);
+        Assert.Null(resolution.WebhookRequest);
+        Assert.Equal("{\"temperature\":26.5}", resolution.InlineResultRequest!.Output);
+        Assert.Equal("{\"source\":\"inline\"}", resolution.InlineResultRequest.Meta);
     }
 
     [Fact]
@@ -43,23 +152,9 @@ public class ToolResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldFallbackToLocalHandler_WhenDefinitionHasNoEndpoint()
+    public async Task ResolveAsync_ShouldThrow_WhenDefinitionHasNoExplicitBindingAndNoLegacyEndpoint()
     {
         _toolRegistry.RegisterHandler("weather", (_, _, _) => Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
-        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
-            .Returns(CreateToolDefinition(endpointUrl: "   "));
-        var resolver = CreateResolver();
-
-        var resolution = await resolver.ResolveAsync("weather", "input", _context, CancellationToken.None);
-
-        Assert.Equal(ToolExecutionKind.LocalHandler, resolution.ExecutionKind);
-        Assert.NotNull(resolution.LocalHandler);
-        Assert.Null(resolution.WebhookRequest);
-    }
-
-    [Fact]
-    public async Task ResolveAsync_ShouldThrow_WhenDefinitionHasNoEndpointAndNoHandler()
-    {
         _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
             .Returns(CreateToolDefinition(endpointUrl: "   "));
         var resolver = CreateResolver();
@@ -67,22 +162,37 @@ public class ToolResolverTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             resolver.ResolveAsync("weather", "input", _context, CancellationToken.None));
 
-        Assert.Equal("Tool 'weather' is defined but has no endpoint URL configured and no registered handler.", exception.Message);
+        Assert.Equal("Tool 'weather' is defined but has no explicit execution binding configured.", exception.Message);
     }
 
     [Fact]
-    public async Task ResolveAsync_ShouldUseLocalHandler_WhenDefinitionMissing()
+    public async Task ResolveAsync_ShouldThrow_WhenExecutionBindingVersionIsUnsupported()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.Webhook,
+                executionBinding: "{\"version\":99,\"type\":\"webhook\",\"webhook\":{\"endpointUrl\":\"https://example.com/tools/weather\",\"httpMethod\":\"POST\"}}"));
+        var resolver = CreateResolver();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveAsync("weather", "input", _context, CancellationToken.None));
+
+        Assert.Equal("ExecutionBinding uses unsupported binding version '99'.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldThrow_WhenDefinitionMissingEvenIfHandlerExists()
     {
         _toolRegistry.RegisterHandler("weather", (_, _, _) => Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
         _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
             .Returns((ToolDefinition?)null);
         var resolver = CreateResolver();
 
-        var resolution = await resolver.ResolveAsync("weather", "input", _context, CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveAsync("weather", "input", _context, CancellationToken.None));
 
-        Assert.Equal(ToolExecutionKind.LocalHandler, resolution.ExecutionKind);
-        Assert.NotNull(resolution.LocalHandler);
-        Assert.Null(resolution.Definition);
+        Assert.Equal("Tool 'weather' has no persisted tool definition.", exception.Message);
     }
 
     [Fact]
@@ -95,7 +205,7 @@ public class ToolResolverTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             resolver.ResolveAsync("weather", "input", _context, CancellationToken.None));
 
-        Assert.Equal("Tool 'weather' has no tool definition and no registered handler.", exception.Message);
+        Assert.Equal("Tool 'weather' has no persisted tool definition.", exception.Message);
     }
 
     private ToolResolver CreateResolver()
@@ -103,19 +213,38 @@ public class ToolResolverTests
         return new ToolResolver(_toolRegistry, _toolDefinitionRepository);
     }
 
-    private static ToolDefinition CreateToolDefinition(bool enabled = true, string? endpointUrl = "https://example.com/tools/weather")
+    private static ToolDefinition CreateToolDefinition(
+        bool enabled = true,
+        string? endpointUrl = "https://example.com/tools/weather",
+        string? executionKind = null,
+        string? executionBinding = null,
+        string? idempotencyPolicy = null)
     {
+        if (executionKind is null
+            && executionBinding is null
+            && !string.IsNullOrWhiteSpace(endpointUrl))
+        {
+            executionKind = ToolExecutionBindingHelper.Webhook;
+            executionBinding = ToolExecutionBindingHelper.CreateWebhookBinding(
+                endpointUrl.Trim(),
+                "POST",
+                "{\"Authorization\":\"Bearer token\"}");
+        }
+
         return new ToolDefinition
         {
             Id = "tool-001",
             ToolName = "weather",
             DisplayName = "Weather",
             Enabled = enabled,
+            ExecutionKind = executionKind,
+            ExecutionBinding = executionBinding,
             EndpointUrl = endpointUrl,
             HttpMethod = "POST",
             AuthHeaders = "{\"Authorization\":\"Bearer token\"}",
             InputSchema = "{\"type\":\"object\"}",
             OutputSchema = "{\"type\":\"string\"}",
+            IdempotencyPolicy = idempotencyPolicy,
             TimeoutMs = 5000
         };
     }

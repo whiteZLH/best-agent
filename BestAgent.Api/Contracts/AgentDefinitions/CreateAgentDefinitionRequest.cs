@@ -8,6 +8,16 @@ public record CreateAgentDefinitionRequest(
     string SystemPromptTemplate,
     string DefaultModel,
     IReadOnlyList<string>? AllowedTools,
+    IReadOnlyList<string>? KnowledgeSources,
+    string? MemoryPolicy,
+    string? RoutingPolicy,
+    string? ApprovalPolicy,
+    string? ExecutionPolicy,
+    string? PlannerPolicy,
+    string? ContextPolicy,
+    IReadOnlyList<string>? AllowedHandoffs,
+    string? OutputSchema,
     int MaxTurns,
     decimal MaxCost,
-    bool Enabled);
+    bool Enabled,
+    IReadOnlyList<string>? DeniedTools = null);

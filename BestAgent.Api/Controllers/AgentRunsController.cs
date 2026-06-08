@@ -1,15 +1,28 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Text.Json;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
+using BestAgent.Api.Infrastructure;
+using BestAgent.Application.AgentRuns.Commands.CancelAgentRun;
 using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
+using BestAgent.Application.AgentRuns.Commands.CompleteHumanAgentRun;
+using BestAgent.Application.AgentRuns.Commands.CompleteApproval;
+using BestAgent.Application.AgentRuns.Commands.CompleteToolInvocation;
 using BestAgent.Application.AgentRuns.Commands.CreateAgentRun;
+using BestAgent.Application.AgentRuns.Commands.RequestHumanAgentRun;
 using BestAgent.Application.AgentRuns.Commands.RejectAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.ResumeAgentRun;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunApprovals;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunChildren;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunTree;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Exceptions;
+using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,23 +32,49 @@ namespace BestAgent.Api.Controllers;
 [Route("agent-runs")]
 public class AgentRunsController : ControllerBase
 {
+    private const string TenantScopeHeaderName = "X-BestAgent-Tenant-Id";
+    private const string UserScopeHeaderName = "X-BestAgent-User-Id";
+    private const string SessionScopeHeaderName = "X-BestAgent-Session-Id";
+
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
     private readonly IAgentRunEventBus _eventBus;
+    private readonly IWebhookRequestAuthorizer _webhookRequestAuthorizer;
+    private readonly IToolInvocationRepository? _toolInvocationRepository;
+    private readonly IToolDefinitionRepository? _toolDefinitionRepository;
+    private readonly IAgentRunRepository? _agentRunRepository;
 
-    public AgentRunsController(IMediator mediator, IMapper mapper, IAgentRunEventBus eventBus)
+    public AgentRunsController(
+        IMediator mediator,
+        IMapper mapper,
+        IAgentRunEventBus eventBus,
+        IWebhookRequestAuthorizer? webhookRequestAuthorizer = null,
+        IToolInvocationRepository? toolInvocationRepository = null,
+        IToolDefinitionRepository? toolDefinitionRepository = null,
+        IAgentRunRepository? agentRunRepository = null)
     {
         _mediator = mediator;
         _mapper = mapper;
         _eventBus = eventBus;
+        _webhookRequestAuthorizer = webhookRequestAuthorizer ?? new HmacWebhookRequestAuthorizer(new WebhookSecurityOptions());
+        _toolInvocationRepository = toolInvocationRepository;
+        _toolDefinitionRepository = toolDefinitionRepository;
+        _agentRunRepository = agentRunRepository;
     }
 
     [HttpPost]
     public async Task<ActionResult<CreateAgentRunResponse>> Create(
         [FromBody] CreateAgentRunRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
         CancellationToken cancellationToken)
     {
         var command = _mapper.Map<CreateAgentRunCommand>(request);
+        command = ApplyAuthenticatedRunIdentity(command);
+        if (!string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            command = command with { IdempotencyKey = idempotencyKey.Trim() };
+        }
+
         var result = await _mediator.Send(command, cancellationToken);
         var response = _mapper.Map<CreateAgentRunResponse>(result);
 
@@ -47,6 +86,7 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         var result = await _mediator.Send(new GetAgentRunByIdQuery(runId), cancellationToken);
         if (result is null)
         {
@@ -56,11 +96,37 @@ public class AgentRunsController : ControllerBase
         return Ok(_mapper.Map<GetAgentRunResponse>(result));
     }
 
+    [HttpGet("{runId}/children")]
+    public async Task<ActionResult<IReadOnlyList<GetAgentRunChildResponse>>> GetChildren(
+        [FromRoute] string runId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var children = await _mediator.Send(new GetAgentRunChildrenQuery(runId), cancellationToken);
+        return Ok(_mapper.Map<IReadOnlyList<GetAgentRunChildResponse>>(children));
+    }
+
+    [HttpGet("{runId}/tree")]
+    public async Task<ActionResult<GetAgentRunTreeResponse>> GetTree(
+        [FromRoute] string runId,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var tree = await _mediator.Send(new GetAgentRunTreeQuery(runId), cancellationToken);
+        if (tree is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(_mapper.Map<GetAgentRunTreeResponse>(tree));
+    }
+
     [HttpGet("{runId}/steps")]
     public async Task<ActionResult<IReadOnlyList<GetAgentRunStepResponse>>> GetSteps(
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         var steps = await _mediator.Send(new GetAgentRunStepsQuery(runId), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunStepResponse>>(steps));
     }
@@ -70,8 +136,20 @@ public class AgentRunsController : ControllerBase
         [FromRoute] string runId,
         CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         var approvals = await _mediator.Send(new GetAgentRunApprovalsQuery(runId), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentRunApprovalResponse>>(approvals));
+    }
+
+    [HttpGet("{runId}/events")]
+    public async Task<ActionResult<IReadOnlyList<GetAgentRunEventResponse>>> GetEvents(
+        [FromRoute] string runId,
+        [FromQuery] long? afterSeqNo,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var events = await _mediator.Send(new GetAgentRunEventsQuery(runId, afterSeqNo), cancellationToken);
+        return Ok(_mapper.Map<IReadOnlyList<GetAgentRunEventResponse>>(events));
     }
 
     [HttpPost("{runId}:resume")]
@@ -80,9 +158,117 @@ public class AgentRunsController : ControllerBase
         [FromBody] ResumeAgentRunRequest request,
         CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         var command = new ResumeAgentRunCommand(runId, request.WaitToken, request.ToolResult);
         var result = await _mediator.Send(command, cancellationToken);
         var response = _mapper.Map<ResumeAgentRunResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}/tool-invocations/{invocationId}:complete")]
+    public async Task<ActionResult<CompleteToolInvocationResponse>> CompleteToolInvocation(
+        [FromRoute] string runId,
+        [FromRoute] string invocationId,
+        [FromBody] CompleteToolInvocationRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var callbackSecret = await ResolveToolCallbackSecretAsync(invocationId, cancellationToken);
+        await _webhookRequestAuthorizer.AuthorizeToolCallbackAsync(Request, callbackSecret, cancellationToken);
+        var result = await _mediator.Send(
+            new CompleteToolInvocationCommand(runId, invocationId, request.WaitToken, request.ToolResult, idempotencyKey),
+            cancellationToken);
+        var response = _mapper.Map<CompleteToolInvocationResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}/approvals/{approvalId}:complete")]
+    public async Task<ActionResult<CompleteApprovalResponse>> CompleteApproval(
+        [FromRoute] string runId,
+        [FromRoute] string approvalId,
+        [FromBody] CompleteApprovalRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        await _webhookRequestAuthorizer.AuthorizeApprovalCallbackAsync(Request, cancellationToken);
+        var actor = ResolveApprovalActor(request.ApproverId, request.ApproverName, request.ApproverRole);
+        var result = await _mediator.Send(
+            new CompleteApprovalCommand(
+                runId,
+                approvalId,
+                request.Decision,
+                actor.ApproverId,
+                actor.ApproverName,
+                actor.ApproverRole,
+                request.Comment,
+                idempotencyKey),
+            cancellationToken);
+        var response = _mapper.Map<CompleteApprovalResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}:cancel")]
+    public async Task<ActionResult<CancelAgentRunResponse>> Cancel(
+        [FromRoute] string runId,
+        [FromBody] CancelAgentRunRequest? request,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var result = await _mediator.Send(new CancelAgentRunCommand(runId, request?.Reason), cancellationToken);
+        var response = _mapper.Map<CancelAgentRunResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}:request-human")]
+    public async Task<ActionResult<RequestHumanAgentRunResponse>> RequestHuman(
+        [FromRoute] string runId,
+        [FromBody] RequestHumanAgentRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var actor = ResolveApprovalActor(request.HumanOperatorId, request.HumanOperatorName, request.HumanOperatorRole);
+        var result = await _mediator.Send(
+            new RequestHumanAgentRunCommand(
+                runId,
+                request.Comment,
+                request.SourceStepId,
+                actor.ApproverId,
+                actor.ApproverName,
+                actor.ApproverRole),
+            cancellationToken);
+        var response = _mapper.Map<RequestHumanAgentRunResponse>(result);
+
+        return Ok(response);
+    }
+
+    [HttpPost("{runId}/steps/{stepId}:complete-human")]
+    public async Task<ActionResult<CompleteHumanAgentRunResponse>> CompleteHuman(
+        [FromRoute] string runId,
+        [FromRoute] string stepId,
+        [FromBody] CompleteHumanAgentRunRequest request,
+        CancellationToken cancellationToken)
+    {
+        await EnsureRunAccessAsync(runId, cancellationToken);
+        var actor = ResolveApprovalActor(request.HumanOperatorId, request.HumanOperatorName, request.HumanOperatorRole);
+        var result = await _mediator.Send(
+            new CompleteHumanAgentRunCommand(
+                runId,
+                stepId,
+                request.WaitToken,
+                request.HumanResult,
+                request.Comment,
+                request.Terminate,
+                actor.ApproverId,
+                actor.ApproverName,
+                actor.ApproverRole),
+            cancellationToken);
+        var response = _mapper.Map<CompleteHumanAgentRunResponse>(result);
 
         return Ok(response);
     }
@@ -94,6 +280,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] ApproveAgentRunStepRequest request,
         CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         var actor = ResolveApprovalActor(request.ApproverId, request.ApproverName, request.ApproverRole);
         var result = await _mediator.Send(
             new ApproveAgentRunStepCommand(
@@ -116,6 +303,7 @@ public class AgentRunsController : ControllerBase
         [FromBody] RejectAgentRunStepRequest request,
         CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         var actor = ResolveApprovalActor(request.ApproverId, request.ApproverName, request.ApproverRole);
         var result = await _mediator.Send(
             new RejectAgentRunStepCommand(
@@ -134,16 +322,257 @@ public class AgentRunsController : ControllerBase
     [HttpGet("{runId}/stream")]
     public async Task Stream([FromRoute] string runId, CancellationToken cancellationToken)
     {
+        await EnsureRunAccessAsync(runId, cancellationToken);
         Response.Headers["Content-Type"] = "text/event-stream";
         Response.Headers["Cache-Control"] = "no-cache";
         Response.Headers["Connection"] = "keep-alive";
 
-        await foreach (var evt in _eventBus.SubscribeAsync(runId, cancellationToken))
+        await using var subscription = _eventBus.Subscribe(runId);
+
+        var replayAfterSeqNo = TryParseLastEventId(Request.Headers["Last-Event-ID"]);
+        long? lastDeliveredSeqNo = replayAfterSeqNo;
+        if (replayAfterSeqNo.HasValue)
         {
-            var data = JsonSerializer.Serialize(evt.Data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-            await Response.WriteAsync($"event: {evt.EventType}\ndata: {data}\n\n", cancellationToken);
-            await Response.Body.FlushAsync(cancellationToken);
+            var replayEvents = await _mediator.Send(
+                new GetAgentRunEventsQuery(runId, replayAfterSeqNo.Value),
+                cancellationToken);
+
+            foreach (var replayEvent in replayEvents)
+            {
+                await WriteSseEventAsync(
+                    replayEvent.EventType,
+                    replayEvent.SeqNo,
+                    BuildStreamEventResponse(replayEvent),
+                    cancellationToken);
+                lastDeliveredSeqNo = replayEvent.SeqNo;
+            }
+
+            if (replayEvents.Count > 0 && IsTerminalEventType(replayEvents[^1].EventType))
+            {
+                return;
+            }
         }
+
+        await foreach (var evt in subscription.ReadAllAsync(cancellationToken))
+        {
+            if (lastDeliveredSeqNo.HasValue
+                && evt.SeqNo.HasValue
+                && evt.SeqNo.Value <= lastDeliveredSeqNo.Value)
+            {
+                continue;
+            }
+
+            await WriteSseEventAsync(
+                evt.EventType,
+                evt.SeqNo,
+                BuildStreamEventResponse(evt),
+                cancellationToken);
+        }
+    }
+
+    private static StreamAgentRunEventResponse BuildStreamEventResponse(AgentRunEvent evt)
+    {
+        var maskedData = RuntimeEventPayloadMasker.MaskEventData(evt.Data);
+        return new StreamAgentRunEventResponse(
+            evt.EventId,
+            evt.RunId,
+            evt.SeqNo,
+            evt.EventType,
+            evt.RunStatus,
+            evt.OccurredAt,
+            new EventDataInfoResponse(
+                maskedData.StepNo,
+                maskedData.StepType,
+                maskedData.Status,
+                maskedData.Output,
+                maskedData.Error,
+                ModelFailurePayloadSerializer.TryParse(maskedData.Error, out var modelFailure)
+                    ? new EventModelFailureInfoResponse(modelFailure!.ErrorCode, modelFailure.Message)
+                    : null,
+                ToolFailurePayloadSerializer.TryParse(maskedData.Error, out var toolFailure)
+                    ? new EventToolFailureInfoResponse(
+                        toolFailure!.ToolName,
+                        toolFailure.Stage,
+                        toolFailure.Message,
+                        string.IsNullOrWhiteSpace(toolFailure.Compensation?.Mode)
+                            ? null
+                            : new EventToolFailureCompensationInfoResponse(toolFailure.Compensation.Mode))
+                    : null));
+    }
+
+    private static StreamAgentRunEventResponse BuildStreamEventResponse(GetAgentRunEventsItem evt)
+    {
+        return new StreamAgentRunEventResponse(
+            evt.EventId,
+            evt.RunId,
+            evt.SeqNo,
+            evt.EventType,
+            evt.RunStatus,
+            evt.OccurredAt,
+            BuildEventDataResponse(evt.Data, evt.Payload, evt.RunStatus));
+    }
+
+    private static EventDataInfoResponse BuildEventDataResponse(
+        BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents.EventDataInfo? data,
+        string? payload,
+        string runStatus)
+    {
+        var resolvedData = data
+            ?? BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents.EventDataInfo.FromPayload(payload)
+            ?? new BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents.EventDataInfo(
+                0,
+                "unknown",
+                runStatus,
+                null,
+                null,
+                null,
+                null);
+
+        return new EventDataInfoResponse(
+            resolvedData.StepNo,
+            resolvedData.StepType,
+            resolvedData.Status,
+            resolvedData.Output,
+            resolvedData.Error,
+            resolvedData.ModelFailure is null
+                ? null
+                : new EventModelFailureInfoResponse(
+                    resolvedData.ModelFailure.ErrorCode,
+                    resolvedData.ModelFailure.Message),
+            resolvedData.ToolFailure is null
+                ? null
+                : new EventToolFailureInfoResponse(
+                    resolvedData.ToolFailure.ToolName,
+                    resolvedData.ToolFailure.Stage,
+                    resolvedData.ToolFailure.Message,
+                    resolvedData.ToolFailure.Compensation is null
+                        ? null
+                        : new EventToolFailureCompensationInfoResponse(
+                            resolvedData.ToolFailure.Compensation.Mode)));
+    }
+
+    private async Task WriteSseEventAsync(
+        string eventType,
+        long? seqNo,
+        StreamAgentRunEventResponse payload,
+        CancellationToken cancellationToken)
+    {
+        var data = JsonSerializer.Serialize(
+            payload,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        if (seqNo.HasValue)
+        {
+            await Response.WriteAsync($"id: {seqNo.Value}\n", cancellationToken);
+        }
+
+        await Response.WriteAsync($"event: {eventType}\ndata: {data}\n\n", cancellationToken);
+        await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private static long? TryParseLastEventId(string? lastEventId)
+    {
+        if (string.IsNullOrWhiteSpace(lastEventId))
+        {
+            return null;
+        }
+
+        return long.TryParse(lastEventId.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var seqNo)
+            && seqNo >= 0
+            ? seqNo
+            : null;
+    }
+
+    private static bool IsTerminalEventType(string eventType)
+    {
+        return eventType is "done" or "error" or "cancelled";
+    }
+
+    private CreateAgentRunCommand ApplyAuthenticatedRunIdentity(CreateAgentRunCommand command)
+    {
+        var access = ResolveRunAccessContext();
+        return access is null
+            ? command
+            : command with
+            {
+                TenantId = FirstNonEmpty(access.TenantId, command.TenantId),
+                UserId = FirstNonEmpty(access.UserId, command.UserId),
+                SessionId = FirstNonEmpty(access.SessionId, command.SessionId)
+            };
+    }
+
+    private async Task EnsureRunAccessAsync(string runId, CancellationToken cancellationToken)
+    {
+        if (_agentRunRepository is null)
+        {
+            return;
+        }
+
+        var access = ResolveRunAccessContext();
+        if (access is null)
+        {
+            return;
+        }
+
+        var run = await _agentRunRepository.GetByRunIdAsync(runId, cancellationToken);
+        if (run is null)
+        {
+            return;
+        }
+
+        if (!MatchesScope(access.TenantId, run.TenantId)
+            || !MatchesScope(access.UserId, run.UserId)
+            || !MatchesScope(access.SessionId, run.SessionId))
+        {
+            throw new ForbiddenException($"Run '{runId}' is outside the authenticated tenant or user scope.");
+        }
+    }
+
+    private RunAccessContext? ResolveRunAccessContext()
+    {
+        var user = HttpContext?.User;
+        var headers = HttpContext?.Request?.Headers;
+        var tenantId = user?.Identity?.IsAuthenticated == true
+            ? FirstNonEmpty(
+                user.FindFirstValue("tenant_id"),
+                user.FindFirstValue("tenantId"),
+                user.FindFirstValue("tenant"),
+                user.FindFirstValue("tid"))
+            : null;
+        var userId = user?.Identity?.IsAuthenticated == true
+            ? FirstNonEmpty(
+                user.FindFirstValue(ClaimTypes.NameIdentifier),
+                user.FindFirstValue("sub"),
+                user.FindFirstValue(ClaimTypes.Name),
+                user.FindFirstValue("name"))
+            : null;
+        var sessionId = user?.Identity?.IsAuthenticated == true
+            ? FirstNonEmpty(
+                user.FindFirstValue("session_id"),
+                user.FindFirstValue("sessionId"),
+                user.FindFirstValue("session"),
+                user.FindFirstValue("sid"))
+            : null;
+
+        tenantId = FirstNonEmpty(tenantId, headers?[TenantScopeHeaderName]);
+        userId = FirstNonEmpty(userId, headers?[UserScopeHeaderName]);
+        sessionId = FirstNonEmpty(sessionId, headers?[SessionScopeHeaderName]);
+
+        return string.IsNullOrWhiteSpace(tenantId)
+               && string.IsNullOrWhiteSpace(userId)
+               && string.IsNullOrWhiteSpace(sessionId)
+            ? null
+            : new RunAccessContext(tenantId, userId, sessionId);
+    }
+
+    private static bool MatchesScope(string? expected, string actual)
+    {
+        var normalizedExpected = Normalize(expected);
+        if (string.IsNullOrWhiteSpace(normalizedExpected))
+        {
+            return true;
+        }
+
+        return string.Equals(normalizedExpected, Normalize(actual), StringComparison.Ordinal);
     }
 
     private ApprovalActor ResolveApprovalActor(string? fallbackApproverId, string? fallbackApproverName, string? fallbackApproverRole)
@@ -195,5 +624,24 @@ public class AgentRunsController : ControllerBase
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
+    private async Task<string?> ResolveToolCallbackSecretAsync(string invocationId, CancellationToken cancellationToken)
+    {
+        if (_toolInvocationRepository is null || _toolDefinitionRepository is null)
+        {
+            return null;
+        }
+
+        var invocation = await _toolInvocationRepository.GetByInvocationIdAsync(invocationId, cancellationToken);
+        if (invocation is null || string.IsNullOrWhiteSpace(invocation.ToolName))
+        {
+            return null;
+        }
+
+        var toolDefinition = await _toolDefinitionRepository.GetByToolNameAsync(invocation.ToolName, cancellationToken);
+        return toolDefinition?.CallbackSecret;
+    }
+
     private sealed record ApprovalActor(string? ApproverId, string? ApproverName, string? ApproverRole);
+
+    private sealed record RunAccessContext(string? TenantId, string? UserId, string? SessionId);
 }

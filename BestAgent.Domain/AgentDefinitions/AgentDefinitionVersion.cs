@@ -14,6 +14,7 @@ public record class AgentDefinitionVersion : AuditedEntity
     public string? SystemPromptTemplate { get; init; }
     public string DefaultModel { get; init; } = string.Empty;
     public string? AllowedTools { get; init; }
+    public string? DeniedTools { get; init; }
     public string? KnowledgeSources { get; init; }
     public string? MemoryPolicy { get; init; }
     public string? RoutingPolicy { get; init; }

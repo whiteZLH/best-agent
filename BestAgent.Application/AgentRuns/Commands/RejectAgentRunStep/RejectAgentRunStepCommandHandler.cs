@@ -1,5 +1,7 @@
+using BestAgent.Application.AgentRuns.Approvals;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Exceptions;
+using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
 using MediatR;
 
@@ -10,15 +12,21 @@ public class RejectAgentRunStepCommandHandler : IRequestHandler<RejectAgentRunSt
     private readonly IAgentRunRepository _agentRunRepository;
     private readonly IAgentStepRepository _agentStepRepository;
     private readonly IAgentRunChannel _agentRunChannel;
+    private readonly IApprovalAuthorizer _approvalAuthorizer;
+    private readonly IAgentDefinitionRepository _agentDefinitionRepository;
 
     public RejectAgentRunStepCommandHandler(
         IAgentRunRepository agentRunRepository,
         IAgentStepRepository agentStepRepository,
-        IAgentRunChannel agentRunChannel)
+        IAgentRunChannel agentRunChannel,
+        IApprovalAuthorizer approvalAuthorizer,
+        IAgentDefinitionRepository agentDefinitionRepository)
     {
         _agentRunRepository = agentRunRepository;
         _agentStepRepository = agentStepRepository;
         _agentRunChannel = agentRunChannel;
+        _approvalAuthorizer = approvalAuthorizer;
+        _agentDefinitionRepository = agentDefinitionRepository;
     }
 
     public async Task<RejectAgentRunStepResult> Handle(RejectAgentRunStepCommand request, CancellationToken cancellationToken)
@@ -34,9 +42,25 @@ public class RejectAgentRunStepCommandHandler : IRequestHandler<RejectAgentRunSt
         if (pendingStep is null || pendingStep.StepId != request.StepId || pendingStep.Status != "Pending")
             throw new ConflictException($"Step '{request.StepId}' is not the current pending approval step for run '{request.RunId}'.");
 
-        if (!ApprovalPayloadSerializer.TryParse(pendingStep.DecisionPayload, out var payload)
-            || !string.Equals(payload!.Decision, ApprovalDecisions.Pending, StringComparison.OrdinalIgnoreCase))
+        if (!PendingApprovalContextParser.TryParsePending(pendingStep, out var approvalContext))
             throw new ConflictException($"Step '{request.StepId}' is not waiting for approval.");
+
+        var resolvedDefinition = await ResolveDefinitionForRunAsync(agentRun, cancellationToken);
+        _approvalAuthorizer.Authorize(new ApprovalAuthorizationContext(
+            request.RunId,
+            request.StepId,
+            approvalContext!.RequestedAction,
+            approvalContext.SideEffectLevel,
+            request.ApproverId,
+            request.ApproverName,
+            request.ApproverRole,
+            resolvedDefinition?.Version.ApprovalPolicy,
+            await AgentRunApprovalPolicyResolver.ResolveEffectivePolicyAsync(
+                _agentDefinitionRepository,
+                _agentRunRepository,
+                _agentStepRepository,
+                agentRun,
+                cancellationToken)));
 
         agentRun = agentRun with
         {
@@ -58,5 +82,21 @@ public class RejectAgentRunStepCommandHandler : IRequestHandler<RejectAgentRunSt
             cancellationToken);
 
         return new RejectAgentRunStepResult(agentRun.RunId, agentRun.AgentCode, agentRun.InputPayload, null, "Running");
+    }
+
+    private async Task<ResolvedAgentDefinition?> ResolveDefinitionForRunAsync(AgentRun agentRun, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(agentRun.AgentDefinitionVersionId))
+        {
+            var boundDefinition = await _agentDefinitionRepository.GetByVersionIdAsync(
+                agentRun.AgentDefinitionVersionId,
+                cancellationToken);
+            if (boundDefinition is not null)
+            {
+                return boundDefinition;
+            }
+        }
+
+        return await _agentDefinitionRepository.GetEnabledByCodeAsync(agentRun.AgentCode, cancellationToken);
     }
 }

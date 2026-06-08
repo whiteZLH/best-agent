@@ -9,7 +9,8 @@ public record CreateAgentRunMessage(string RunId) : AgentRunMessage(RunId);
 public record ResumeAgentRunMessage(
     string RunId,
     string WaitToken,
-    string ToolResult) : AgentRunMessage(RunId);
+    string ToolResult,
+    string? InvocationId = null) : AgentRunMessage(RunId);
 
 public record ApproveAgentRunStepMessage(
     string RunId,
@@ -26,6 +27,23 @@ public record RejectAgentRunStepMessage(
     string? ApproverId,
     string? ApproverName,
     string? ApproverRole) : AgentRunMessage(RunId);
+
+public record CompleteHumanAgentRunMessage(
+    string RunId,
+    string StepId,
+    string WaitToken,
+    string? HumanResult,
+    string? Comment,
+    bool Terminate,
+    string? HumanOperatorId,
+    string? HumanOperatorName,
+    string? HumanOperatorRole) : AgentRunMessage(RunId);
+
+public record ResumeParentHandoffMessage(
+    string RunId,
+    string StepId,
+    string WaitToken,
+    string ChildRunId) : AgentRunMessage(RunId);
 
 public interface IAgentRunChannel
 {

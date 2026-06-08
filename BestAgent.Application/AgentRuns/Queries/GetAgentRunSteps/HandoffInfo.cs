@@ -1,0 +1,24 @@
+namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+
+public record HandoffInfo(
+    string WaitType,
+    string TargetAgent,
+    string? HandoffInput,
+    string Mode,
+    string ChildRunId,
+    string Decision,
+    string? ChildStatus,
+    string? ChildOutput,
+    string? Comment,
+    DateTime? DecidedAt,
+    string? RouteRuleId,
+    string? ContextScope,
+    string? MemoryScope,
+    string? ToolScope,
+    string? KnowledgeScope,
+    bool ApprovalRequired,
+    string? Reason,
+    double? Confidence,
+    string? ContextOverrides,
+    string? MemoryOverrides,
+    string? ToolOverrides);

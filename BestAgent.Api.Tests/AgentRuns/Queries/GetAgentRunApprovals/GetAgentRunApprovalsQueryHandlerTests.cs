@@ -31,7 +31,7 @@ public class GetAgentRunApprovalsQueryHandlerTests
                     StepId = "step-1",
                     RequestedAction = "weather",
                     RiskLevel = "internal_write",
-                    RequestPayload = "{\"city\":\"Shanghai\"}",
+                    RequestPayload = "{\"city\":\"Shanghai\",\"apiKey\":\"secret-1\"}",
                     Decision = "Approved",
                     ApproverId = "u-1",
                     ApproverName = "Alice",
@@ -51,5 +51,6 @@ public class GetAgentRunApprovalsQueryHandlerTests
         Assert.Equal("weather", approval.RequestedAction);
         Assert.Equal("Approved", approval.Decision);
         Assert.Equal("Alice", approval.ApproverName);
+        Assert.Equal("{\"city\":\"Shanghai\",\"apiKey\":\"***\"}", approval.RequestPayload);
     }
 }

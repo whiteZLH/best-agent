@@ -52,6 +52,46 @@ public class GlobalExceptionHandlerTests
     }
 
     [Fact]
+    public async Task TryHandleAsync_ShouldMapForbiddenExceptionTo403()
+    {
+        var environment = CreateEnvironment(isDevelopment: true);
+        var handler = new GlobalExceptionHandler(environment);
+        var httpContext = CreateHttpContext();
+
+        var handled = await handler.TryHandleAsync(
+            httpContext,
+            new ForbiddenException("approval forbidden"),
+            CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status403Forbidden, httpContext.Response.StatusCode);
+        var problem = await ReadProblemDetailsAsync(httpContext);
+        Assert.Equal(403, problem.Status);
+        Assert.Equal("Forbidden", problem.Title);
+        Assert.Equal("approval forbidden", problem.Detail);
+    }
+
+    [Fact]
+    public async Task TryHandleAsync_ShouldMapUnauthorizedExceptionTo401()
+    {
+        var environment = CreateEnvironment(isDevelopment: true);
+        var handler = new GlobalExceptionHandler(environment);
+        var httpContext = CreateHttpContext();
+
+        var handled = await handler.TryHandleAsync(
+            httpContext,
+            new UnauthorizedException("invalid webhook signature"),
+            CancellationToken.None);
+
+        Assert.True(handled);
+        Assert.Equal(StatusCodes.Status401Unauthorized, httpContext.Response.StatusCode);
+        var problem = await ReadProblemDetailsAsync(httpContext);
+        Assert.Equal(401, problem.Status);
+        Assert.Equal("Unauthorized", problem.Title);
+        Assert.Equal("invalid webhook signature", problem.Detail);
+    }
+
+    [Fact]
     public async Task TryHandleAsync_ShouldMapInvalidOperationExceptionTo422()
     {
         var environment = CreateEnvironment(isDevelopment: true);

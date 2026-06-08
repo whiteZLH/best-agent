@@ -1,9 +1,12 @@
 using BestAgent.Domain.AgentDefinitions;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Knowledge;
 using BestAgent.Domain.Tools;
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Models;
 using BestAgent.Application.Tools;
 using BestAgent.Infrastructure.Model;
+using BestAgent.Infrastructure.Observability;
 using BestAgent.Infrastructure.Persistence;
 using BestAgent.Infrastructure.Persistence.Repositories;
 using BestAgent.Infrastructure.Persistence.Seeding;
@@ -30,9 +33,26 @@ public static class DependencyInjection
                 ? timeoutSeconds
                 : 60
         };
+        var approvalTimeoutOptions = new ApprovalTimeoutOptions
+        {
+            TimeoutMinutes = int.TryParse(configuration["Approval:TimeoutMinutes"], out var approvalTimeoutMinutes)
+                ? approvalTimeoutMinutes
+                : 30,
+            PollIntervalSeconds = int.TryParse(configuration["Approval:PollIntervalSeconds"], out var pollIntervalSeconds)
+                ? pollIntervalSeconds
+                : 5,
+            BatchSize = int.TryParse(configuration["Approval:BatchSize"], out var approvalBatchSize)
+                ? approvalBatchSize
+                : 100,
+            TimeoutComment = string.IsNullOrWhiteSpace(configuration["Approval:TimeoutComment"])
+                ? "Approval timed out."
+                : configuration["Approval:TimeoutComment"]!.Trim()
+        };
 
         services.AddDbContext<BestAgentDbContext>(options => options.UseNpgsql(connectionString));
         services.AddSingleton(openAiOptions);
+        services.AddSingleton(approvalTimeoutOptions);
+        services.AddSingleton<BestAgent.Application.Observability.IAgentMetrics, AgentMetrics>();
         services.AddSingleton(sp =>
         {
             var options = sp.GetRequiredService<OpenAiOptions>();
@@ -53,15 +73,35 @@ public static class DependencyInjection
         services.AddSingleton<ToolRegistry>();
         services.AddSingleton<IToolHandlerRegistry>(sp => sp.GetRequiredService<ToolRegistry>());
         services.AddScoped<IToolResolver, ToolResolver>();
+        services.AddSingleton<IToolInputValidator, JsonSchemaToolInputValidator>();
+        services.AddSingleton<IToolOutputValidator, JsonSchemaToolOutputValidator>();
+        services.AddSingleton<IAgentOutputValidator, JsonSchemaAgentOutputValidator>();
         services.AddScoped<IHttpToolInvoker, HttpToolInvoker>();
         services.AddScoped<IToolExecutor, ToolExecutor>();
         services.AddScoped<IAgentDefinitionRepository, AgentDefinitionRepository>();
+        services.AddScoped<IRouteRuleRepository, RouteRuleRepository>();
         services.AddScoped<IAgentRunRepository, AgentRunRepository>();
         services.AddScoped<IAgentStepRepository, AgentStepRepository>();
         services.AddScoped<IAgentApprovalRepository, AgentApprovalRepository>();
+        services.AddScoped<IIdempotencyRecordRepository, IdempotencyRecordRepository>();
+        services.AddScoped<IRunOutboxEventRepository, RunOutboxEventRepository>();
         services.AddScoped<IToolDefinitionRepository, ToolDefinitionRepository>();
+        services.AddScoped<IToolInvocationRepository, ToolInvocationRepository>();
+        services.AddScoped<IKnowledgeDocumentRepository, KnowledgeDocumentRepository>();
+        services.AddScoped<IKnowledgeChunkRepository, KnowledgeChunkRepository>();
+        services.AddScoped<IEmbeddingIndexRepository, EmbeddingIndexRepository>();
+        services.AddScoped<ISessionMemoryRepository, SessionMemoryRepository>();
+        services.AddScoped<IUserMemoryRepository, UserMemoryRepository>();
+        services.AddScoped<ISummaryMemoryRepository, SummaryMemoryRepository>();
+        services.AddScoped<RuntimeContextComposer>();
+        services.AddScoped<RuntimeMemoryWriter>();
+        services.AddScoped<IRuntimeContextComposer>(sp => sp.GetRequiredService<RuntimeContextComposer>());
+        services.AddScoped<IRuntimeMemoryWriter>(sp => sp.GetRequiredService<RuntimeMemoryWriter>());
+        services.AddSingleton<IRunOutboxEventPublisher, EventBusRunOutboxEventPublisher>();
         services.AddHostedService<DatabaseInitializationHostedService>();
         services.AddHostedService<AgentRunWorker>();
+        services.AddHostedService<ApprovalTimeoutDispatcher>();
+        services.AddHostedService<RunOutboxEventDispatcher>();
 
         return services;
     }

@@ -16,6 +16,7 @@ public class AgentRunConfiguration : IEntityTypeConfiguration<AgentRun>
     {
         builder.ToTable("agent_run");
         builder.HasKey(x => x.RunId);
+        builder.HasIndex(x => x.IdempotencyKey).IsUnique();
 
         builder.Property(x => x.RunId).HasColumnName("run_id").HasMaxLength(64);
         builder.Property(x => x.AgentCode).HasColumnName("agent_code").HasMaxLength(128);

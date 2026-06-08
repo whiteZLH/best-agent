@@ -4,16 +4,16 @@ namespace BestAgent.Application.AgentDefinitions;
 
 internal static class AgentDefinitionToolListSerializer
 {
-    public static IReadOnlyList<string> Parse(string? allowedTools)
+    public static IReadOnlyList<string> Parse(string? value)
     {
-        if (string.IsNullOrWhiteSpace(allowedTools))
+        if (string.IsNullOrWhiteSpace(value))
         {
             return Array.Empty<string>();
         }
 
         try
         {
-            return JsonSerializer.Deserialize<string[]>(allowedTools) ?? Array.Empty<string>();
+            return JsonSerializer.Deserialize<string[]>(value) ?? Array.Empty<string>();
         }
         catch (JsonException)
         {
@@ -21,9 +21,9 @@ internal static class AgentDefinitionToolListSerializer
         }
     }
 
-    public static string? Serialize(IReadOnlyList<string>? allowedTools)
+    public static string? Serialize(IReadOnlyList<string>? values)
     {
-        var normalized = allowedTools?
+        var normalized = values?
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)

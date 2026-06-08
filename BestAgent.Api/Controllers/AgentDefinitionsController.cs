@@ -3,9 +3,11 @@ using BestAgent.Api.Contracts.AgentDefinitions;
 using BestAgent.Application.AgentDefinitions.Commands.ActivateAgentDefinitionVersion;
 using BestAgent.Application.AgentDefinitions.Commands.CreateAgentDefinition;
 using BestAgent.Application.AgentDefinitions.Commands.CreateAgentDefinitionVersion;
+using BestAgent.Application.AgentDefinitions.Commands.CreateRouteRule;
 using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitionByCode;
 using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitions;
 using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitionVersions;
+using BestAgent.Application.AgentDefinitions.Queries.GetRouteRules;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -83,6 +85,34 @@ public class AgentDefinitionsController : ControllerBase
         var response = _mapper.Map<GetAgentDefinitionVersionResponse>(version);
 
         return Created($"/agent-definitions/{agentCode}/versions/{response.Version}", response);
+    }
+
+    [HttpGet("{agentCode}/versions/{version:int}/route-rules")]
+    public async Task<ActionResult<IReadOnlyList<GetRouteRuleResponse>>> GetRouteRules(
+        [FromRoute] string agentCode,
+        [FromRoute] int version,
+        CancellationToken cancellationToken)
+    {
+        var routeRules = await _mediator.Send(new GetRouteRulesQuery(agentCode, version), cancellationToken);
+        return Ok(_mapper.Map<IReadOnlyList<GetRouteRuleResponse>>(routeRules));
+    }
+
+    [HttpPost("{agentCode}/versions/{version:int}/route-rules")]
+    public async Task<ActionResult<GetRouteRuleResponse>> CreateRouteRule(
+        [FromRoute] string agentCode,
+        [FromRoute] int version,
+        [FromBody] CreateRouteRuleRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = _mapper.Map<CreateRouteRuleCommand>(request) with
+        {
+            AgentCode = agentCode,
+            Version = version
+        };
+        var routeRule = await _mediator.Send(command, cancellationToken);
+        var response = _mapper.Map<GetRouteRuleResponse>(routeRule);
+
+        return Created($"/agent-definitions/{agentCode}/versions/{version}/route-rules/{response.Id}", response);
     }
 
     [HttpPost("{agentCode}:activate-version")]

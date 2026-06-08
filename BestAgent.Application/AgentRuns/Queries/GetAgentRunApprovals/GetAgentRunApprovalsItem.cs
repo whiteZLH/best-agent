@@ -1,3 +1,4 @@
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
 
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunApprovals;
@@ -28,7 +29,7 @@ public record GetAgentRunApprovalsItem(
             entity.StepId,
             entity.RequestedAction,
             entity.RiskLevel,
-            entity.RequestPayload,
+            RuntimePayloadMasker.MaskToolInput(entity.RequestPayload),
             entity.Decision,
             entity.ApproverId,
             entity.ApproverRole,

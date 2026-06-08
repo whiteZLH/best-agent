@@ -10,13 +10,17 @@ public record class ToolDefinition : AuditedEntity
     public string? Description { get; init; }
     public string? InputSchema { get; init; }
     public string? OutputSchema { get; init; }
+    public string? ExecutionKind { get; init; }
+    public string? ExecutionBinding { get; init; }
     public string? EndpointUrl { get; init; }
     public string HttpMethod { get; init; } = "POST";
     public string? AuthHeaders { get; init; }
+    public string? CallbackSecret { get; init; }
     public string SideEffectLevel { get; init; } = string.Empty;
     public int TimeoutMs { get; init; }
     public string? RetryPolicy { get; init; }
     public string? AuthPolicy { get; init; }
+    public string? ParameterPolicy { get; init; }
     public string? IdempotencyPolicy { get; init; }
     public bool AsyncSupported { get; init; }
     public string ConsistencyMode { get; init; } = string.Empty;

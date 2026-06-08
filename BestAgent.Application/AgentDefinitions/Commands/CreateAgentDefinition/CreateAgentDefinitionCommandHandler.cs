@@ -18,6 +18,13 @@ public class CreateAgentDefinitionCommandHandler : IRequestHandler<CreateAgentDe
         var name = request.Name.Trim();
         var defaultModel = request.DefaultModel.Trim();
         var systemPromptTemplate = request.SystemPromptTemplate.Trim();
+        var normalizedMemoryPolicy = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.MemoryPolicy, "Memory policy");
+        var normalizedRoutingPolicy = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.RoutingPolicy, "Routing policy");
+        var normalizedApprovalPolicy = AgentDefinitionApprovalPolicySerializer.NormalizeOptional(request.ApprovalPolicy);
+        var normalizedExecutionPolicy = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.ExecutionPolicy, "Execution policy");
+        var normalizedPlannerPolicy = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.PlannerPolicy, "Planner policy");
+        var normalizedContextPolicy = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.ContextPolicy, "Context policy");
+        var normalizedOutputSchema = AgentDefinitionOutputSchemaSerializer.NormalizeOptional(request.OutputSchema);
 
         if (string.IsNullOrWhiteSpace(code))
         {
@@ -87,6 +94,16 @@ public class CreateAgentDefinitionCommandHandler : IRequestHandler<CreateAgentDe
                 SystemPromptTemplate = systemPromptTemplate,
                 DefaultModel = defaultModel,
                 AllowedTools = AgentDefinitionToolListSerializer.Serialize(request.AllowedTools),
+                DeniedTools = AgentDefinitionToolListSerializer.Serialize(request.DeniedTools),
+                KnowledgeSources = AgentDefinitionToolListSerializer.Serialize(request.KnowledgeSources),
+                MemoryPolicy = normalizedMemoryPolicy,
+                RoutingPolicy = normalizedRoutingPolicy,
+                ApprovalPolicy = normalizedApprovalPolicy,
+                ExecutionPolicy = normalizedExecutionPolicy,
+                PlannerPolicy = normalizedPlannerPolicy,
+                ContextPolicy = normalizedContextPolicy,
+                AllowedHandoffs = AgentDefinitionToolListSerializer.Serialize(request.AllowedHandoffs),
+                OutputSchema = normalizedOutputSchema,
                 MaxTurns = request.MaxTurns,
                 MaxCost = request.MaxCost,
                 PublishedAt = request.Enabled ? now : null,

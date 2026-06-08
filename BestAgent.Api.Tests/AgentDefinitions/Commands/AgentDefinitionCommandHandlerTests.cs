@@ -27,9 +27,31 @@ public class AgentDefinitionCommandHandlerTests
                 " system prompt ",
                 " gpt-4.1 ",
                 ["weather", "search"],
+                ["faq", "travel-guide"],
+                """
+                { "includeKnowledge": true, "maxKnowledgeChunks": 5 }
+                """,
+                """
+                { "strategy": "single-agent" }
+                """,
+                "{\"allowedApproverRoles\":[\"security\"]}",
+                """
+                { "mode": "bounded" }
+                """,
+                """
+                { "planner": "default" }
+                """,
+                """
+                { "citations": true }
+                """,
+                ["support_agent", "finance_agent"],
+                """
+                { "type": "object", "required": ["answer"] }
+                """,
                 8,
                 12.5m,
-                true),
+                true,
+                ["search"]),
             CancellationToken.None);
 
         Assert.Equal("writer", result.Code);
@@ -39,6 +61,18 @@ public class AgentDefinitionCommandHandlerTests
         Assert.Equal("system prompt", result.SystemPromptTemplate);
         Assert.Equal("gpt-4.1", result.DefaultModel);
         Assert.Equal(["weather", "search"], result.AllowedTools);
+        Assert.Equal(["search"], result.DeniedTools);
+        Assert.Equal(["faq", "travel-guide"], result.KnowledgeSources);
+        Assert.Equal("{\"includeKnowledge\":true,\"maxKnowledgeChunks\":5}", result.MemoryPolicy);
+        Assert.Equal("{\"strategy\":\"single-agent\"}", result.RoutingPolicy);
+        Assert.Equal(
+            "{\"ApprovalRequiredSideEffectLevels\":[],\"RoleRequiredSideEffectLevels\":[],\"AllowedApproverRoles\":[\"security\"],\"ParameterApprovalRules\":[]}",
+            result.ApprovalPolicy);
+        Assert.Equal("{\"mode\":\"bounded\"}", result.ExecutionPolicy);
+        Assert.Equal("{\"planner\":\"default\"}", result.PlannerPolicy);
+        Assert.Equal("{\"citations\":true}", result.ContextPolicy);
+        Assert.Equal(["support_agent", "finance_agent"], result.AllowedHandoffs);
+        Assert.Equal("{\"type\":\"object\",\"required\":[\"answer\"]}", result.OutputSchema);
         Assert.Equal(1, result.CurrentVersion);
         Assert.Equal(1, result.Version);
         Assert.Equal(AgentDefinitionVersionStatuses.Published, result.VersionStatus);
@@ -50,6 +84,18 @@ public class AgentDefinitionCommandHandlerTests
         Assert.Equal("system prompt", repository.AddedDefinition.Version.SystemPromptTemplate);
         Assert.Equal("gpt-4.1", repository.AddedDefinition.Version.DefaultModel);
         Assert.Equal("[\"weather\",\"search\"]", repository.AddedDefinition.Version.AllowedTools);
+        Assert.Equal("[\"search\"]", repository.AddedDefinition.Version.DeniedTools);
+        Assert.Equal("[\"faq\",\"travel-guide\"]", repository.AddedDefinition.Version.KnowledgeSources);
+        Assert.Equal("{\"includeKnowledge\":true,\"maxKnowledgeChunks\":5}", repository.AddedDefinition.Version.MemoryPolicy);
+        Assert.Equal("{\"strategy\":\"single-agent\"}", repository.AddedDefinition.Version.RoutingPolicy);
+        Assert.Equal(
+            "{\"ApprovalRequiredSideEffectLevels\":[],\"RoleRequiredSideEffectLevels\":[],\"AllowedApproverRoles\":[\"security\"],\"ParameterApprovalRules\":[]}",
+            repository.AddedDefinition.Version.ApprovalPolicy);
+        Assert.Equal("{\"mode\":\"bounded\"}", repository.AddedDefinition.Version.ExecutionPolicy);
+        Assert.Equal("{\"planner\":\"default\"}", repository.AddedDefinition.Version.PlannerPolicy);
+        Assert.Equal("{\"citations\":true}", repository.AddedDefinition.Version.ContextPolicy);
+        Assert.Equal("[\"support_agent\",\"finance_agent\"]", repository.AddedDefinition.Version.AllowedHandoffs);
+        Assert.Equal("{\"type\":\"object\",\"required\":[\"answer\"]}", repository.AddedDefinition.Version.OutputSchema);
         Assert.Equal(AgentDefinitionVersionStatuses.Published, repository.AddedDefinition.Version.Status);
         Assert.NotNull(repository.AddedDefinition.Version.PublishedAt);
     }
@@ -64,7 +110,7 @@ public class AgentDefinitionCommandHandlerTests
         var handler = new CreateAgentDefinitionCommandHandler(repository);
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
-            new CreateAgentDefinitionCommand("writer", "Writer", null, null, "system prompt", "gpt-4.1", null, 8, 12.5m, true),
+            new CreateAgentDefinitionCommand("writer", "Writer", null, null, "system prompt", "gpt-4.1", null, null, null, null, null, null, null, null, null, null, 8, 12.5m, true),
             CancellationToken.None));
 
         Assert.Equal("Agent definition code 'writer' already exists.", exception.Message);
@@ -94,8 +140,30 @@ public class AgentDefinitionCommandHandlerTests
                 " system prompt v3 ",
                 " gpt-4.1-mini ",
                 ["weather"],
+                ["faq"],
+                """
+                { "includeSummary": false, "includeUserMemory": true }
+                """,
+                """
+                { "strategy": "handoff-first" }
+                """,
+                "{\"allowedApproverRoles\":[\"security\"],\"approvalRequiredSideEffectLevels\":[\"destructive\"]}",
+                """
+                { "mode": "strict" }
+                """,
+                """
+                { "planner": "multi-step" }
+                """,
+                """
+                { "contextWindow": "extended" }
+                """,
+                ["refund_agent"],
+                """
+                { "type": "string", "minLength": 3 }
+                """,
                 10,
-                20m),
+                20m,
+                ["weather"]),
             CancellationToken.None);
 
         Assert.Equal(3, result.Version);
@@ -105,6 +173,15 @@ public class AgentDefinitionCommandHandlerTests
         Assert.Equal("system prompt v3", result.SystemPromptTemplate);
         Assert.Equal("gpt-4.1-mini", result.DefaultModel);
         Assert.Equal(["weather"], result.AllowedTools);
+        Assert.Equal(["weather"], result.DeniedTools);
+        Assert.Equal(["faq"], result.KnowledgeSources);
+        Assert.Equal("{\"includeSummary\":false,\"includeUserMemory\":true}", result.MemoryPolicy);
+        Assert.Equal("{\"strategy\":\"handoff-first\"}", result.RoutingPolicy);
+        Assert.Equal("{\"mode\":\"strict\"}", result.ExecutionPolicy);
+        Assert.Equal("{\"planner\":\"multi-step\"}", result.PlannerPolicy);
+        Assert.Equal("{\"contextWindow\":\"extended\"}", result.ContextPolicy);
+        Assert.Equal(["refund_agent"], result.AllowedHandoffs);
+        Assert.Equal("{\"type\":\"string\",\"minLength\":3}", result.OutputSchema);
         Assert.False(result.IsCurrentVersion);
         Assert.NotNull(repository.AddedVersion);
         Assert.Equal(3, repository.AddedVersion!.Version);
@@ -113,6 +190,18 @@ public class AgentDefinitionCommandHandlerTests
         Assert.Equal("improved draft", repository.AddedVersion.Description);
         Assert.Equal("updated instruction", repository.AddedVersion.Instruction);
         Assert.Equal("[\"weather\"]", repository.AddedVersion.AllowedTools);
+        Assert.Equal("[\"weather\"]", repository.AddedVersion.DeniedTools);
+        Assert.Equal("[\"faq\"]", repository.AddedVersion.KnowledgeSources);
+        Assert.Equal("{\"includeSummary\":false,\"includeUserMemory\":true}", repository.AddedVersion.MemoryPolicy);
+        Assert.Equal("{\"strategy\":\"handoff-first\"}", repository.AddedVersion.RoutingPolicy);
+        Assert.Equal(
+            "{\"ApprovalRequiredSideEffectLevels\":[\"destructive\"],\"RoleRequiredSideEffectLevels\":[],\"AllowedApproverRoles\":[\"security\"],\"ParameterApprovalRules\":[]}",
+            repository.AddedVersion.ApprovalPolicy);
+        Assert.Equal("{\"mode\":\"strict\"}", repository.AddedVersion.ExecutionPolicy);
+        Assert.Equal("{\"planner\":\"multi-step\"}", repository.AddedVersion.PlannerPolicy);
+        Assert.Equal("{\"contextWindow\":\"extended\"}", repository.AddedVersion.ContextPolicy);
+        Assert.Equal("[\"refund_agent\"]", repository.AddedVersion.AllowedHandoffs);
+        Assert.Equal("{\"type\":\"string\",\"minLength\":3}", repository.AddedVersion.OutputSchema);
     }
 
     [Fact]
@@ -188,6 +277,16 @@ public class AgentDefinitionCommandHandlerTests
                 SystemPromptTemplate = "system prompt",
                 DefaultModel = "gpt-4.1",
                 AllowedTools = "[\"weather\",\"search\"]",
+                DeniedTools = "[\"search\"]",
+                KnowledgeSources = "[\"faq\",\"travel-guide\"]",
+                MemoryPolicy = "{\"includeKnowledge\":true}",
+                RoutingPolicy = "{\"strategy\":\"single-agent\"}",
+                ApprovalPolicy = "{\"AllowedApproverRoles\":[\"ops\"]}",
+                ExecutionPolicy = "{\"mode\":\"bounded\"}",
+                PlannerPolicy = "{\"planner\":\"default\"}",
+                ContextPolicy = "{\"citations\":true}",
+                AllowedHandoffs = "[\"support_agent\",\"finance_agent\"]",
+                OutputSchema = "{\"type\":\"object\",\"required\":[\"answer\"]}",
                 MaxTurns = 8,
                 MaxCost = 12.5m,
                 PublishedAt = versionStatus == AgentDefinitionVersionStatuses.Published ? now : null,
@@ -220,6 +319,17 @@ public class AgentDefinitionCommandHandlerTests
         public Task<ResolvedAgentDefinition?> GetByCodeAsync(string agentCode, CancellationToken cancellationToken)
         {
             return Task.FromResult(GetByCodeAsyncResult);
+        }
+
+        public Task<ResolvedAgentDefinition?> GetByVersionIdAsync(string versionId, CancellationToken cancellationToken)
+        {
+            if (GetByCodeAsyncResult is not null
+                && string.Equals(GetByCodeAsyncResult.Version.Id, versionId, StringComparison.Ordinal))
+            {
+                return Task.FromResult<ResolvedAgentDefinition?>(GetByCodeAsyncResult);
+            }
+
+            return Task.FromResult<ResolvedAgentDefinition?>(null);
         }
 
         public Task<IReadOnlyList<ResolvedAgentDefinition>> GetAllAsync(CancellationToken cancellationToken)

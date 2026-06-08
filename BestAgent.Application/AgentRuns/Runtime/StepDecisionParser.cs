@@ -86,6 +86,104 @@ public class StepDecisionParser : IStepDecisionParser
                 decision = StepDecision.ToolCall(toolName.Trim(), toolInput?.Trim());
                 return true;
             }
+
+            if (string.Equals(action, "handoff", StringComparison.OrdinalIgnoreCase))
+            {
+                var targetAgent = GetString(root, "targetAgent")
+                    ?? GetString(root, "target_agent")
+                    ?? GetNestedString(root, "handoff", "targetAgent")
+                    ?? GetNestedString(root, "handoff", "target_agent");
+                if (string.IsNullOrWhiteSpace(targetAgent))
+                {
+                    throw new InvalidOperationException("Handoff decision did not include a target agent.");
+                }
+
+                var handoffInput = GetString(root, "input")
+                    ?? GetString(root, "handoffInput")
+                    ?? GetString(root, "handoff_input")
+                    ?? GetString(root, "task")
+                    ?? GetNestedString(root, "handoff", "input")
+                    ?? GetNestedString(root, "handoff", "handoffInput")
+                    ?? GetNestedString(root, "handoff", "handoff_input")
+                    ?? GetNestedString(root, "handoff", "task");
+                var handoffMode = GetString(root, "mode")
+                    ?? GetString(root, "handoffMode")
+                    ?? GetString(root, "handoff_mode")
+                    ?? GetNestedString(root, "handoff", "mode")
+                    ?? GetNestedString(root, "handoff", "handoffMode")
+                    ?? GetNestedString(root, "handoff", "handoff_mode");
+                var handoffReason = GetString(root, "reason")
+                    ?? GetNestedString(root, "handoff", "reason");
+                var handoffConfidence = GetDouble(root, "confidence")
+                    ?? GetNestedDouble(root, "handoff", "confidence");
+                var contextOverrides = GetString(root, "contextOverrides")
+                    ?? GetString(root, "context_overrides")
+                    ?? GetNestedString(root, "handoff", "contextOverrides")
+                    ?? GetNestedString(root, "handoff", "context_overrides");
+                var memoryOverrides = GetString(root, "memoryOverrides")
+                    ?? GetString(root, "memory_overrides")
+                    ?? GetNestedString(root, "handoff", "memoryOverrides")
+                    ?? GetNestedString(root, "handoff", "memory_overrides");
+                var toolOverrides = GetString(root, "toolOverrides")
+                    ?? GetString(root, "tool_overrides")
+                    ?? GetNestedString(root, "handoff", "toolOverrides")
+                    ?? GetNestedString(root, "handoff", "tool_overrides");
+                var approvalRequired = GetBoolean(root, "approvalRequired")
+                    ?? GetBoolean(root, "approval_required")
+                    ?? GetNestedBoolean(root, "handoff", "approvalRequired")
+                    ?? GetNestedBoolean(root, "handoff", "approval_required");
+
+                decision = StepDecision.Handoff(
+                    targetAgent.Trim(),
+                    handoffInput?.Trim(),
+                    handoffMode?.Trim(),
+                    handoffReason?.Trim(),
+                    handoffConfidence,
+                    contextOverrides?.Trim(),
+                    memoryOverrides?.Trim(),
+                    toolOverrides?.Trim(),
+                    approvalRequired);
+                return true;
+            }
+
+            if (string.Equals(action, "request_human", StringComparison.OrdinalIgnoreCase))
+            {
+                var comment = GetString(root, "comment")
+                    ?? GetString(root, "message")
+                    ?? GetString(root, "reason")
+                    ?? GetNestedString(root, "human", "comment")
+                    ?? GetNestedString(root, "human", "message")
+                    ?? GetNestedString(root, "human", "reason");
+                decision = StepDecision.RequestHuman(comment?.Trim());
+                return true;
+            }
+
+            if (string.Equals(action, "fail", StringComparison.OrdinalIgnoreCase))
+            {
+                var errorCode = GetString(root, "errorCode")
+                    ?? GetString(root, "error_code")
+                    ?? GetString(root, "code")
+                    ?? GetNestedString(root, "error", "errorCode")
+                    ?? GetNestedString(root, "error", "error_code")
+                    ?? GetNestedString(root, "error", "code");
+                var errorMessage = GetString(root, "message")
+                    ?? GetString(root, "errorMessage")
+                    ?? GetString(root, "error_message")
+                    ?? GetString(root, "reason")
+                    ?? GetString(root, "terminate_reason")
+                    ?? GetNestedString(root, "error", "message")
+                    ?? GetNestedString(root, "error", "errorMessage")
+                    ?? GetNestedString(root, "error", "error_message")
+                    ?? GetNestedString(root, "error", "reason")
+                    ?? GetNestedString(root, "error", "terminate_reason");
+                if (string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    throw new InvalidOperationException("Fail decision did not include an error message.");
+                }
+
+                decision = StepDecision.Fail(errorCode?.Trim(), errorMessage.Trim());
+                return true;
+            }
         }
         catch (JsonException)
         {
@@ -145,5 +243,56 @@ public class StepDecisionParser : IStepDecisionParser
         }
 
         return GetString(parent, propertyName);
+    }
+
+    private static double? GetDouble(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.Number when property.TryGetDouble(out var value) => value,
+            JsonValueKind.String when double.TryParse(property.GetString(), out var value) => value,
+            _ => null
+        };
+    }
+
+    private static double? GetNestedDouble(JsonElement element, string parentName, string propertyName)
+    {
+        if (!element.TryGetProperty(parentName, out var parent) || parent.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return GetDouble(parent, propertyName);
+    }
+
+    private static bool? GetBoolean(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String when bool.TryParse(property.GetString(), out var value) => value,
+            _ => null
+        };
+    }
+
+    private static bool? GetNestedBoolean(JsonElement element, string parentName, string propertyName)
+    {
+        if (!element.TryGetProperty(parentName, out var parent) || parent.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return GetBoolean(parent, propertyName);
     }
 }

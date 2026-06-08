@@ -15,11 +15,21 @@ public record AgentDefinitionViewModel(
     string? SystemPromptTemplate,
     string DefaultModel,
     IReadOnlyList<string> AllowedTools,
+    IReadOnlyList<string> KnowledgeSources,
+    string? MemoryPolicy,
+    string? RoutingPolicy,
+    string? ApprovalPolicy,
+    string? ExecutionPolicy,
+    string? PlannerPolicy,
+    string? ContextPolicy,
+    IReadOnlyList<string> AllowedHandoffs,
+    string? OutputSchema,
     int MaxTurns,
     decimal MaxCost,
     DateTime CreateTime,
     DateTime LastModifyTime,
-    DateTime? PublishedAt)
+    DateTime? PublishedAt,
+    IReadOnlyList<string>? DeniedTools = null)
 {
     public static AgentDefinitionViewModel FromResolvedDefinition(Domain.AgentDefinitions.ResolvedAgentDefinition definition)
     {
@@ -38,10 +48,20 @@ public record AgentDefinitionViewModel(
             definition.Version.SystemPromptTemplate,
             definition.Version.DefaultModel,
             AgentDefinitionToolListSerializer.Parse(definition.Version.AllowedTools),
+            AgentDefinitionToolListSerializer.Parse(definition.Version.KnowledgeSources),
+            definition.Version.MemoryPolicy,
+            definition.Version.RoutingPolicy,
+            definition.Version.ApprovalPolicy,
+            definition.Version.ExecutionPolicy,
+            definition.Version.PlannerPolicy,
+            definition.Version.ContextPolicy,
+            AgentDefinitionToolListSerializer.Parse(definition.Version.AllowedHandoffs),
+            definition.Version.OutputSchema,
             definition.Version.MaxTurns,
             definition.Version.MaxCost,
             definition.Definition.CreateTime,
             definition.Definition.LastModifyTime,
-            definition.Version.PublishedAt);
+            definition.Version.PublishedAt,
+            AgentDefinitionToolListSerializer.Parse(definition.Version.DeniedTools));
     }
 }

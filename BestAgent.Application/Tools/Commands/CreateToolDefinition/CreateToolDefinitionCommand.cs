@@ -8,9 +8,12 @@ public record CreateToolDefinitionCommand(
     string? Description,
     string? InputSchema,
     string? OutputSchema,
+    string? ExecutionKind,
+    string? ExecutionBinding,
     string? EndpointUrl,
     string? HttpMethod,
     string? AuthHeaders,
+    string? CallbackSecret,
     string SideEffectLevel,
     int TimeoutMs,
     string? RetryPolicy,
@@ -19,4 +22,5 @@ public record CreateToolDefinitionCommand(
     bool AsyncSupported,
     string ConsistencyMode,
     string? CompensationPolicy,
-    bool Enabled) : IRequest<ToolDefinitionViewModel>;
+    bool Enabled,
+    string? ParameterPolicy = null) : IRequest<ToolDefinitionViewModel>;

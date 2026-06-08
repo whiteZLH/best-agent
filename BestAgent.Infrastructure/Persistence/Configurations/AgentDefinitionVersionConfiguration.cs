@@ -21,6 +21,7 @@ public class AgentDefinitionVersionConfiguration : IEntityTypeConfiguration<Agen
         builder.Property(x => x.SystemPromptTemplate).HasColumnName("system_prompt_template");
         builder.Property(x => x.DefaultModel).HasColumnName("default_model").HasMaxLength(128);
         builder.Property(x => x.AllowedTools).HasColumnName("allowed_tools").HasColumnType("jsonb");
+        builder.Property(x => x.DeniedTools).HasColumnName("denied_tools").HasColumnType("jsonb");
         builder.Property(x => x.KnowledgeSources).HasColumnName("knowledge_sources").HasColumnType("jsonb");
         builder.Property(x => x.MemoryPolicy).HasColumnName("memory_policy").HasColumnType("jsonb");
         builder.Property(x => x.RoutingPolicy).HasColumnName("routing_policy").HasColumnType("jsonb");

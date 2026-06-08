@@ -35,6 +35,13 @@ public class AgentStepRepository : IAgentStepRepository
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<AgentStep?> GetByStepIdAsync(string stepId, CancellationToken cancellationToken)
+    {
+        return _dbContext.AgentSteps
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.StepId == stepId && !x.Deleted, cancellationToken);
+    }
+
     public async Task UpdateAsync(AgentStep agentStep, CancellationToken cancellationToken)
     {
         _dbContext.AgentSteps.Update(agentStep);
