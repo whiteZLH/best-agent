@@ -26,6 +26,13 @@ var approvalPolicyOptions = new ApprovalPolicyOptions
         builder.Configuration,
         "Approval:Policy:ParameterApprovalRules")
 };
+var humanTakeoverPolicyOptions = new HumanTakeoverPolicyOptions
+{
+    AllowedHumanOperatorRoles = ReadStringList(
+        builder.Configuration,
+        "HumanTakeover:AllowedRoles",
+        Array.Empty<string>())
+};
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
@@ -67,7 +74,7 @@ builder.Services.AddSingleton(new WebhookSecurityOptions
         : builder.Configuration["WebhookSecurity:SignatureHeaderName"]!
 });
 builder.Services.AddSingleton<IWebhookRequestAuthorizer, HmacWebhookRequestAuthorizer>();
-builder.Services.AddApplication(approvalPolicyOptions);
+builder.Services.AddApplication(approvalPolicyOptions, humanTakeoverPolicyOptions);
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddAutoMapper(
     _ => { },

@@ -1,4 +1,5 @@
 using BestAgent.Application;
+using BestAgent.Application.AgentRuns.Approvals;
 using BestAgent.Application.AgentRuns.Commands.RequestHumanAgentRun;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Exceptions;
@@ -563,6 +564,49 @@ public class RequestHumanAgentRunCommandHandlerTests
             _mediator.Send(new RequestHumanAgentRunCommand(run.RunId, "Need operator review", null, null, null, null)));
 
         Assert.Contains("requires an authenticated or explicit operator identity", ex.Message);
+        await _agentStepRepo.DidNotReceive().AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_WhenHumanOperatorRoleIsNotAllowed_ShouldThrowForbidden()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication(
+            humanTakeoverPolicyOptions: new HumanTakeoverPolicyOptions
+            {
+                AllowedHumanOperatorRoles = ["operator", "admin"]
+            });
+        services.AddSingleton(_agentRunRepo);
+        services.AddSingleton(_agentStepRepo);
+        services.AddSingleton(_agentApprovalRepo);
+        services.AddSingleton(_toolInvocationRepo);
+        services.AddSingleton(_runOutboxEventRepo);
+        services.AddSingleton(_eventBus);
+        var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+        var now = DateTime.UtcNow;
+        var run = new AgentRun
+        {
+            RunId = "run-1",
+            AgentCode = "writer",
+            Status = "Running",
+            CurrentStepNo = 4,
+            StatusVersion = 2,
+            InputPayload = "hello",
+            Creator = "system",
+            CreatorName = "system",
+            LastModifier = "system",
+            LastModifierName = "system",
+            CreateTime = now,
+            LastModifyTime = now
+        };
+
+        _agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            mediator.Send(new RequestHumanAgentRunCommand(run.RunId, "Need operator review", null, "u-2", "Bob", "viewer")));
+
+        Assert.Contains("requires one of roles: operator, admin", ex.Message, StringComparison.Ordinal);
         await _agentStepRepo.DidNotReceive().AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>());
     }
 }

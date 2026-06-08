@@ -9,15 +9,20 @@ namespace BestAgent.Application;
 
 public static class DependencyInjection
 {
-    public static IServiceCollection AddApplication(this IServiceCollection services, ApprovalPolicyOptions? approvalPolicyOptions = null)
+    public static IServiceCollection AddApplication(
+        this IServiceCollection services,
+        ApprovalPolicyOptions? approvalPolicyOptions = null,
+        HumanTakeoverPolicyOptions? humanTakeoverPolicyOptions = null)
     {
         var normalizedApprovalPolicyOptions = ApprovalPolicyOptionsNormalizer.Normalize(approvalPolicyOptions);
+        var normalizedHumanTakeoverPolicyOptions = HumanTakeoverPolicyOptionsNormalizer.Normalize(humanTakeoverPolicyOptions);
 
         services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(DependencyInjection).Assembly));
         services.AddSingleton<IStepDecisionParser, StepDecisionParser>();
         services.AddSingleton<IAgentRunChannel, AgentRunChannel>();
         services.AddSingleton<IAgentRunEventBus, AgentRunEventBus>();
         services.TryAddSingleton(normalizedApprovalPolicyOptions);
+        services.TryAddSingleton(normalizedHumanTakeoverPolicyOptions);
         services.TryAddSingleton<IAgentMetrics>(NullAgentMetrics.Instance);
         services.AddSingleton<IApprovalAuthorizer, DefaultApprovalAuthorizer>();
         services.AddSingleton<IHumanTakeoverAuthorizer, DefaultHumanTakeoverAuthorizer>();

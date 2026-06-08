@@ -1,4 +1,5 @@
 using BestAgent.Application;
+using BestAgent.Application.AgentRuns.Approvals;
 using BestAgent.Application.AgentRuns.Commands.CompleteHumanAgentRun;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Exceptions;
@@ -162,6 +163,63 @@ public class CompleteHumanAgentRunCommandHandlerTests
                     null)));
 
         Assert.Contains("requires an authenticated or explicit operator identity", ex.Message);
+        await _agentRunChannel.DidNotReceive().EnqueueAsync(Arg.Any<AgentRunMessage>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Handle_WhenHumanOperatorRoleIsNotAllowed_ShouldThrowForbidden()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication(
+            humanTakeoverPolicyOptions: new HumanTakeoverPolicyOptions
+            {
+                AllowedHumanOperatorRoles = ["operator", "admin"]
+            });
+        services.AddSingleton(_agentRunRepo);
+        services.AddSingleton(_agentStepRepo);
+        services.AddSingleton(_agentRunChannel);
+        var mediator = services.BuildServiceProvider().GetRequiredService<IMediator>();
+
+        var now = DateTime.UtcNow;
+        var run = new AgentRun
+        {
+            RunId = "run-1",
+            AgentCode = "writer",
+            Status = "WaitingHuman",
+            CurrentWaitToken = "human-wait-1",
+            CurrentStepNo = 5,
+            StatusVersion = 2,
+            InputPayload = "hello",
+            Creator = "system",
+            CreatorName = "system",
+            LastModifier = "system",
+            LastModifierName = "system",
+            CreateTime = now,
+            LastModifyTime = now
+        };
+        var pendingStep = AgentRunLoop.CreateStep(run.RunId, 5, "human_wait", "Pending", "Need operator review", null, null, now, now) with
+        {
+            DecisionPayload = HumanApprovalPayloadSerializer.Serialize(
+                HumanApprovalPayloadSerializer.CreatePending("Need operator review"))
+        };
+
+        _agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        _agentStepRepo.GetLastByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(pendingStep);
+
+        var ex = await Assert.ThrowsAsync<ForbiddenException>(() =>
+            mediator.Send(
+                new CompleteHumanAgentRunCommand(
+                    run.RunId,
+                    pendingStep.StepId,
+                    "human-wait-1",
+                    "Human supplied answer",
+                    "Resolved manually",
+                    false,
+                    "u-2",
+                    "Bob",
+                    "viewer")));
+
+        Assert.Contains("requires one of roles: operator, admin", ex.Message, StringComparison.Ordinal);
         await _agentRunChannel.DidNotReceive().EnqueueAsync(Arg.Any<AgentRunMessage>(), Arg.Any<CancellationToken>());
     }
 }

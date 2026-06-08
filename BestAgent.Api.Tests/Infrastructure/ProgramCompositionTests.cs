@@ -81,6 +81,7 @@ public class ProgramCompositionTests
         Assert.IsType<AgentRunEventBus>(provider.GetRequiredService<IAgentRunEventBus>());
         Assert.IsType<AgentMetrics>(provider.GetRequiredService<IAgentMetrics>());
         Assert.NotNull(provider.GetRequiredService<ApprovalPolicyOptions>());
+        Assert.NotNull(provider.GetRequiredService<HumanTakeoverPolicyOptions>());
         Assert.IsType<HmacWebhookRequestAuthorizer>(provider.GetRequiredService<IWebhookRequestAuthorizer>());
         Assert.IsType<RuntimeContextComposer>(provider.GetRequiredService<IRuntimeContextComposer>());
         Assert.IsType<RuntimeMemoryWriter>(provider.GetRequiredService<IRuntimeMemoryWriter>());
@@ -159,5 +160,22 @@ public class ProgramCompositionTests
         }));
 
         Assert.Equal("ParameterApprovalRules[0].OverrideSideEffectLevel must be one of: read_only, internal_write, external_write, destructive.", exception.Message);
+    }
+
+    [Fact]
+    public void AddApplication_ShouldNormalizeHumanTakeoverPolicyOptions()
+    {
+        var services = new ServiceCollection();
+
+        services.AddApplication(
+            humanTakeoverPolicyOptions: new HumanTakeoverPolicyOptions
+            {
+                AllowedHumanOperatorRoles = [" Operator ", "operator", " admin "]
+            });
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<HumanTakeoverPolicyOptions>();
+
+        Assert.Equal(["Operator", "admin"], options.AllowedHumanOperatorRoles);
     }
 }
