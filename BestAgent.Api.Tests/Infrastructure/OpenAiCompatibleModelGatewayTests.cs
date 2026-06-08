@@ -925,7 +925,17 @@ public class OpenAiCompatibleModelGatewayTests
             });
 
         var result = await gateway.GenerateTextAsync(
-            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
             CancellationToken.None);
 
         Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
@@ -1084,10 +1094,148 @@ public class OpenAiCompatibleModelGatewayTests
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             gateway.GenerateTextAsync(
-                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    Tools:
+                    [
+                        new GenerateTextToolDefinition(
+                            "weather",
+                            "Get the weather for a city",
+                            "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}"),
+                        new GenerateTextToolDefinition(
+                            "calendar",
+                            "Create a calendar event",
+                            "{\"type\":\"object\",\"properties\":{\"date\":{\"type\":\"string\"}},\"required\":[\"date\"],\"additionalProperties\":false}")
+                    ]),
                 CancellationToken.None));
 
         Assert.Contains("only one tool call per turn", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectUndeclaredNativeToolCall()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finish_reason": "tool_calls",
+                          "message": {
+                            "content": null,
+                            "tool_calls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "calendar",
+                                  "arguments": "{\"date\":\"2026-06-10\"}"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    Tools:
+                    [
+                        new GenerateTextToolDefinition(
+                            "weather",
+                            "Get the weather for a city",
+                            "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Contains("undeclared native tool call 'calendar'", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectNativeToolCallWithInvalidArguments()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finish_reason": "tool_calls",
+                          "message": {
+                            "content": null,
+                            "tool_calls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "weather",
+                                  "arguments": "not-json"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    Tools:
+                    [
+                        new GenerateTextToolDefinition(
+                            "weather",
+                            "Get the weather for a city",
+                            "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Contains("invalid native tool call arguments for 'weather'", exception.Message);
     }
 
     [Fact]

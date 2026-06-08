@@ -126,7 +126,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             using var document = JsonDocument.Parse(body);
             var finishReason = TryGetFinishReason(document.RootElement);
             var reasoningSummary = TryGetReasoningSummary(document.RootElement);
-            var toolCalls = TryGetToolCalls(document.RootElement);
+            var toolCalls = TryGetToolCalls(document.RootElement, request.Tools);
             var output = ExtractOutput(document.RootElement, toolCalls);
 
             if (string.IsNullOrWhiteSpace(output))
@@ -647,7 +647,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             : null;
     }
 
-    private static IReadOnlyList<GenerateTextToolCall>? TryGetToolCalls(JsonElement root)
+    private static IReadOnlyList<GenerateTextToolCall>? TryGetToolCalls(
+        JsonElement root,
+        IReadOnlyList<GenerateTextToolDefinition>? declaredTools)
     {
         if (!root.TryGetProperty("choices", out var choices)
             || choices.ValueKind != JsonValueKind.Array
@@ -705,6 +707,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 && argumentsElement.ValueKind == JsonValueKind.String
                 ? argumentsElement.GetString()
                 : null;
+            ValidateNativeToolCall(toolName, toolArguments, declaredTools);
 
             calls.Add(new GenerateTextToolCall(
                 id.Trim(),
@@ -714,6 +717,47 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return calls.Count == 0 ? null : calls;
+    }
+
+    private static void ValidateNativeToolCall(
+        string toolName,
+        string? toolArguments,
+        IReadOnlyList<GenerateTextToolDefinition>? declaredTools)
+    {
+        if (declaredTools is null || declaredTools.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Model gateway returned undeclared native tool call '{toolName.Trim()}', but no tools were declared for this request.");
+        }
+
+        var matchedTool = declaredTools.FirstOrDefault(tool =>
+            string.Equals(tool.Name, toolName, StringComparison.OrdinalIgnoreCase));
+        if (matchedTool is null)
+        {
+            throw new InvalidOperationException(
+                $"Model gateway returned undeclared native tool call '{toolName.Trim()}'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(toolArguments))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(toolArguments);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException(
+                    $"Model gateway returned native tool call arguments for '{toolName.Trim()}' that are not a JSON object.");
+            }
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Model gateway returned invalid native tool call arguments for '{toolName.Trim()}'.",
+                ex);
+        }
     }
 
     private static string? ExtractOutput(JsonElement root, IReadOnlyList<GenerateTextToolCall>? toolCalls)
