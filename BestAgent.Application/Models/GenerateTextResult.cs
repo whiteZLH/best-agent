@@ -5,4 +5,5 @@ public record GenerateTextResult(
     int PromptTokens = 0,
     int CompletionTokens = 0,
     int TotalTokens = 0,
-    decimal Cost = 0m);
+    decimal Cost = 0m,
+    string? FinishReason = null);

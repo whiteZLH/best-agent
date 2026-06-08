@@ -91,6 +91,7 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
             payload.CompletionTokens,
             payload.TotalTokens,
             payload.Cost,
+            payload.FinishReason,
             payload.Retrieval is null
                 ? null
                 : new ModelCallRetrievalInfo(

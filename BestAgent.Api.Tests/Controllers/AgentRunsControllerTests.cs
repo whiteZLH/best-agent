@@ -601,6 +601,7 @@ public class AgentRunsControllerTests
                         45,
                         165,
                         0.0042m,
+                        "stop",
                         new ModelCallRetrievalInfo(
                             "refund manager approval",
                             true,
@@ -919,6 +920,7 @@ public class AgentRunsControllerTests
                             45,
                             165,
                             0.0042m,
+                            "stop",
                             new EventModelCallRetrievalInfo(
                                 "refund manager approval",
                                 true,

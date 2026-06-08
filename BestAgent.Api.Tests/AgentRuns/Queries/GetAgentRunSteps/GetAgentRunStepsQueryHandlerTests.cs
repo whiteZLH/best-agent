@@ -233,7 +233,8 @@ public class GetAgentRunStepsQueryHandlerTests
                     PromptTokens: 120,
                     CompletionTokens: 45,
                     TotalTokens: 165,
-                    Cost: 0.0042m),
+                    Cost: 0.0042m,
+                    FinishReason: "stop"),
                 new RuntimeRetrievalAudit(
                     "refund manager approval",
                     true,
@@ -261,6 +262,7 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal(45, item.ModelCall.CompletionTokens);
         Assert.Equal(165, item.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, item.ModelCall.Cost);
+        Assert.Equal("stop", item.ModelCall.FinishReason);
         Assert.NotNull(item.ModelCall.Retrieval);
         Assert.Equal("refund manager approval", item.ModelCall.Retrieval!.QueryText);
         Assert.True(item.ModelCall.Retrieval.WasRewritten);

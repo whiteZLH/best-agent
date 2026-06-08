@@ -6,6 +6,7 @@ public record ModelCallInfo(
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
+    string? FinishReason = null,
     ModelCallRetrievalInfo? Retrieval = null);
 
 public record ModelCallRetrievalInfo(

@@ -10,6 +10,7 @@ public sealed record ModelCallPayload(
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
+    string? FinishReason = null,
     ModelCallRetrievalPayload? Retrieval = null);
 
 public sealed record ModelCallRetrievalPayload(
@@ -32,6 +33,7 @@ public static class ModelCallPayloadSerializer
             Math.Max(0, result.CompletionTokens),
             Math.Max(0, result.TotalTokens),
             result.Cost < 0m ? 0m : result.Cost,
+            string.IsNullOrWhiteSpace(result.FinishReason) ? null : result.FinishReason.Trim(),
             retrieval is null
                 ? null
                 : new ModelCallRetrievalPayload(

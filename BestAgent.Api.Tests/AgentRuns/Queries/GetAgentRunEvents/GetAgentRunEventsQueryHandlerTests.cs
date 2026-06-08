@@ -154,7 +154,8 @@ public class GetAgentRunEventsQueryHandlerTests
                 PromptTokens: 120,
                 CompletionTokens: 45,
                 TotalTokens: 165,
-                Cost: 0.0042m),
+                Cost: 0.0042m,
+                FinishReason: "stop"),
             new RuntimeRetrievalAudit(
                 "refund manager approval",
                 true,
@@ -190,6 +191,7 @@ public class GetAgentRunEventsQueryHandlerTests
         Assert.NotNull(data.ModelCall);
         Assert.Equal("gpt-4o-mini", data.ModelCall!.Model);
         Assert.Equal(120, data.ModelCall.PromptTokens);
+        Assert.Equal("stop", data.ModelCall.FinishReason);
         Assert.Equal("refund manager approval", data.ModelCall.Retrieval!.QueryText);
         Assert.True(data.ModelCall.Retrieval.WasRewritten);
         Assert.Equal("faq/doc-1#1", Assert.Single(data.ModelCall.Retrieval.SelectedSources));

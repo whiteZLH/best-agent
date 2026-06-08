@@ -109,6 +109,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 .GetProperty("message")
                 .GetProperty("content")
                 .GetString();
+            var finishReason = TryGetFinishReason(document.RootElement);
 
             if (string.IsNullOrWhiteSpace(output))
             {
@@ -128,7 +129,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 promptTokens,
                 completionTokens,
                 totalTokens,
-                CalculateCost(promptTokens, completionTokens));
+                CalculateCost(promptTokens, completionTokens),
+                finishReason);
 
             _agentMetrics.RecordModelCall(
                 model,
@@ -143,13 +145,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             activity?.SetTag("bestagent.completion_tokens", result.CompletionTokens);
             activity?.SetTag("bestagent.total_tokens", result.TotalTokens);
             activity?.SetTag("bestagent.cost", (double)result.Cost);
+            if (!string.IsNullOrWhiteSpace(result.FinishReason))
+            {
+                activity?.SetTag("bestagent.finish_reason", result.FinishReason);
+            }
             activity?.SetStatus(ActivityStatusCode.Ok);
             _logger.LogInformation(
-                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens and cost {Cost}",
+                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens, cost {Cost}, finish reason {FinishReason}",
                 model,
                 (DateTime.UtcNow - startedAt).TotalMilliseconds,
                 result.TotalTokens,
-                result.Cost);
+                result.Cost,
+                result.FinishReason);
 
             return result;
         }
@@ -356,6 +363,30 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             JsonValueKind.Number when value.TryGetInt32(out var number) => number,
             JsonValueKind.String when int.TryParse(value.GetString(), out var number) => number,
             _ => 0
+        };
+    }
+
+    private static string? TryGetFinishReason(JsonElement root)
+    {
+        if (!root.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array
+            || choices.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var firstChoice = choices[0];
+        if (!firstChoice.TryGetProperty("finish_reason", out var finishReason))
+        {
+            return null;
+        }
+
+        return finishReason.ValueKind switch
+        {
+            JsonValueKind.String => string.IsNullOrWhiteSpace(finishReason.GetString())
+                ? null
+                : finishReason.GetString()!.Trim(),
+            _ => null
         };
     }
 }

@@ -25,6 +25,7 @@ public class OpenAiCompatibleModelGatewayTests
                     {
                       "choices": [
                         {
+                          "finish_reason": "stop",
                           "message": {
                             "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
                           }
@@ -63,6 +64,7 @@ public class OpenAiCompatibleModelGatewayTests
             CancellationToken.None);
 
         Assert.Equal("{\"action\":\"respond\",\"response\":\"hello\"}", result.Output);
+        Assert.Equal("stop", result.FinishReason);
         Assert.True(capturedPayload.HasValue);
         Assert.Equal(0.2m, capturedPayload.Value.GetProperty("temperature").GetDecimal());
         Assert.True(capturedPayload.Value.TryGetProperty("max_tokens", out var maxTokensElement));
@@ -79,6 +81,7 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
         Assert.Equal(18, activity.GetTagItem("bestagent.total_tokens"));
+        Assert.Equal("stop", activity.GetTagItem("bestagent.finish_reason"));
     }
 
     [Fact]

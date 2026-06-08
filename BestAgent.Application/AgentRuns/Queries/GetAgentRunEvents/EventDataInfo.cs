@@ -61,6 +61,7 @@ public record EventDataInfo(
                     modelCall.CompletionTokens,
                     modelCall.TotalTokens,
                     modelCall.Cost,
+                    modelCall.FinishReason,
                     modelCall.Retrieval is null
                         ? null
                         : new EventModelCallRetrievalInfo(
@@ -191,6 +192,7 @@ public record EventModelCallInfo(
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
+    string? FinishReason,
     EventModelCallRetrievalInfo? Retrieval);
 
 public record EventModelCallRetrievalInfo(
