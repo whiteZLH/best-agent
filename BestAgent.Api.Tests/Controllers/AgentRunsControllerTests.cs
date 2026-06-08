@@ -546,6 +546,14 @@ public class AgentRunsControllerTests
                     query.RunId,
                     "writer",
                     null,
+                    null,
+                    "step-4",
+                    "tool_call",
+                    "invocation-1",
+                    null,
+                    new ToolInvocationInfo("invocation-1", "weather", "async", "Pending", "wait-1", now, null, 0),
+                    null,
+                    null,
                     null)
             ]);
         var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
@@ -564,6 +572,10 @@ public class AgentRunsControllerTests
         Assert.Equal("root-run-1", child.RootRunId);
         Assert.Equal("run-001", child.DelegatedByRunId);
         Assert.Equal("writer", child.DelegatedByAgent);
+        Assert.Equal("step-4", child.CurrentStepId);
+        Assert.Equal("tool_call", child.WaitStepType);
+        Assert.Equal("invocation-1", child.CurrentInvocationId);
+        Assert.Equal("weather", child.CurrentToolInvocation!.ToolName);
     }
 
     [Fact]
@@ -588,6 +600,13 @@ public class AgentRunsControllerTests
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                Children:
                 [
                     new GetAgentRunTreeItem(
                         "child-run-1",
@@ -606,7 +625,38 @@ public class AgentRunsControllerTests
                         "writer",
                         null,
                         null,
-                        [])
+                        "step-child-1",
+                        "handoff",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new HandoffInfo(
+                            "handoff",
+                            "support_agent",
+                            "child input",
+                            "delegate_and_wait",
+                            "child-run-2",
+                            "Pending",
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            false,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null),
+                        Children: [])
                 ]));
         var controller = new AgentRunsController(mediator, _mapper, new NullEventBus());
 
@@ -619,6 +669,9 @@ public class AgentRunsControllerTests
         Assert.Equal("child-run-1", child.RunId);
         Assert.Equal("run-001", child.ParentRunId);
         Assert.Equal("writer", child.DelegatedByAgent);
+        Assert.Equal("step-child-1", child.CurrentStepId);
+        Assert.Equal("handoff", child.WaitStepType);
+        Assert.Equal("support_agent", child.CurrentHandoff!.TargetAgent);
     }
 
     [Fact]

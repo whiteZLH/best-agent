@@ -1,5 +1,7 @@
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunTree;
 
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+
 public record GetAgentRunTreeItem(
     string RunId,
     string AgentCode,
@@ -17,4 +19,12 @@ public record GetAgentRunTreeItem(
     string? DelegatedByAgent,
     string? InterruptReason,
     string? WaitToken,
-    IReadOnlyList<GetAgentRunTreeItem> Children);
+    string? CurrentStepId = null,
+    string? WaitStepType = null,
+    string? CurrentInvocationId = null,
+    string? CurrentApprovalId = null,
+    ToolInvocationInfo? CurrentToolInvocation = null,
+    ApprovalInfo? CurrentApproval = null,
+    HumanWaitInfo? CurrentHumanWait = null,
+    HandoffInfo? CurrentHandoff = null,
+    IReadOnlyList<GetAgentRunTreeItem> Children = null!);

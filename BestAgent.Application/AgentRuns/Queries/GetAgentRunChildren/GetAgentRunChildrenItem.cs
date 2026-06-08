@@ -1,5 +1,7 @@
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunChildren;
 
+using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+
 public record GetAgentRunChildrenItem(
     string RunId,
     string AgentCode,
@@ -16,4 +18,12 @@ public record GetAgentRunChildrenItem(
     string? DelegatedByRunId,
     string? DelegatedByAgent,
     string? InterruptReason,
-    string? WaitToken);
+    string? WaitToken,
+    string? CurrentStepId = null,
+    string? WaitStepType = null,
+    string? CurrentInvocationId = null,
+    string? CurrentApprovalId = null,
+    ToolInvocationInfo? CurrentToolInvocation = null,
+    ApprovalInfo? CurrentApproval = null,
+    HumanWaitInfo? CurrentHumanWait = null,
+    HandoffInfo? CurrentHandoff = null);

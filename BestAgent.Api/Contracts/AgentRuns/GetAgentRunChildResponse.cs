@@ -16,4 +16,12 @@ public record GetAgentRunChildResponse(
     string? DelegatedByRunId,
     string? DelegatedByAgent,
     string? InterruptReason,
-    string? WaitToken);
+    string? WaitToken,
+    string? CurrentStepId = null,
+    string? WaitStepType = null,
+    string? CurrentInvocationId = null,
+    string? CurrentApprovalId = null,
+    ToolInvocationInfoResponse? CurrentToolInvocation = null,
+    ApprovalInfoResponse? CurrentApproval = null,
+    HumanWaitInfoResponse? CurrentHumanWait = null,
+    HandoffInfoResponse? CurrentHandoff = null);

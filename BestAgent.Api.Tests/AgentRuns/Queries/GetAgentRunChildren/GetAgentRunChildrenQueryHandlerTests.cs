@@ -1,6 +1,8 @@
 using BestAgent.Application;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunChildren;
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
+using BestAgent.Domain.Tools;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -14,13 +16,40 @@ public class GetAgentRunChildrenQueryHandlerTests
     public async Task Handle_ShouldReturnOrderedChildRuns_WithParentRelationshipFields()
     {
         var runRepository = Substitute.For<IAgentRunRepository>();
+        var stepRepository = Substitute.For<IAgentStepRepository>();
+        var approvalRepository = Substitute.For<IAgentApprovalRepository>();
+        var toolInvocationRepository = Substitute.For<IToolInvocationRepository>();
         var services = new ServiceCollection();
         services.AddApplication();
         services.AddSingleton(runRepository);
+        services.AddSingleton(stepRepository);
+        services.AddSingleton(approvalRepository);
+        services.AddSingleton(toolInvocationRepository);
         await using var serviceProvider = services.BuildServiceProvider();
         var mediator = serviceProvider.GetRequiredService<IMediator>();
         var earlier = new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc);
         var later = earlier.AddMinutes(5);
+        var childStep = new AgentStep
+        {
+            StepId = "step-child-2",
+            RunId = "child-run-2",
+            StepNo = 3,
+            StepType = "human_wait",
+            Status = "Pending",
+            DecisionPayload = HumanApprovalPayloadSerializer.Serialize(
+                HumanApprovalPayloadSerializer.CreatePending(
+                    "Need operator input",
+                    sourceType: "tool_wait",
+                    sourceStepId: "step-1",
+                    sourceInvocationId: "invocation-1",
+                    sourceToolName: "weather",
+                    sourceToolInput: "{\"password\":\"secret-1\"}",
+                    sourceToolOutput: "{\"authorization\":\"secret-2\"}",
+                    sourceToolStatus: "Pending",
+                    continueAsToolResult: true)),
+            CreateTime = later,
+            LastModifyTime = later
+        };
 
         runRepository.ListByParentRunIdAsync("run-1", Arg.Any<CancellationToken>())
             .Returns(
@@ -61,6 +90,14 @@ public class GetAgentRunChildrenQueryHandlerTests
                     StartedAt = later
                 }
             ]);
+        stepRepository.GetLastByRunIdAsync("child-run-1", Arg.Any<CancellationToken>())
+            .Returns((AgentStep?)null);
+        stepRepository.GetLastByRunIdAsync("child-run-2", Arg.Any<CancellationToken>())
+            .Returns(childStep);
+        approvalRepository.GetByRunIdAndStepIdAsync("child-run-2", childStep.StepId, Arg.Any<CancellationToken>())
+            .Returns((AgentApproval?)null);
+        toolInvocationRepository.GetPendingByRunIdAndStepIdAsync("child-run-2", childStep.StepId, Arg.Any<CancellationToken>())
+            .Returns((ToolInvocation?)null);
 
         var result = await mediator.Send(new GetAgentRunChildrenQuery("run-1"));
 
@@ -89,6 +126,11 @@ public class GetAgentRunChildrenQueryHandlerTests
                 Assert.Null(second.Output);
                 Assert.Equal("backend unavailable", second.InterruptReason);
                 Assert.Equal("wait-child-2", second.WaitToken);
+                Assert.Equal("step-child-2", second.CurrentStepId);
+                Assert.Equal("human_wait", second.WaitStepType);
+                Assert.NotNull(second.CurrentHumanWait);
+                Assert.Equal("tool_wait", second.CurrentHumanWait!.SourceType);
+                Assert.Equal("{\"password\":\"***\"}", second.CurrentHumanWait.SourceToolInput);
             });
     }
 }

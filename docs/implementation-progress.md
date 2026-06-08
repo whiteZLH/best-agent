@@ -70,6 +70,7 @@
 - `GetAgentRunEvents` 与 SSE `stream` 当前也已开始把异步 `waiting` 事件中的 `ToolInvocation` 恢复信息补成 typed 读侧，显式回显 `invocationId/toolName/mode/status/callbackToken`
 - `GetAgentRunById` / `GET /agent-runs/{runId}` 当前也已开始补充最小等待定位字段：除 `WaitToken`、`CurrentStepNo`、`InterruptReason` 外，还会返回 `CurrentStepId`、`WaitStepType`，并在适用时补上 `CurrentInvocationId` / `CurrentApprovalId`
 - `GetAgentRunById` / `GET /agent-runs/{runId}` 当前也已开始补充当前等待上下文的 typed 读侧：在适用时可直接返回 `CurrentToolInvocation`、`CurrentApproval`、`CurrentHumanWait` 与 `CurrentHandoff`
+- `GetAgentRunChildren` / `GetAgentRunTree` 当前也已开始与单 Run 快照对齐：子 Run 列表与递归树节点在等待态下同样会返回 `CurrentStepId/WaitStepType`、`CurrentInvocationId/CurrentApprovalId` 与 typed 等待上下文
 - `GetAgentRunSteps` 的 typed `Approval` 读侧当前也已开始同时返回通用 `RequestedAction/RequestPayload` 与兼容 `ToolName/ToolInput` 别名，以覆盖 planner `request_approval` 与工具审批两条链路
 - `GET /agent-runs/{runId}/stream` 当前也已开始从轻量 `eventType + data` 收敛到最小统一事件 envelope：SSE `data` 会包含 `eventId/runId/seqNo/eventType/runStatus/occurredAt/data`，并在存在 `seqNo` 时写出 SSE `id`
 - `GET /agent-runs/{runId}/stream` 当前也已开始最小支持 `Last-Event-ID` 断线续传：建连时会先注册进程内缓冲订阅，再按 `afterSeqNo = Last-Event-ID` 回放 outbox 事件，最后按 `seqNo` 去重切换到实时 SSE；若回放已包含终态事件，则流会直接结束

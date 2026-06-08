@@ -2,6 +2,7 @@ using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
 using MediatR;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
+using BestAgent.Application.AgentRuns.Queries;
 
 namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunById;
 
@@ -32,43 +33,12 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
             return null;
         }
 
-        var currentStepId = default(string);
-        var waitStepType = default(string);
-        var currentInvocationId = default(string);
-        var currentApprovalId = default(string);
-        ToolInvocationInfo? currentToolInvocation = null;
-        ApprovalInfo? currentApproval = null;
-        HumanWaitInfo? currentHumanWait = null;
-        HandoffInfo? currentHandoff = null;
-        var currentStep = agentRun.CurrentStepNo > 0
-            ? await _agentStepRepository.GetLastByRunIdAsync(request.RunId, cancellationToken)
-            : null;
-        if (currentStep is not null
-            && currentStep.StepNo == agentRun.CurrentStepNo)
-        {
-            currentStepId = currentStep.StepId;
-            if (!string.IsNullOrWhiteSpace(agentRun.CurrentWaitToken)
-                || agentRun.Status.StartsWith("Waiting", StringComparison.OrdinalIgnoreCase))
-            {
-                waitStepType = currentStep.StepType;
-
-                var pendingInvocation = await _toolInvocationRepository.GetPendingByRunIdAndStepIdAsync(
-                    request.RunId,
-                    currentStep.StepId,
-                    cancellationToken);
-                currentInvocationId = pendingInvocation?.InvocationId;
-                currentToolInvocation = AgentRunStepDataMapper.MapToolInvocation(pendingInvocation);
-
-                var approval = await _agentApprovalRepository.GetByRunIdAndStepIdAsync(
-                    request.RunId,
-                    currentStep.StepId,
-                    cancellationToken);
-                currentApprovalId = approval?.ApprovalId;
-                currentApproval = AgentRunStepDataMapper.MapApproval(approval, currentStep.DecisionPayload);
-                currentHumanWait = AgentRunStepDataMapper.MapHumanWait(currentStep.DecisionPayload);
-                currentHandoff = AgentRunStepDataMapper.MapHandoff(currentStep.DecisionPayload);
-            }
-        }
+        var waitContext = await RunSnapshotWaitContextResolver.ResolveAsync(
+            agentRun,
+            _agentStepRepository,
+            _agentApprovalRepository,
+            _toolInvocationRepository,
+            cancellationToken);
 
         return new GetAgentRunByIdResult(
             agentRun.RunId,
@@ -90,13 +60,13 @@ public class GetAgentRunByIdQueryHandler : IRequestHandler<GetAgentRunByIdQuery,
             string.IsNullOrWhiteSpace(agentRun.DelegatedByAgent) ? null : agentRun.DelegatedByAgent,
             string.IsNullOrWhiteSpace(agentRun.InterruptReason) ? null : agentRun.InterruptReason,
             string.IsNullOrWhiteSpace(agentRun.CurrentWaitToken) ? null : agentRun.CurrentWaitToken,
-            currentStepId,
-            waitStepType,
-            currentInvocationId,
-            currentApprovalId,
-            currentToolInvocation,
-            currentApproval,
-            currentHumanWait,
-            currentHandoff);
+            waitContext.CurrentStepId,
+            waitContext.WaitStepType,
+            waitContext.CurrentInvocationId,
+            waitContext.CurrentApprovalId,
+            waitContext.CurrentToolInvocation,
+            waitContext.CurrentApproval,
+            waitContext.CurrentHumanWait,
+            waitContext.CurrentHandoff);
     }
 }

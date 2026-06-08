@@ -17,4 +17,12 @@ public record GetAgentRunTreeResponse(
     string? DelegatedByAgent,
     string? InterruptReason,
     string? WaitToken,
-    IReadOnlyList<GetAgentRunTreeResponse> Children);
+    string? CurrentStepId = null,
+    string? WaitStepType = null,
+    string? CurrentInvocationId = null,
+    string? CurrentApprovalId = null,
+    ToolInvocationInfoResponse? CurrentToolInvocation = null,
+    ApprovalInfoResponse? CurrentApproval = null,
+    HumanWaitInfoResponse? CurrentHumanWait = null,
+    HandoffInfoResponse? CurrentHandoff = null,
+    IReadOnlyList<GetAgentRunTreeResponse> Children = null!);
