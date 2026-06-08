@@ -112,6 +112,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
             using var document = JsonDocument.Parse(body);
             var finishReason = TryGetFinishReason(document.RootElement);
+            var reasoningSummary = TryGetReasoningSummary(document.RootElement);
             var output = ExtractOutput(document.RootElement);
 
             if (string.IsNullOrWhiteSpace(output))
@@ -133,7 +134,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 completionTokens,
                 totalTokens,
                 CalculateCost(promptTokens, completionTokens),
-                finishReason);
+                finishReason,
+                reasoningSummary);
 
             _agentMetrics.RecordModelCall(
                 model,
@@ -152,14 +154,19 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             {
                 activity?.SetTag("bestagent.finish_reason", result.FinishReason);
             }
+            if (!string.IsNullOrWhiteSpace(result.ReasoningSummary))
+            {
+                activity?.SetTag("bestagent.reasoning_summary", Trim(result.ReasoningSummary, 512));
+            }
             activity?.SetStatus(ActivityStatusCode.Ok);
             _logger.LogInformation(
-                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens, cost {Cost}, finish reason {FinishReason}",
+                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens, cost {Cost}, finish reason {FinishReason}, reasoning summary length {ReasoningSummaryLength}",
                 model,
                 (DateTime.UtcNow - startedAt).TotalMilliseconds,
                 result.TotalTokens,
                 result.Cost,
-                result.FinishReason);
+                result.FinishReason,
+                result.ReasoningSummary?.Length ?? 0);
 
             return result;
         }
@@ -536,6 +543,32 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         };
     }
 
+    private static string? TryGetReasoningSummary(JsonElement root)
+    {
+        if (!root.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array
+            || choices.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var firstChoice = choices[0];
+        if (!firstChoice.TryGetProperty("message", out var message)
+            || message.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (TryCollectReasoningText(message, "reasoning_summary", out var reasoningSummary))
+        {
+            return reasoningSummary;
+        }
+
+        return TryCollectReasoningText(message, "reasoning", out var reasoning)
+            ? reasoning
+            : null;
+    }
+
     private static string? ExtractOutput(JsonElement root)
     {
         if (!root.TryGetProperty("choices", out var choices)
@@ -620,5 +653,63 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             toolInput = string.IsNullOrWhiteSpace(toolArguments) ? null : toolArguments.Trim()
         });
         return true;
+    }
+
+    private static bool TryCollectReasoningText(JsonElement parent, string propertyName, out string? reasoningText)
+    {
+        reasoningText = null;
+        if (!parent.TryGetProperty(propertyName, out var value))
+        {
+            return false;
+        }
+
+        var segments = new List<string>();
+        CollectReasoningSegments(value, segments);
+        if (segments.Count == 0)
+        {
+            return false;
+        }
+
+        reasoningText = string.Join("\n", segments);
+        return true;
+    }
+
+    private static void CollectReasoningSegments(JsonElement value, List<string> segments)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = value.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    segments.Add(text.Trim());
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in value.EnumerateArray())
+                {
+                    CollectReasoningSegments(item, segments);
+                }
+
+                break;
+            case JsonValueKind.Object:
+                if (value.TryGetProperty("text", out var textProperty))
+                {
+                    CollectReasoningSegments(textProperty, segments);
+                }
+
+                if (value.TryGetProperty("summary", out var summaryProperty))
+                {
+                    CollectReasoningSegments(summaryProperty, segments);
+                }
+
+                if (value.TryGetProperty("content", out var contentProperty))
+                {
+                    CollectReasoningSegments(contentProperty, segments);
+                }
+
+                break;
+        }
     }
 }

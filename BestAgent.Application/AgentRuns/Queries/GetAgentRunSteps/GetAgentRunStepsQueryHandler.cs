@@ -101,7 +101,8 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
                     payload.Retrieval.SelectedCount,
                     payload.Retrieval.RequestedSources,
                     payload.Retrieval.SelectedSources,
-                    payload.Retrieval.Citations));
+                    payload.Retrieval.Citations),
+            payload.ReasoningSummary);
     }
 
     private static ModelFailureInfo? MapModelFailure(string? errorPayload)

@@ -71,7 +71,8 @@ public record EventDataInfo(
                             modelCall.Retrieval.SelectedCount,
                             modelCall.Retrieval.RequestedSources,
                             modelCall.Retrieval.SelectedSources,
-                            modelCall.Retrieval.Citations))
+                            modelCall.Retrieval.Citations),
+                    modelCall.ReasoningSummary)
                 : null,
             RetrievalPayloadSerializer.TryParse(data.DecisionPayload, out var retrieval)
                 ? new EventRetrievalInfo(retrieval!.QueryText)
@@ -193,7 +194,8 @@ public record EventModelCallInfo(
     int TotalTokens,
     decimal Cost,
     string? FinishReason,
-    EventModelCallRetrievalInfo? Retrieval);
+    EventModelCallRetrievalInfo? Retrieval,
+    string? ReasoningSummary = null);
 
 public record EventModelCallRetrievalInfo(
     string QueryText,

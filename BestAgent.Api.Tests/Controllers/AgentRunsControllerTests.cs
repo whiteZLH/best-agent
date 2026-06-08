@@ -609,7 +609,8 @@ public class AgentRunsControllerTests
                             1,
                             ["faq"],
                             ["faq/doc-1#1"],
-                            ["score=3; source=faq/doc-1#1; chunk=1"])),
+                            ["score=3; source=faq/doc-1#1; chunk=1"]),
+                        "Need refund policy confirmation."),
                     new RetrievalInfo("hotel refund manager approval policy"),
                     new ModelFailureInfo("upstream_unavailable", "Planner could not continue."),
                     new ToolFailureInfo("weather", "execution", "tool backend crashed", new ToolFailureCompensationInfo("manual")),
@@ -680,6 +681,8 @@ public class AgentRunsControllerTests
         Assert.Equal(45, step.ModelCall.CompletionTokens);
         Assert.Equal(165, step.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, step.ModelCall.Cost);
+        Assert.Equal("stop", step.ModelCall.FinishReason);
+        Assert.Equal("Need refund policy confirmation.", step.ModelCall.ReasoningSummary);
         Assert.Equal("hotel refund manager approval policy", step.Retrieval!.QueryText);
         Assert.Equal("refund manager approval", step.ModelCall.Retrieval!.QueryText);
         Assert.True(step.ModelCall.Retrieval.WasRewritten);
@@ -928,7 +931,8 @@ public class AgentRunsControllerTests
                                 1,
                                 ["faq"],
                                 ["faq/doc-1#1"],
-                                ["score=3; source=faq/doc-1#1; chunk=1"])),
+                                ["score=3; source=faq/doc-1#1; chunk=1"]),
+                            "Need refund policy confirmation."),
                         new EventRetrievalInfo("hotel refund manager approval policy"),
                         null,
                         null,
@@ -971,6 +975,8 @@ public class AgentRunsControllerTests
         Assert.Equal("Completed", evt.Data.Status);
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
+        Assert.Equal("stop", evt.Data.ModelCall.FinishReason);
+        Assert.Equal("Need refund policy confirmation.", evt.Data.ModelCall.ReasoningSummary);
         Assert.Equal("hotel refund manager approval policy", evt.Data.Retrieval!.QueryText);
         Assert.Equal("refund manager approval", evt.Data.ModelCall.Retrieval!.QueryText);
         Assert.Equal("invocation-1", evt.Data.ToolInvocation!.InvocationId);

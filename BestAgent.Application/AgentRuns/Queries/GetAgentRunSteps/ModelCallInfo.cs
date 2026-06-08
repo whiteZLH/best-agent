@@ -7,7 +7,8 @@ public record ModelCallInfo(
     int TotalTokens,
     decimal Cost,
     string? FinishReason = null,
-    ModelCallRetrievalInfo? Retrieval = null);
+    ModelCallRetrievalInfo? Retrieval = null,
+    string? ReasoningSummary = null);
 
 public record ModelCallRetrievalInfo(
     string QueryText,

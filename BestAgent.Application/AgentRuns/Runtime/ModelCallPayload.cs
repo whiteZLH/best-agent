@@ -11,7 +11,8 @@ public sealed record ModelCallPayload(
     int TotalTokens,
     decimal Cost,
     string? FinishReason = null,
-    ModelCallRetrievalPayload? Retrieval = null);
+    ModelCallRetrievalPayload? Retrieval = null,
+    string? ReasoningSummary = null);
 
 public sealed record ModelCallRetrievalPayload(
     string QueryText,
@@ -43,7 +44,8 @@ public static class ModelCallPayloadSerializer
                     Math.Max(0, retrieval.SelectedCount),
                     retrieval.RequestedSources.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                     retrieval.SelectedSources.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
-                    retrieval.Citations.Distinct(StringComparer.Ordinal).ToArray())));
+                    retrieval.Citations.Distinct(StringComparer.Ordinal).ToArray()),
+            string.IsNullOrWhiteSpace(result.ReasoningSummary) ? null : result.ReasoningSummary.Trim()));
     }
 
     public static bool TryParse(string? payload, out ModelCallPayload? modelCallPayload)

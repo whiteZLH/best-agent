@@ -6,4 +6,5 @@ public record GenerateTextResult(
     int CompletionTokens = 0,
     int TotalTokens = 0,
     decimal Cost = 0m,
-    string? FinishReason = null);
+    string? FinishReason = null,
+    string? ReasoningSummary = null);

@@ -514,7 +514,9 @@ public class AgentRunsController : ControllerBase
                             resolvedData.ModelCall.Retrieval.SelectedCount,
                             resolvedData.ModelCall.Retrieval.RequestedSources,
                             resolvedData.ModelCall.Retrieval.SelectedSources,
-                            resolvedData.ModelCall.Retrieval.Citations)),
+                            resolvedData.ModelCall.Retrieval.Citations),
+                    resolvedData.ModelCall.FinishReason,
+                    resolvedData.ModelCall.ReasoningSummary),
             resolvedData.Retrieval is null
                 ? null
                 : new EventRetrievalInfoResponse(

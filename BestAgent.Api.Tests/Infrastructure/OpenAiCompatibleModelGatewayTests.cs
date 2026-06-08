@@ -27,6 +27,11 @@ public class OpenAiCompatibleModelGatewayTests
                         {
                           "finish_reason": "stop",
                           "message": {
+                            "reasoning_summary": [
+                              {
+                                "text": "Need to answer directly."
+                              }
+                            ],
                             "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
                           }
                         }
@@ -65,6 +70,7 @@ public class OpenAiCompatibleModelGatewayTests
 
         Assert.Equal("{\"action\":\"respond\",\"response\":\"hello\"}", result.Output);
         Assert.Equal("stop", result.FinishReason);
+        Assert.Equal("Need to answer directly.", result.ReasoningSummary);
         Assert.True(capturedPayload.HasValue);
         Assert.Equal(0.2m, capturedPayload.Value.GetProperty("temperature").GetDecimal());
         Assert.True(capturedPayload.Value.TryGetProperty("max_tokens", out var maxTokensElement));
@@ -86,6 +92,7 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
         Assert.Equal(18, activity.GetTagItem("bestagent.total_tokens"));
         Assert.Equal("stop", activity.GetTagItem("bestagent.finish_reason"));
+        Assert.Equal("Need to answer directly.", activity.GetTagItem("bestagent.reasoning_summary"));
     }
 
     [Fact]

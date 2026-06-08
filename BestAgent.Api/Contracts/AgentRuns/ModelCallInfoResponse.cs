@@ -6,7 +6,9 @@ public record ModelCallInfoResponse(
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
-    ModelCallRetrievalInfoResponse? Retrieval = null);
+    ModelCallRetrievalInfoResponse? Retrieval = null,
+    string? FinishReason = null,
+    string? ReasoningSummary = null);
 
 public record ModelCallRetrievalInfoResponse(
     string QueryText,

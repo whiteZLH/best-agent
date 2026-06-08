@@ -21,7 +21,9 @@ public record EventModelCallInfoResponse(
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
-    EventModelCallRetrievalInfoResponse? Retrieval);
+    EventModelCallRetrievalInfoResponse? Retrieval,
+    string? FinishReason = null,
+    string? ReasoningSummary = null);
 
 public record EventModelCallRetrievalInfoResponse(
     string QueryText,
