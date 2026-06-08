@@ -224,6 +224,67 @@ public class RuntimeContextComposerTests
     }
 
     [Fact]
+    public async Task ComposeModelInputAsync_ShouldUseExplicitRetrievalQuerySection_WhenPresent()
+    {
+        var composer = CreateComposer();
+        var context = new AgentLoopContext(
+            CreateRun() with
+            {
+                TenantId = "tenant-1",
+                SessionId = "session-1",
+                UserId = "user-1"
+            },
+            CreateDefinition().Version,
+            """
+            Original user input:
+            Can I refund my hotel after booking?
+
+            Retrieval query:
+            hotel refund manager approval policy
+
+            Use the retrieved knowledge to continue planning and answer the user.
+            """,
+            3,
+            0);
+        var definition = CreateDefinition(
+            knowledgeSources: """
+            ["faq"]
+            """,
+            memoryPolicy: """
+            {"maxKnowledgeChunks":1,"knowledgeCandidateCount":4}
+            """);
+
+        _knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
+                "tenant-1",
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Is<string>(query =>
+                    query.Contains("hotel refund manager approval policy", StringComparison.Ordinal) &&
+                    query.Contains("Can I refund my hotel after booking?", StringComparison.Ordinal)),
+                4,
+                1,
+                Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new KnowledgeChunk
+                {
+                    Id = "chunk-1",
+                    DocumentId = "doc-1",
+                    TenantId = "tenant-1",
+                    ChunkNo = 1,
+                    Content = "Refund approvals require a manager review.",
+                    Source = "faq/doc-1#1"
+                }
+            ]);
+
+        var result = await composer.ComposeModelInputAsync(context, definition, CancellationToken.None);
+
+        Assert.Contains("Reference knowledge:", result.ModelInput);
+        Assert.NotNull(result.Retrieval);
+        Assert.Equal("hotel refund manager approval policy Can I refund my hotel after booking?", result.Retrieval!.QueryText);
+        Assert.True(result.Retrieval.WasRewritten);
+    }
+
+    [Fact]
     public async Task ComposeModelInputAsync_ShouldSkipKnowledgeLookup_WhenMemoryPolicyDisablesKnowledge()
     {
         var composer = CreateComposer();

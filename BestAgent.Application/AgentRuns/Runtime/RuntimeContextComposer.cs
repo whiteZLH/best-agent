@@ -270,6 +270,7 @@ public class RuntimeContextComposer : IRuntimeContextComposer
         {
             ["Current user input:"] = "currentInput",
             ["Original user input:"] = "originalInput",
+            ["Retrieval query:"] = "retrievalQuery",
             ["Tool called:"] = "toolName",
             ["Tool result:"] = "toolResult"
         };
@@ -326,6 +327,11 @@ public class RuntimeContextComposer : IRuntimeContextComposer
                     continue;
                 }
 
+                if (string.Equals(line, "Use the retrieved knowledge to continue planning and answer the user.", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 if (currentSection is null)
                 {
                     continue;
@@ -341,6 +347,7 @@ public class RuntimeContextComposer : IRuntimeContextComposer
 
             var parts = new[]
             {
+                ReadSection(sections, "retrievalQuery", 240),
                 ReadSection(sections, "currentInput", 360),
                 ReadSection(sections, "originalInput", 360),
                 ReadSection(sections, "toolName", 80),

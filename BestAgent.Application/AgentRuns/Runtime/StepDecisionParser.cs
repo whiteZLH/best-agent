@@ -87,6 +87,19 @@ public class StepDecisionParser : IStepDecisionParser
                 return true;
             }
 
+            if (string.Equals(action, "retrieve", StringComparison.OrdinalIgnoreCase))
+            {
+                var retrievalQuery = GetString(root, "query")
+                    ?? GetString(root, "retrievalQuery")
+                    ?? GetString(root, "retrieval_query")
+                    ?? GetNestedString(root, "retrieval", "query")
+                    ?? GetNestedString(root, "retrieval", "retrievalQuery")
+                    ?? GetNestedString(root, "retrieval", "retrieval_query");
+
+                decision = StepDecision.Retrieve(retrievalQuery?.Trim());
+                return true;
+            }
+
             if (string.Equals(action, "handoff", StringComparison.OrdinalIgnoreCase))
             {
                 var targetAgent = GetString(root, "targetAgent")

@@ -18,16 +18,22 @@ public record StepDecision(
     string? HumanComment,
     string? FailErrorCode,
     string? FailMessage,
-    string? HandoffMergeStrategy = null)
+    string? HandoffMergeStrategy = null,
+    string? RetrievalQuery = null)
 {
     public static StepDecision Respond(string response)
     {
-        return new("respond", response, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new("respond", response, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public static StepDecision ToolCall(string toolName, string? toolInput)
     {
-        return new("tool_call", null, toolName, toolInput, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new("tool_call", null, toolName, toolInput, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    public static StepDecision Retrieve(string? query)
+    {
+        return new("retrieve", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, query);
     }
 
     public static StepDecision Handoff(
@@ -61,16 +67,17 @@ public record StepDecision(
             null,
             null,
             null,
-            mergeStrategy);
+            mergeStrategy,
+            null);
     }
 
     public static StepDecision RequestHuman(string? comment)
     {
-        return new("request_human", null, null, null, null, null, null, null, null, null, null, null, null, null, comment, null, null, null);
+        return new("request_human", null, null, null, null, null, null, null, null, null, null, null, null, null, comment, null, null, null, null);
     }
 
     public static StepDecision Fail(string? errorCode, string errorMessage)
     {
-        return new("fail", null, null, null, null, null, null, null, null, null, null, null, null, null, null, errorCode, errorMessage, null);
+        return new("fail", null, null, null, null, null, null, null, null, null, null, null, null, null, null, errorCode, errorMessage, null, null);
     }
 }

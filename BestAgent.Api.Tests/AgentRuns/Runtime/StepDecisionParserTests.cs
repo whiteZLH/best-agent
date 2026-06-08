@@ -8,6 +8,23 @@ public class StepDecisionParserTests
     private readonly StepDecisionParser _parser = new();
 
     [Fact]
+    public void Parse_ShouldReadRetrieveDecision()
+    {
+        const string json =
+            """
+            {
+              "action": "retrieve",
+              "retrieval_query": "hotel refund policy manager approval"
+            }
+            """;
+
+        var decision = _parser.Parse(json);
+
+        Assert.Equal("retrieve", decision.Action);
+        Assert.Equal("hotel refund policy manager approval", decision.RetrievalQuery);
+    }
+
+    [Fact]
     public void Parse_ShouldReadHandoffRouteDecisionMetadata_FromSnakeCaseJson()
     {
         const string json =
@@ -80,6 +97,25 @@ public class StepDecisionParserTests
         Assert.Equal("{\"sources\":[\"faq\"]}", decision.HandoffKnowledgeOverrides);
         Assert.False(decision.HandoffApprovalRequired);
         Assert.Equal("all_results", decision.HandoffMergeStrategy);
+    }
+
+    [Fact]
+    public void Parse_ShouldReadNestedRetrieveDecision()
+    {
+        const string json =
+            """
+            {
+              "action": "retrieve",
+              "retrieval": {
+                "query": "airline baggage refund exception"
+              }
+            }
+            """;
+
+        var decision = _parser.Parse(json);
+
+        Assert.Equal("retrieve", decision.Action);
+        Assert.Equal("airline baggage refund exception", decision.RetrievalQuery);
     }
 
     [Fact]

@@ -836,6 +836,66 @@ public class AgentRunLoopTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldContinueAfterRetrieveDecision()
+    {
+        var context = CreateLoopContext();
+        var resolvedDefinition = CreateResolvedDefinition();
+        var events = new List<AgentRunEvent>();
+
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new GenerateTextResult("retrieve-decision"),
+                new GenerateTextResult("final-answer"));
+
+        _stepDecisionParser.Parse("retrieve-decision")
+            .Returns(StepDecision.Retrieve("hotel refund manager approval policy"));
+        _stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("done"));
+
+        var requestInputs = new List<string>();
+        _runtimeContextComposer.ComposeModelInputAsync(Arg.Any<AgentLoopContext>(), resolvedDefinition, Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var loopContext = call.Arg<AgentLoopContext>();
+                requestInputs.Add(loopContext.CurrentInput);
+                return new RuntimeContextComposition(loopContext.CurrentInput);
+            });
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None,
+            evt =>
+            {
+                events.Add(evt);
+                return Task.CompletedTask;
+            },
+            runtimeContextComposer: _runtimeContextComposer);
+
+        var completed = Assert.IsType<AgentLoopCompleted>(result);
+        Assert.Equal("done", completed.Output);
+        Assert.Equal(2, requestInputs.Count);
+        Assert.Equal("hello", requestInputs[0]);
+        Assert.Contains("Original user input:\nhello", requestInputs[1]);
+        Assert.Contains("Retrieval query:\nhotel refund manager approval policy", requestInputs[1]);
+        await _agentStepRepository.Received(3).AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>());
+        await _agentStepRepository.Received(1).AddAsync(
+            Arg.Is<AgentStep>(step =>
+                step.StepType == "retrieval" &&
+                step.Status == "Completed" &&
+                step.InputPayload == "hotel refund manager approval policy" &&
+                step.OutputPayload == "hotel refund manager approval policy"),
+            Arg.Any<CancellationToken>());
+        Assert.Contains(events, evt => evt.Data.StepType == "retrieval" && evt.Data.Output == "hotel refund manager approval policy");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldAppendKnowledgeReferences_ToFinalResponse()
     {
         var context = CreateLoopContext();

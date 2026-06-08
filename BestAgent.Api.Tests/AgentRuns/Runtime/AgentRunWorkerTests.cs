@@ -6103,6 +6103,7 @@ public class AgentRunWorkerTests
             Arg.Is<GenerateTextRequest>(request =>
                 request.SystemPrompt != null &&
                 request.SystemPrompt.Contains("You are version one.") &&
+                request.SystemPrompt.Contains("Use {\"action\":\"retrieve\",\"query\":\"...\"} to retrieve relevant knowledge before answering.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"tool_call\",\"toolName\":\"...\",\"toolInput\":\"...\"} to call one tool.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"route_only\"} to route directly to another allowed agent.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"delegate_and_wait\"} to delegate to another allowed agent and then continue.") &&

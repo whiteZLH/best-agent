@@ -16,6 +16,7 @@ public static class AgentRunLoop
         """
         Return JSON only.
         Use {"action":"respond","response":"..."} for a final answer.
+        Use {"action":"retrieve","query":"..."} to retrieve relevant knowledge before answering.
         Use {"action":"tool_call","toolName":"...","toolInput":"..."} to call one tool.
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"route_only"} to route directly to another allowed agent.
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"delegate_and_wait"} to delegate to another allowed agent and then continue.
@@ -131,6 +132,35 @@ public static class AgentRunLoop
                     AppendKnowledgeCitations(response, modelInput, resolvedDefinition.Version.ContextPolicy),
                     modelInput,
                     totalCostDelta);
+            }
+
+            if (string.Equals(decision.Action, "retrieve", StringComparison.OrdinalIgnoreCase))
+            {
+                var retrievalQuery = string.IsNullOrWhiteSpace(decision.RetrievalQuery)
+                    ? currentInput
+                    : decision.RetrievalQuery.Trim();
+                var retrievalStep = CreateStep(
+                    run.RunId,
+                    nextStepNo++,
+                    "retrieval",
+                    "Completed",
+                    retrievalQuery,
+                    retrievalQuery,
+                    null,
+                    DateTime.UtcNow,
+                    DateTime.UtcNow);
+                await agentStepRepository.AddAsync(retrievalStep, cancellationToken);
+
+                if (onEvent is not null)
+                {
+                    await onEvent(new AgentRunEvent(
+                        run.RunId,
+                        "step",
+                        new AgentRunEventData(retrievalStep.StepNo, retrievalStep.StepType, "Completed", retrievalQuery)));
+                }
+
+                currentInput = BuildRetrievalFollowUpInput(currentInput, retrievalQuery);
+                continue;
             }
 
             if (string.Equals(decision.Action, "handoff", StringComparison.OrdinalIgnoreCase))
@@ -624,6 +654,20 @@ public static class AgentRunLoop
         }
 
         return builder.ToString().TrimEnd();
+    }
+
+    private static string BuildRetrievalFollowUpInput(string originalInput, string retrievalQuery)
+    {
+        return
+            $"""
+            Original user input:
+            {originalInput}
+
+            Retrieval query:
+            {retrievalQuery}
+
+            Use the retrieved knowledge to continue planning and answer the user.
+            """;
     }
 
     private static bool ShouldAppendKnowledgeCitations(string? contextPolicy)
