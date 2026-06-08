@@ -2,6 +2,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using BestAgent.Application.Tools;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BestAgent.Infrastructure.Tools;
 
@@ -10,10 +12,14 @@ public class HttpToolInvoker : IHttpToolInvoker
     private const string ClientName = "ToolWebhook";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ILogger<HttpToolInvoker> _logger;
 
-    public HttpToolInvoker(IHttpClientFactory httpClientFactory)
+    public HttpToolInvoker(
+        IHttpClientFactory httpClientFactory,
+        ILogger<HttpToolInvoker>? logger = null)
     {
         _httpClientFactory = httpClientFactory;
+        _logger = logger ?? NullLogger<HttpToolInvoker>.Instance;
     }
 
     public async Task<ToolExecutionResult> InvokeAsync(
@@ -22,11 +28,20 @@ public class HttpToolInvoker : IHttpToolInvoker
     {
         var retryPolicy = ToolRetryPolicy.Parse(request.RetryPolicy);
         ToolExecutionResult? lastFailureResult = null;
+        var sanitizedEndpoint = SanitizeEndpointForLog(request.EndpointUrl);
 
         for (var attempt = 1; attempt <= retryPolicy.MaxAttempts; attempt++)
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(request.TimeoutMs));
+            _logger.LogDebug(
+                "Invoking tool webhook {ToolName} {Method} {Endpoint} attempt {Attempt}/{MaxAttempts} for run {RunId}",
+                request.ToolName,
+                request.HttpMethod,
+                sanitizedEndpoint,
+                attempt,
+                retryPolicy.MaxAttempts,
+                request.Context.RunId);
 
             try
             {
@@ -42,24 +57,65 @@ public class HttpToolInvoker : IHttpToolInvoker
                         $"Tool webhook failed with HTTP {(int)response.StatusCode}: {body}");
                     if (attempt < retryPolicy.MaxAttempts && IsRetryableStatusCode(response.StatusCode))
                     {
+                        _logger.LogWarning(
+                            "Tool webhook {ToolName} {Method} {Endpoint} returned HTTP {StatusCode} on attempt {Attempt}/{MaxAttempts}; retrying",
+                            request.ToolName,
+                            request.HttpMethod,
+                            sanitizedEndpoint,
+                            (int)response.StatusCode,
+                            attempt,
+                            retryPolicy.MaxAttempts);
                         await DelayBeforeRetryAsync(retryPolicy, cancellationToken);
                         continue;
                     }
 
+                    _logger.LogWarning(
+                        "Tool webhook {ToolName} {Method} {Endpoint} failed with HTTP {StatusCode} on attempt {Attempt}/{MaxAttempts}",
+                        request.ToolName,
+                        request.HttpMethod,
+                        sanitizedEndpoint,
+                        (int)response.StatusCode,
+                        attempt,
+                        retryPolicy.MaxAttempts);
                     return lastFailureResult;
                 }
 
-                return ParseResult(request.ToolName, body);
+                var result = ParseResult(request.ToolName, body);
+                _logger.LogInformation(
+                    "Tool webhook {ToolName} {Method} {Endpoint} completed with outcome {Outcome} on attempt {Attempt}/{MaxAttempts}",
+                    request.ToolName,
+                    request.HttpMethod,
+                    sanitizedEndpoint,
+                    DescribeOutcome(result),
+                    attempt,
+                    retryPolicy.MaxAttempts);
+                return result;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 lastFailureResult = ToolExecutionResult.Failed(request.ToolName, $"Tool webhook timed out after {request.TimeoutMs}ms.");
                 if (attempt < retryPolicy.MaxAttempts)
                 {
+                    _logger.LogWarning(
+                        "Tool webhook {ToolName} {Method} {Endpoint} timed out after {TimeoutMs}ms on attempt {Attempt}/{MaxAttempts}; retrying",
+                        request.ToolName,
+                        request.HttpMethod,
+                        sanitizedEndpoint,
+                        request.TimeoutMs,
+                        attempt,
+                        retryPolicy.MaxAttempts);
                     await DelayBeforeRetryAsync(retryPolicy, cancellationToken);
                     continue;
                 }
 
+                _logger.LogWarning(
+                    "Tool webhook {ToolName} {Method} {Endpoint} timed out after {TimeoutMs}ms on attempt {Attempt}/{MaxAttempts}",
+                    request.ToolName,
+                    request.HttpMethod,
+                    sanitizedEndpoint,
+                    request.TimeoutMs,
+                    attempt,
+                    retryPolicy.MaxAttempts);
                 return lastFailureResult;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -67,10 +123,28 @@ public class HttpToolInvoker : IHttpToolInvoker
                 lastFailureResult = ToolExecutionResult.Failed(request.ToolName, $"Tool webhook failed: {ex.Message}");
                 if (attempt < retryPolicy.MaxAttempts)
                 {
+                    _logger.LogWarning(
+                        ex,
+                        "Tool webhook {ToolName} {Method} {Endpoint} threw {ExceptionType} on attempt {Attempt}/{MaxAttempts}; retrying",
+                        request.ToolName,
+                        request.HttpMethod,
+                        sanitizedEndpoint,
+                        ex.GetType().Name,
+                        attempt,
+                        retryPolicy.MaxAttempts);
                     await DelayBeforeRetryAsync(retryPolicy, cancellationToken);
                     continue;
                 }
 
+                _logger.LogWarning(
+                    ex,
+                    "Tool webhook {ToolName} {Method} {Endpoint} failed with {ExceptionType} on attempt {Attempt}/{MaxAttempts}",
+                    request.ToolName,
+                    request.HttpMethod,
+                    sanitizedEndpoint,
+                    ex.GetType().Name,
+                    attempt,
+                    retryPolicy.MaxAttempts);
                 return lastFailureResult;
             }
         }
@@ -308,6 +382,31 @@ public class HttpToolInvoker : IHttpToolInvoker
         return retryPolicy.DelayMs <= 0
             ? Task.CompletedTask
             : Task.Delay(TimeSpan.FromMilliseconds(retryPolicy.DelayMs), cancellationToken);
+    }
+
+    private static string DescribeOutcome(ToolExecutionResult result)
+    {
+        if (result.IsPending)
+        {
+            return "pending";
+        }
+
+        if (result.IsFailed)
+        {
+            return "failed";
+        }
+
+        return "completed";
+    }
+
+    private static string SanitizeEndpointForLog(string endpointUrl)
+    {
+        if (!Uri.TryCreate(endpointUrl, UriKind.Absolute, out var uri))
+        {
+            return endpointUrl;
+        }
+
+        return uri.GetLeftPart(UriPartial.Path);
     }
 
     private sealed record ToolRetryPolicy(int MaxAttempts, int DelayMs)

@@ -2,8 +2,10 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using BestAgent.Api.Tests;
 using BestAgent.Application.Tools;
 using BestAgent.Infrastructure.Tools;
+using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Xunit;
 
@@ -87,6 +89,7 @@ public class HttpToolInvokerTests
     public async Task InvokeAsync_ShouldRetryRetryableHttpFailure_AndReturnSuccessfulAttempt()
     {
         var attempts = 0;
+        var logger = new ListLogger<HttpToolInvoker>();
         using var client = CreateClient(_ =>
         {
             attempts++;
@@ -101,13 +104,21 @@ public class HttpToolInvokerTests
                 });
         });
         _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
-        var invoker = new HttpToolInvoker(_httpClientFactory);
+        var invoker = new HttpToolInvoker(_httpClientFactory, logger);
 
         var result = await invoker.InvokeAsync(CreateRequest(retryPolicy: "{\"maxAttempts\":2,\"delayMs\":0}"), CancellationToken.None);
 
         Assert.Equal(2, attempts);
         Assert.False(result.IsPending);
         Assert.Equal("recovered", result.Output);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning
+                && entry.Message.Contains("returned HTTP 502 on attempt 1/2; retrying", StringComparison.Ordinal));
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Information
+                && entry.Message.Contains("completed with outcome completed on attempt 2/2", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -162,6 +173,7 @@ public class HttpToolInvokerTests
     [Fact]
     public async Task InvokeAsync_ShouldReturnCompletedTimeout_WhenRequestTimesOut()
     {
+        var logger = new ListLogger<HttpToolInvoker>();
         using var client = CreateClient(async (_, cancellationToken) =>
         {
             await Task.Delay(TimeSpan.FromMilliseconds(200), cancellationToken);
@@ -171,12 +183,46 @@ public class HttpToolInvokerTests
             };
         });
         _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
-        var invoker = new HttpToolInvoker(_httpClientFactory);
+        var invoker = new HttpToolInvoker(_httpClientFactory, logger);
 
         var result = await invoker.InvokeAsync(CreateRequest(timeoutMs: 10), CancellationToken.None);
 
         Assert.False(result.IsPending);
         Assert.Equal("Tool webhook timed out after 10ms.", result.Output);
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Level == LogLevel.Warning
+                && entry.Message.Contains("timed out after 10ms on attempt 1/1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_ShouldLogSanitizedEndpointWithoutSecretsOrPayload()
+    {
+        var logger = new ListLogger<HttpToolInvoker>();
+        using var client = CreateClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("{\"output\":\"done\"}", Encoding.UTF8, "application/json")
+        }));
+        _httpClientFactory.CreateClient("ToolWebhook").Returns(client);
+        var invoker = new HttpToolInvoker(_httpClientFactory, logger);
+
+        var result = await invoker.InvokeAsync(
+            CreateRequestWithEndpoint("https://example.com/tools/weather?token=secret-value&trace=1"),
+            CancellationToken.None);
+
+        Assert.Equal("done", result.Output);
+        Assert.NotEmpty(logger.Entries);
+        Assert.All(
+            logger.Entries,
+            entry =>
+            {
+                Assert.DoesNotContain("secret-value", entry.Message, StringComparison.Ordinal);
+                Assert.DoesNotContain("Bearer token", entry.Message, StringComparison.Ordinal);
+                Assert.DoesNotContain("Shanghai", entry.Message, StringComparison.Ordinal);
+            });
+        Assert.Contains(
+            logger.Entries,
+            entry => entry.Message.Contains("https://example.com/tools/weather", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -327,6 +373,22 @@ public class HttpToolInvokerTests
             retryPolicy,
             _context,
             timeoutMs);
+    }
+
+    private HttpToolInvocationRequest CreateRequestWithEndpoint(string endpointUrl)
+    {
+        return new HttpToolInvocationRequest(
+            "weather",
+            endpointUrl,
+            "POST",
+            "{\"Authorization\":\"Bearer token\"}",
+            "tool-idempotency-key",
+            "{\"city\":\"Shanghai\"}",
+            "{\"type\":\"object\"}",
+            "{\"type\":\"string\"}",
+            null,
+            _context,
+            5000);
     }
 
     private static HttpClient CreateClient(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler)
