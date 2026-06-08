@@ -4,4 +4,5 @@ public record GenerateTextRequest(
     string Model,
     string? SystemPrompt,
     string Input,
-    decimal? Temperature = null);
+    decimal? Temperature = null,
+    int? MaxOutputTokens = null);

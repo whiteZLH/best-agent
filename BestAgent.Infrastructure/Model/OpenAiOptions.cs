@@ -10,6 +10,8 @@ public class OpenAiOptions
 
     public decimal Temperature { get; init; } = 0.2m;
 
+    public int? MaxOutputTokens { get; init; }
+
     public int TimeoutSeconds { get; init; } = 60;
 
     public decimal PromptTokenPricePerMillion { get; init; }

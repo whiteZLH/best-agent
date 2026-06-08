@@ -32,6 +32,9 @@ public static class DependencyInjection
             Temperature = decimal.TryParse(configuration["OpenAI:Temperature"], out var openAiTemperature)
                 ? openAiTemperature
                 : 0.2m,
+            MaxOutputTokens = int.TryParse(configuration["OpenAI:MaxOutputTokens"], out var maxOutputTokens)
+                ? maxOutputTokens
+                : null,
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60
