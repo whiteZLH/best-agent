@@ -21,10 +21,12 @@ using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunTree;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Application.Exceptions;
+using BestAgent.Application.Observability;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using System.Diagnostics;
 
 namespace BestAgent.Api.Controllers;
 
@@ -44,6 +46,7 @@ public class AgentRunsController : ControllerBase
     private readonly IToolDefinitionRepository? _toolDefinitionRepository;
     private readonly IAgentRunRepository? _agentRunRepository;
     private readonly BestAgentAuthenticationOptions _authenticationOptions;
+    private readonly IAgentMetrics _agentMetrics;
 
     public AgentRunsController(
         IMediator mediator,
@@ -53,7 +56,8 @@ public class AgentRunsController : ControllerBase
         IToolInvocationRepository? toolInvocationRepository = null,
         IToolDefinitionRepository? toolDefinitionRepository = null,
         IAgentRunRepository? agentRunRepository = null,
-        BestAgentAuthenticationOptions? authenticationOptions = null)
+        BestAgentAuthenticationOptions? authenticationOptions = null,
+        IAgentMetrics? agentMetrics = null)
     {
         _mediator = mediator;
         _mapper = mapper;
@@ -63,6 +67,7 @@ public class AgentRunsController : ControllerBase
         _toolDefinitionRepository = toolDefinitionRepository;
         _agentRunRepository = agentRunRepository;
         _authenticationOptions = authenticationOptions ?? new BestAgentAuthenticationOptions();
+        _agentMetrics = agentMetrics ?? NullAgentMetrics.Instance;
     }
 
     [HttpPost]
@@ -344,46 +349,99 @@ public class AgentRunsController : ControllerBase
         Response.Headers["Cache-Control"] = "no-cache";
         Response.Headers["Connection"] = "keep-alive";
 
-        await using var subscription = _eventBus.Subscribe(runId);
-
+        var startedAt = DateTime.UtcNow;
         var replayAfterSeqNo = TryParseLastEventId(Request.Headers["Last-Event-ID"]);
-        long? lastDeliveredSeqNo = replayAfterSeqNo;
+        var replayRequested = replayAfterSeqNo.HasValue;
+        var replayDeliveredCount = 0;
+        var liveDeliveredCount = 0;
+        var completionReason = "completed";
+        _agentMetrics.RecordRunStreamOpened(replayRequested);
+
+        using var activity = AgentTracing.Source.StartActivity(AgentTracing.RunStreamActivityName, ActivityKind.Server);
+        activity?.SetTag("bestagent.run_id", runId);
+        activity?.SetTag("bestagent.stream_replay_requested", replayRequested);
         if (replayAfterSeqNo.HasValue)
         {
-            var replayEvents = await _mediator.Send(
-                new GetAgentRunEventsQuery(runId, replayAfterSeqNo.Value),
-                cancellationToken);
-
-            foreach (var replayEvent in replayEvents)
-            {
-                await WriteSseEventAsync(
-                    replayEvent.EventType,
-                    replayEvent.SeqNo,
-                    BuildStreamEventResponse(replayEvent),
-                    cancellationToken);
-                lastDeliveredSeqNo = replayEvent.SeqNo;
-            }
-
-            if (replayEvents.Count > 0 && IsTerminalEventType(replayEvents[^1].EventType))
-            {
-                return;
-            }
+            activity?.SetTag("bestagent.stream_last_event_id", replayAfterSeqNo.Value);
         }
 
-        await foreach (var evt in subscription.ReadAllAsync(cancellationToken))
+        await using var subscription = _eventBus.Subscribe(runId);
+
+        long? lastDeliveredSeqNo = replayAfterSeqNo;
+        try
         {
-            if (lastDeliveredSeqNo.HasValue
-                && evt.SeqNo.HasValue
-                && evt.SeqNo.Value <= lastDeliveredSeqNo.Value)
+            if (replayAfterSeqNo.HasValue)
             {
-                continue;
+                var replayEvents = await _mediator.Send(
+                    new GetAgentRunEventsQuery(runId, replayAfterSeqNo.Value),
+                    cancellationToken);
+
+                foreach (var replayEvent in replayEvents)
+                {
+                    await WriteSseEventAsync(
+                        replayEvent.EventType,
+                        replayEvent.SeqNo,
+                        BuildStreamEventResponse(replayEvent),
+                        cancellationToken);
+                    replayDeliveredCount++;
+                    lastDeliveredSeqNo = replayEvent.SeqNo;
+                    RecordStreamEvent(activity, replayEvent.EventType, replayEvent.SeqNo, replay: true);
+                }
+
+                if (replayEvents.Count > 0 && IsTerminalEventType(replayEvents[^1].EventType))
+                {
+                    completionReason = "completed_terminal_replay";
+                    return;
+                }
             }
 
-            await WriteSseEventAsync(
-                evt.EventType,
-                evt.SeqNo,
-                BuildStreamEventResponse(evt),
-                cancellationToken);
+            await foreach (var evt in subscription.ReadAllAsync(cancellationToken))
+            {
+                if (lastDeliveredSeqNo.HasValue
+                    && evt.SeqNo.HasValue
+                    && evt.SeqNo.Value <= lastDeliveredSeqNo.Value)
+                {
+                    continue;
+                }
+
+                await WriteSseEventAsync(
+                    evt.EventType,
+                    evt.SeqNo,
+                    BuildStreamEventResponse(evt),
+                    cancellationToken);
+                liveDeliveredCount++;
+                lastDeliveredSeqNo = evt.SeqNo ?? lastDeliveredSeqNo;
+                RecordStreamEvent(activity, evt.EventType, evt.SeqNo, replay: false);
+                if (IsTerminalEventType(evt.EventType))
+                {
+                    completionReason = "completed_terminal_live";
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            completionReason = "cancelled";
+            activity?.SetTag("bestagent.stream_cancelled", true);
+            throw;
+        }
+        catch
+        {
+            completionReason = "failed";
+            activity?.SetTag("bestagent.stream_failed", true);
+            throw;
+        }
+        finally
+        {
+            var deliveredCount = replayDeliveredCount + liveDeliveredCount;
+            activity?.SetTag("bestagent.stream_replay_delivered_count", replayDeliveredCount);
+            activity?.SetTag("bestagent.stream_live_delivered_count", liveDeliveredCount);
+            activity?.SetTag("bestagent.stream_delivered_count", deliveredCount);
+            activity?.SetTag("bestagent.stream_completion_reason", completionReason);
+            _agentMetrics.RecordRunStreamCompleted(
+                completionReason,
+                deliveredCount,
+                DateTime.UtcNow - startedAt);
         }
     }
 
@@ -557,6 +615,19 @@ public class AgentRunsController : ControllerBase
 
         await Response.WriteAsync($"event: {eventType}\ndata: {data}\n\n", cancellationToken);
         await Response.Body.FlushAsync(cancellationToken);
+    }
+
+    private void RecordStreamEvent(Activity? activity, string eventType, long? seqNo, bool replay)
+    {
+        _agentMetrics.RecordRunStreamEvent(eventType, replay);
+        activity?.AddEvent(new ActivityEvent(
+            "bestagent.stream.event",
+            tags: new ActivityTagsCollection
+            {
+                { "bestagent.stream_event_type", eventType },
+                { "bestagent.stream_event_phase", replay ? "replay" : "live" },
+                { "bestagent.stream_event_seq_no", seqNo }
+            }));
     }
 
     private void EnsureAuthenticatedRunAccess()

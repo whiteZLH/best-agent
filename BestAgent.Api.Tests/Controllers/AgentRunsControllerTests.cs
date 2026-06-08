@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Api.Controllers;
 using BestAgent.Api.Infrastructure;
 using BestAgent.Api.Mappings;
+using BestAgent.Api.Tests.Observability;
 using BestAgent.Application.AgentRuns.Commands.CancelAgentRun;
 using BestAgent.Application.AgentRuns.Commands.ApproveAgentRunStep;
 using BestAgent.Application.AgentRuns.Commands.CompleteHumanAgentRun;
@@ -21,6 +23,7 @@ using BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunTree;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Observability;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
 using MediatR;
@@ -1322,6 +1325,75 @@ public class AgentRunsControllerTests
     }
 
     [Fact]
+    public async Task Stream_ShouldRecordMetricsAndTracing_ForReplayAndLiveEvents()
+    {
+        using var collector = new ActivityTestCollector(AgentTracing.SourceName);
+        var now = new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc);
+        var mediator = new FakeMediator((GetAgentRunEventsQuery _) =>
+            (IReadOnlyList<GetAgentRunEventsItem>)
+            [
+                new(
+                    "evt-2",
+                    "run-001",
+                    2,
+                    "step",
+                    "Running",
+                    "{\"stepNo\":2,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"replayed\"}",
+                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null, null),
+                    "published",
+                    now,
+                    0,
+                    now,
+                    now,
+                    now)
+            ]);
+        var eventBus = new RecordingEventBus(
+        [
+            new AgentRunEvent("run-001", "done", new AgentRunEventData(3, "completed", "Completed", "live"), "evt-3", 3, "Completed", now.AddSeconds(1))
+        ]);
+        var metrics = new RecordingAgentMetrics();
+        var controller = new AgentRunsController(mediator, _mapper, eventBus, agentMetrics: metrics)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Response =
+                    {
+                        Body = new MemoryStream()
+                    }
+                }
+            }
+        };
+        controller.Request.Headers["Last-Event-ID"] = "1";
+
+        await controller.Stream("run-001", CancellationToken.None);
+
+        Assert.Equal([true], metrics.OpenedReplayRequested);
+        Assert.Equal(
+        [
+            ("step", true),
+            ("done", false)
+        ],
+            metrics.StreamEvents);
+        var completion = Assert.Single(metrics.StreamCompletions);
+        Assert.Equal("completed_terminal_live", completion.Outcome);
+        Assert.Equal(2, completion.DeliveredCount);
+        Assert.True(completion.Duration >= TimeSpan.Zero);
+
+        var activity = Assert.Single(
+            collector.Activities,
+            value => value.OperationName == AgentTracing.RunStreamActivityName
+                && string.Equals(value.GetTagItem("bestagent.run_id") as string, "run-001", StringComparison.Ordinal));
+        Assert.Equal(true, activity.GetTagItem("bestagent.stream_replay_requested"));
+        Assert.Equal(1, activity.GetTagItem("bestagent.stream_replay_delivered_count"));
+        Assert.Equal(1, activity.GetTagItem("bestagent.stream_live_delivered_count"));
+        Assert.Equal(2, activity.GetTagItem("bestagent.stream_delivered_count"));
+        Assert.Equal("completed_terminal_live", activity.GetTagItem("bestagent.stream_completion_reason"));
+        Assert.Equal(2, activity.Events.Count());
+    }
+
+    [Fact]
     public async Task Stream_ShouldMaskJsonOutputInSsePayload()
     {
         var eventBus = new RecordingEventBus(
@@ -2146,6 +2218,62 @@ public class AgentRunsControllerTests
             where TNotification : INotification
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingAgentMetrics : IAgentMetrics
+    {
+        public List<bool> OpenedReplayRequested { get; } = [];
+
+        public List<(string EventType, bool Replay)> StreamEvents { get; } = [];
+
+        public List<(string Outcome, int DeliveredCount, TimeSpan Duration)> StreamCompletions { get; } = [];
+
+        public void RecordRunCreated(string agentCode, bool isChildRun)
+        {
+        }
+
+        public void RecordRunCompleted(string agentCode, string status, decimal totalCost)
+        {
+        }
+
+        public void RecordToolExecution(string toolName, string status, TimeSpan duration)
+        {
+        }
+
+        public void RecordRetrieval(string status, bool queryRewritten, int sourceCount, int candidateCount, int selectedCount, TimeSpan duration)
+        {
+        }
+
+        public void RecordModelCall(string model, string status, TimeSpan duration, int promptTokens, int completionTokens, int totalTokens, decimal cost)
+        {
+        }
+
+        public void RecordApprovalWaitStarted(string agentCode, string stepType)
+        {
+        }
+
+        public void RecordApprovalWaitCompleted(string agentCode, string stepType, string outcome, TimeSpan duration)
+        {
+        }
+
+        public void RecordApprovalTimedOut(string agentCode, string stepType, TimeSpan duration)
+        {
+        }
+
+        public void RecordRunStreamOpened(bool replayRequested)
+        {
+            OpenedReplayRequested.Add(replayRequested);
+        }
+
+        public void RecordRunStreamEvent(string eventType, bool replay)
+        {
+            StreamEvents.Add((eventType, replay));
+        }
+
+        public void RecordRunStreamCompleted(string outcome, int deliveredCount, TimeSpan duration)
+        {
+            StreamCompletions.Add((outcome, deliveredCount, duration));
         }
     }
 }

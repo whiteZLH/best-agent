@@ -52,4 +52,16 @@ public sealed class NullAgentMetrics : IAgentMetrics
     public void RecordApprovalTimedOut(string agentCode, string stepType, TimeSpan duration)
     {
     }
+
+    public void RecordRunStreamOpened(bool replayRequested)
+    {
+    }
+
+    public void RecordRunStreamEvent(string eventType, bool replay)
+    {
+    }
+
+    public void RecordRunStreamCompleted(string outcome, int deliveredCount, TimeSpan duration)
+    {
+    }
 }

@@ -23,6 +23,10 @@ public sealed class AgentMetrics : IAgentMetrics
     private readonly Counter<long> _approvalWaitStartedCounter;
     private readonly Histogram<double> _approvalWaitDurationMs;
     private readonly Counter<long> _approvalTimeoutCounter;
+    private readonly Counter<long> _runStreamOpenedCounter;
+    private readonly Counter<long> _runStreamEventCounter;
+    private readonly Histogram<double> _runStreamDurationMs;
+    private readonly Histogram<long> _runStreamDeliveredHistogram;
 
     public AgentMetrics()
     {
@@ -42,6 +46,10 @@ public sealed class AgentMetrics : IAgentMetrics
         _approvalWaitStartedCounter = _meter.CreateCounter<long>("bestagent.approval.waits");
         _approvalWaitDurationMs = _meter.CreateHistogram<double>("bestagent.approval.wait.duration.ms", unit: "ms");
         _approvalTimeoutCounter = _meter.CreateCounter<long>("bestagent.approval.timeouts");
+        _runStreamOpenedCounter = _meter.CreateCounter<long>("bestagent.run.stream.opened");
+        _runStreamEventCounter = _meter.CreateCounter<long>("bestagent.run.stream.events");
+        _runStreamDurationMs = _meter.CreateHistogram<double>("bestagent.run.stream.duration.ms", unit: "ms");
+        _runStreamDeliveredHistogram = _meter.CreateHistogram<long>("bestagent.run.stream.delivered_events");
     }
 
     public void RecordRunCreated(string agentCode, bool isChildRun)
@@ -194,6 +202,34 @@ public sealed class AgentMetrics : IAgentMetrics
                 { "step_type", Normalize(stepType) },
                 { "outcome", "timedout" }
             });
+    }
+
+    public void RecordRunStreamOpened(bool replayRequested)
+    {
+        _runStreamOpenedCounter.Add(1, new TagList
+        {
+            { "replay_requested", replayRequested ? "true" : "false" }
+        });
+    }
+
+    public void RecordRunStreamEvent(string eventType, bool replay)
+    {
+        _runStreamEventCounter.Add(1, new TagList
+        {
+            { "event_type", Normalize(eventType) },
+            { "phase", replay ? "replay" : "live" }
+        });
+    }
+
+    public void RecordRunStreamCompleted(string outcome, int deliveredCount, TimeSpan duration)
+    {
+        var tags = new TagList
+        {
+            { "outcome", NormalizeStatus(outcome) }
+        };
+
+        _runStreamDurationMs.Record(ClampDuration(duration), tags);
+        _runStreamDeliveredHistogram.Record(Math.Max(0, deliveredCount), tags);
     }
 
     private static string Normalize(string? value)

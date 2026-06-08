@@ -30,4 +30,10 @@ public interface IAgentMetrics
     void RecordApprovalWaitCompleted(string agentCode, string stepType, string outcome, TimeSpan duration);
 
     void RecordApprovalTimedOut(string agentCode, string stepType, TimeSpan duration);
+
+    void RecordRunStreamOpened(bool replayRequested);
+
+    void RecordRunStreamEvent(string eventType, bool replay);
+
+    void RecordRunStreamCompleted(string outcome, int deliveredCount, TimeSpan duration);
 }
