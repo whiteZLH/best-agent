@@ -23,6 +23,7 @@ using BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunTree;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Models;
 using BestAgent.Application.Observability;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
@@ -601,7 +602,7 @@ public class AgentRunsControllerTests
                         45,
                         165,
                         0.0042m,
-                        "stop",
+                        GenerateTextFinishReasons.Completed,
                         new ModelCallRetrievalInfo(
                             "refund manager approval",
                             true,
@@ -688,7 +689,7 @@ public class AgentRunsControllerTests
         Assert.Equal(45, step.ModelCall.CompletionTokens);
         Assert.Equal(165, step.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, step.ModelCall.Cost);
-        Assert.Equal("stop", step.ModelCall.FinishReason);
+        Assert.Equal(GenerateTextFinishReasons.Completed, step.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", step.ModelCall.ReasoningSummary);
         var stepToolCall = Assert.Single(step.ModelCall.ToolCalls!);
         Assert.Equal("call_123", stepToolCall.Id);
@@ -935,7 +936,7 @@ public class AgentRunsControllerTests
                             45,
                             165,
                             0.0042m,
-                            "stop",
+                            GenerateTextFinishReasons.Completed,
                             new EventModelCallRetrievalInfo(
                                 "refund manager approval",
                                 true,
@@ -994,7 +995,7 @@ public class AgentRunsControllerTests
         Assert.Equal("Completed", evt.Data.Status);
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
-        Assert.Equal("stop", evt.Data.ModelCall.FinishReason);
+        Assert.Equal(GenerateTextFinishReasons.Completed, evt.Data.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", evt.Data.ModelCall.ReasoningSummary);
         var eventToolCall = Assert.Single(evt.Data.ModelCall.ToolCalls!);
         Assert.Equal("call_123", eventToolCall.Id);

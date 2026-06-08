@@ -1,4 +1,5 @@
 using BestAgent.Application;
+using BestAgent.Application.Models;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
@@ -234,7 +235,7 @@ public class GetAgentRunStepsQueryHandlerTests
                     CompletionTokens: 45,
                     TotalTokens: 165,
                     Cost: 0.0042m,
-                    FinishReason: "stop",
+                    FinishReason: GenerateTextFinishReasons.Completed,
                     ReasoningSummary: "Need refund policy confirmation.",
                     ToolCalls:
                     [
@@ -271,7 +272,7 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal(45, item.ModelCall.CompletionTokens);
         Assert.Equal(165, item.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, item.ModelCall.Cost);
-        Assert.Equal("stop", item.ModelCall.FinishReason);
+        Assert.Equal(GenerateTextFinishReasons.Completed, item.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", item.ModelCall.ReasoningSummary);
         var toolCall = Assert.Single(item.ModelCall.ToolCalls!);
         Assert.Equal("call_123", toolCall.Id);

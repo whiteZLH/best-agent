@@ -1,4 +1,5 @@
 using BestAgent.Application;
+using BestAgent.Application.Models;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
@@ -155,7 +156,7 @@ public class GetAgentRunEventsQueryHandlerTests
                 CompletionTokens: 45,
                 TotalTokens: 165,
                 Cost: 0.0042m,
-                FinishReason: "stop",
+                FinishReason: GenerateTextFinishReasons.Completed,
                 ReasoningSummary: "Need refund policy confirmation.",
                 ToolCalls:
                 [
@@ -200,7 +201,7 @@ public class GetAgentRunEventsQueryHandlerTests
         Assert.NotNull(data.ModelCall);
         Assert.Equal("gpt-4o-mini", data.ModelCall!.Model);
         Assert.Equal(120, data.ModelCall.PromptTokens);
-        Assert.Equal("stop", data.ModelCall.FinishReason);
+        Assert.Equal(GenerateTextFinishReasons.Completed, data.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", data.ModelCall.ReasoningSummary);
         var toolCall = Assert.Single(data.ModelCall.ToolCalls!);
         Assert.Equal("call_123", toolCall.Id);

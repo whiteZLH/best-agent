@@ -543,10 +543,26 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
         return finishReason.ValueKind switch
         {
-            JsonValueKind.String => string.IsNullOrWhiteSpace(finishReason.GetString())
-                ? null
-                : finishReason.GetString()!.Trim(),
+            JsonValueKind.String => NormalizeFinishReason(finishReason.GetString()),
             _ => null
+        };
+    }
+
+    private static string? NormalizeFinishReason(string? finishReason)
+    {
+        if (string.IsNullOrWhiteSpace(finishReason))
+        {
+            return null;
+        }
+
+        return finishReason.Trim().ToLowerInvariant() switch
+        {
+            "stop" => GenerateTextFinishReasons.Completed,
+            "tool_calls" => GenerateTextFinishReasons.ToolCall,
+            "function_call" => GenerateTextFinishReasons.ToolCall,
+            "length" => GenerateTextFinishReasons.MaxOutputTokens,
+            "content_filter" => GenerateTextFinishReasons.ContentFiltered,
+            var value => value
         };
     }
 
