@@ -601,6 +601,121 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeNativeSingleToolCallResponse()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finish_reason": "tool_calls",
+                          "message": {
+                            "content": null,
+                            "tool_calls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "weather",
+                                  "arguments": "{\"city\":\"Shanghai\"}"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal("tool_calls", result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        Assert.Equal("weather", document.RootElement.GetProperty("toolName").GetString());
+        Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectMultipleNativeToolCalls()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finish_reason": "tool_calls",
+                          "message": {
+                            "content": null,
+                            "tool_calls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "weather",
+                                  "arguments": "{\"city\":\"Shanghai\"}"
+                                }
+                              },
+                              {
+                                "id": "call_456",
+                                "type": "function",
+                                "function": {
+                                  "name": "calendar",
+                                  "arguments": "{\"date\":\"2026-06-10\"}"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("only one tool call per turn", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldEmitFailedModelCallActivity_WhenGatewayFails()
     {
         using var collector = new ActivityTestCollector(AgentTracing.SourceName);

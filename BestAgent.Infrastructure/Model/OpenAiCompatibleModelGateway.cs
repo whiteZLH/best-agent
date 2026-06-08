@@ -108,12 +108,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             }
 
             using var document = JsonDocument.Parse(body);
-            var output = document.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
             var finishReason = TryGetFinishReason(document.RootElement);
+            var output = ExtractOutput(document.RootElement);
 
             if (string.IsNullOrWhiteSpace(output))
             {
@@ -473,5 +469,91 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 : finishReason.GetString()!.Trim(),
             _ => null
         };
+    }
+
+    private static string? ExtractOutput(JsonElement root)
+    {
+        if (!root.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array
+            || choices.GetArrayLength() == 0)
+        {
+            return null;
+        }
+
+        var firstChoice = choices[0];
+        if (!firstChoice.TryGetProperty("message", out var message)
+            || message.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (TryBuildNativeToolCallDecision(message, out var toolCallDecision))
+        {
+            return toolCallDecision;
+        }
+
+        return message.TryGetProperty("content", out var content)
+            && content.ValueKind == JsonValueKind.String
+            ? content.GetString()
+            : null;
+    }
+
+    private static bool TryBuildNativeToolCallDecision(JsonElement message, out string? toolCallDecision)
+    {
+        toolCallDecision = null;
+        if (!message.TryGetProperty("tool_calls", out var toolCalls)
+            || toolCalls.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var calls = toolCalls.EnumerateArray().ToArray();
+        if (calls.Length == 0)
+        {
+            return false;
+        }
+
+        if (calls.Length > 1)
+        {
+            throw new InvalidOperationException("Model gateway returned multiple native tool calls, but the runtime currently supports only one tool call per turn.");
+        }
+
+        var toolCall = calls[0];
+        var type = toolCall.TryGetProperty("type", out var typeElement)
+            && typeElement.ValueKind == JsonValueKind.String
+            ? typeElement.GetString()
+            : null;
+        if (!string.Equals(type, "function", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Model gateway returned unsupported native tool call type '{type ?? "unknown"}'.");
+        }
+
+        if (!toolCall.TryGetProperty("function", out var function)
+            || function.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException("Model gateway returned a native tool call without a function payload.");
+        }
+
+        var toolName = function.TryGetProperty("name", out var nameElement)
+            && nameElement.ValueKind == JsonValueKind.String
+            ? nameElement.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(toolName))
+        {
+            throw new InvalidOperationException("Model gateway returned a native tool call without a function name.");
+        }
+
+        var toolArguments = function.TryGetProperty("arguments", out var argumentsElement)
+            && argumentsElement.ValueKind == JsonValueKind.String
+            ? argumentsElement.GetString()
+            : null;
+
+        toolCallDecision = JsonSerializer.Serialize(new
+        {
+            action = "tool_call",
+            toolName = toolName.Trim(),
+            toolInput = string.IsNullOrWhiteSpace(toolArguments) ? null : toolArguments.Trim()
+        });
+        return true;
     }
 }
