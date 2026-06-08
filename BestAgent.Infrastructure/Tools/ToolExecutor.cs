@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using BestAgent.Application.Tools;
 using BestAgent.Application.Observability;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BestAgent.Infrastructure.Tools;
 
@@ -11,19 +13,22 @@ public class ToolExecutor : IToolExecutor
     private readonly IToolInputValidator _toolInputValidator;
     private readonly IToolOutputValidator _toolOutputValidator;
     private readonly IAgentMetrics _agentMetrics;
+    private readonly ILogger<ToolExecutor> _logger;
 
     public ToolExecutor(
         IToolResolver toolResolver,
         IHttpToolInvoker httpToolInvoker,
         IToolInputValidator toolInputValidator,
         IToolOutputValidator toolOutputValidator,
-        IAgentMetrics? agentMetrics = null)
+        IAgentMetrics? agentMetrics = null,
+        ILogger<ToolExecutor>? logger = null)
     {
         _toolResolver = toolResolver;
         _httpToolInvoker = httpToolInvoker;
         _toolInputValidator = toolInputValidator;
         _toolOutputValidator = toolOutputValidator;
         _agentMetrics = agentMetrics ?? NullAgentMetrics.Instance;
+        _logger = logger ?? NullLogger<ToolExecutor>.Instance;
     }
 
     public async Task<ToolExecutionResult> ExecuteAsync(
@@ -48,6 +53,11 @@ public class ToolExecutor : IToolExecutor
         activity?.SetTag("bestagent.run_id", context.RunId);
         activity?.SetTag("bestagent.agent_code", context.AgentCode);
         activity?.SetTag("bestagent.execution_kind", resolution.ExecutionKind.ToString());
+        _logger.LogDebug(
+            "Executing tool {ToolName} for run {RunId} with binding {ExecutionKind}",
+            toolName,
+            context.RunId,
+            resolution.ExecutionKind);
         try
         {
             var result = await (resolution.ExecutionKind switch
@@ -80,6 +90,11 @@ public class ToolExecutor : IToolExecutor
             }
 
             activity?.SetStatus(result.IsFailed ? ActivityStatusCode.Error : ActivityStatusCode.Ok);
+            _logger.LogInformation(
+                "Tool {ToolName} finished with status {Status} in {DurationMs}ms",
+                toolName,
+                result.IsPending ? "pending" : result.IsFailed ? "failed" : "completed",
+                (DateTime.UtcNow - startedAt).TotalMilliseconds);
 
             return result;
         }
@@ -90,6 +105,7 @@ public class ToolExecutor : IToolExecutor
             activity?.SetTag("error.type", ex.GetType().Name);
             activity?.SetTag("error.message", ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogWarning(ex, "Tool {ToolName} failed for run {RunId}", toolName, context.RunId);
             throw;
         }
     }

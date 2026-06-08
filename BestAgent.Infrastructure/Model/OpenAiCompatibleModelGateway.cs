@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using BestAgent.Application.Models;
 using BestAgent.Application.Observability;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BestAgent.Infrastructure.Model;
 
@@ -14,12 +16,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
     private readonly IAgentMetrics _agentMetrics;
+    private readonly ILogger<OpenAiCompatibleModelGateway> _logger;
 
-    public OpenAiCompatibleModelGateway(HttpClient httpClient, OpenAiOptions options, IAgentMetrics? agentMetrics = null)
+    public OpenAiCompatibleModelGateway(
+        HttpClient httpClient,
+        OpenAiOptions options,
+        IAgentMetrics? agentMetrics = null,
+        ILogger<OpenAiCompatibleModelGateway>? logger = null)
     {
         _httpClient = httpClient;
         _options = options;
         _agentMetrics = agentMetrics ?? NullAgentMetrics.Instance;
+        _logger = logger ?? NullLogger<OpenAiCompatibleModelGateway>.Instance;
     }
 
     public async Task<GenerateTextResult> GenerateTextAsync(GenerateTextRequest request, CancellationToken cancellationToken)
@@ -55,6 +63,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 messages = BuildMessages(request),
                 temperature = 0.2
             };
+            _logger.LogDebug(
+                "Calling model {Model} with system prompt length {SystemPromptLength} and input length {InputLength}",
+                model,
+                request.SystemPrompt?.Length ?? 0,
+                request.Input?.Length ?? 0);
 
             httpRequest.Content = new StringContent(
                 JsonSerializer.Serialize(payload, JsonOptions),
@@ -110,6 +123,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             activity?.SetTag("bestagent.total_tokens", result.TotalTokens);
             activity?.SetTag("bestagent.cost", (double)result.Cost);
             activity?.SetStatus(ActivityStatusCode.Ok);
+            _logger.LogInformation(
+                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens and cost {Cost}",
+                model,
+                (DateTime.UtcNow - startedAt).TotalMilliseconds,
+                result.TotalTokens,
+                result.Cost);
 
             return result;
         }
@@ -127,6 +146,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             activity?.SetTag("error.type", ex.GetType().Name);
             activity?.SetTag("error.message", ex.Message);
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            _logger.LogWarning(ex, "Model call failed for {Model}", model);
             throw;
         }
     }
