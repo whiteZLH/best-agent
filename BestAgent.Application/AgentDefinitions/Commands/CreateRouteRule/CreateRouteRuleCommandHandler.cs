@@ -1,4 +1,5 @@
 using BestAgent.Application.Exceptions;
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentDefinitions;
 using MediatR;
 
@@ -31,6 +32,7 @@ public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleComm
         var ruleName = request.RuleName.Trim();
         var matchType = request.MatchType.Trim();
         var handoffMode = request.HandoffMode.Trim().ToLowerInvariant();
+        var normalizedMergeStrategy = HandoffPayloadSerializer.NormalizeMergeStrategy(handoffMode, request.MergeStrategy);
         var normalizedMatchExpression = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.MatchExpression, "Match expression");
         var normalizedContextScope = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.ContextScope, "Context scope");
         var normalizedMemoryScope = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.MemoryScope, "Memory scope");
@@ -97,6 +99,7 @@ public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleComm
             MatchType = matchType,
             MatchExpression = normalizedMatchExpression,
             HandoffMode = handoffMode,
+            MergeStrategy = normalizedMergeStrategy,
             ContextScope = normalizedContextScope,
             MemoryScope = normalizedMemoryScope,
             ToolScope = normalizedToolScope,

@@ -30,6 +30,7 @@ public class RouteRuleCommandHandlerTests
                 { "intent": "refund" }
                 """,
                 " Delegate_And_Merge ",
+                " all_results ",
                 """
                 { "mode": "summary_only" }
                 """,
@@ -54,6 +55,7 @@ public class RouteRuleCommandHandlerTests
         Assert.Equal("intent", result.MatchType);
         Assert.Equal("{\"intent\":\"refund\"}", result.MatchExpression);
         Assert.Equal("delegate_and_merge", result.HandoffMode);
+        Assert.Equal("all_results", result.MergeStrategy);
         Assert.Equal("{\"mode\":\"summary_only\"}", result.ContextScope);
         Assert.Equal("{\"mode\":\"read_only\"}", result.MemoryScope);
         Assert.Equal("{\"inherit\":false}", result.ToolScope);
@@ -64,6 +66,7 @@ public class RouteRuleCommandHandlerTests
         Assert.Equal("writer", routeRuleRepository.AddedRouteRule!.SourceAgentCode);
         Assert.Equal("Refund Support", routeRuleRepository.AddedRouteRule.RuleName);
         Assert.Equal("delegate_and_merge", routeRuleRepository.AddedRouteRule.HandoffMode);
+        Assert.Equal("all_results", routeRuleRepository.AddedRouteRule.MergeStrategy);
     }
 
     [Fact]
@@ -83,6 +86,7 @@ public class RouteRuleCommandHandlerTests
                 "intent",
                 null,
                 "route_only",
+                null,
                 null,
                 null,
                 null,
@@ -119,6 +123,7 @@ public class RouteRuleCommandHandlerTests
                 "intent",
                 null,
                 "route_only",
+                null,
                 null,
                 null,
                 null,

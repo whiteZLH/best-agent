@@ -65,6 +65,7 @@ public class ApiMappingProfile : Profile
                 src.MatchType,
                 src.MatchExpression,
                 src.HandoffMode,
+                src.MergeStrategy,
                 src.ContextScope,
                 src.MemoryScope,
                 src.ToolScope,

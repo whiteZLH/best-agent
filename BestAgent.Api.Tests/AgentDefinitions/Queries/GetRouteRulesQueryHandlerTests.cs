@@ -28,6 +28,7 @@ public class GetRouteRulesQueryHandlerTests
 
         Assert.Equal(2, result.Count);
         Assert.Equal("Finance", result[0].RuleName);
+        Assert.Equal("supervisor_summary", result[0].MergeStrategy);
         Assert.Equal("Support", result[1].RuleName);
     }
 
@@ -81,7 +82,8 @@ public class GetRouteRulesQueryHandlerTests
             Priority = priority,
             MatchType = "intent",
             MatchExpression = "{\"intent\":\"support\"}",
-            HandoffMode = "route_only",
+            HandoffMode = "delegate_and_merge",
+            MergeStrategy = "supervisor_summary",
             ContextScope = "{\"mode\":\"summary_only\"}",
             MemoryScope = "{\"mode\":\"read_only\"}",
             ToolScope = "{\"inherit\":false}",

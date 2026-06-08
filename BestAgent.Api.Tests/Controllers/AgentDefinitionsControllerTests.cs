@@ -424,6 +424,7 @@ public class AgentDefinitionsControllerTests
         Assert.Equal("rule-1", response[0].Id);
         Assert.Equal("Support", response[0].RuleName);
         Assert.Equal("delegate_and_wait", response[0].HandoffMode);
+        Assert.Null(response[0].MergeStrategy);
     }
 
     [Fact]
@@ -437,7 +438,8 @@ public class AgentDefinitionsControllerTests
             """
             { "intent": "support" }
             """,
-            "route_only",
+            "delegate_and_merge",
+            "all_results",
             """
             { "mode": "summary_only" }
             """,
@@ -458,7 +460,8 @@ public class AgentDefinitionsControllerTests
             Assert.Equal(2, command.Version);
             Assert.Equal("support_agent", command.TargetAgentCode);
             Assert.Equal("Support", command.RuleName);
-            Assert.Equal("route_only", command.HandoffMode);
+            Assert.Equal("delegate_and_merge", command.HandoffMode);
+            Assert.Equal("all_results", command.MergeStrategy);
             return CreateRouteRuleViewModel("rule-1", command.RuleName, command.Priority);
         });
         var controller = new AgentDefinitionsController(mediator, _mapper);
@@ -471,6 +474,7 @@ public class AgentDefinitionsControllerTests
         Assert.Equal("rule-1", response.Id);
         Assert.Equal("Support", response.RuleName);
         Assert.Equal("delegate_and_wait", response.HandoffMode);
+        Assert.Null(response.MergeStrategy);
     }
 
     private static AgentDefinitionViewModel CreateDefinitionViewModel(
@@ -590,6 +594,7 @@ public class AgentDefinitionsControllerTests
             "intent",
             "{\"intent\":\"support\"}",
             "delegate_and_wait",
+            null,
             "{\"mode\":\"summary_only\"}",
             "{\"mode\":\"read_only\"}",
             "{\"inherit\":false}",

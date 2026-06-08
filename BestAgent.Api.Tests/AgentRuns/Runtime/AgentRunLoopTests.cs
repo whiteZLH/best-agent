@@ -1170,6 +1170,62 @@ public class AgentRunLoopTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldUseRouteRuleMergeStrategy_WhenModelDoesNotProvideOne()
+    {
+        var context = CreateLoopContext();
+        var resolvedDefinition = CreateResolvedDefinition(allowedHandoffs: "[\"support_agent\"]");
+
+        _routeRuleRepository.GetByAgentDefinitionVersionIdAsync("ver-1", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RouteRule
+                {
+                    Id = "rule-merge-1",
+                    AgentDefinitionVersionId = "ver-1",
+                    SourceAgentCode = "writer",
+                    TargetAgentCode = "support_agent",
+                    RuleName = "Support Merge Route",
+                    Priority = 10,
+                    MatchType = "intent",
+                    HandoffMode = "delegate_and_merge",
+                    MergeStrategy = "first_success",
+                    ApprovalRequired = false,
+                    Enabled = true
+                }
+            ]);
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("handoff-decision"));
+        _stepDecisionParser.Parse("handoff-decision")
+            .Returns(StepDecision.Handoff("support_agent", "please handle refund", "delegate_and_merge"));
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None,
+            routeRuleRepository: _routeRuleRepository);
+
+        var waiting = Assert.IsType<AgentLoopWaitingHandoff>(result);
+        Assert.Equal("delegate_and_merge", waiting.HandoffMode);
+        Assert.Equal("first_success", waiting.MergeStrategy);
+
+        var pendingStep = _agentStepRepository.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.AddAsync))
+            .Select(call => call.GetArguments()[0])
+            .OfType<AgentStep>()
+            .Single(step => step.StepType == "handoff");
+        var payload = HandoffPayloadSerializer.Parse(pendingStep.DecisionPayload);
+
+        Assert.Equal("rule-merge-1", payload.RouteRuleId);
+        Assert.Equal("first_success", payload.MergeStrategy);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldAutomaticallyRoute_WhenRoutingPolicyIsHandoffFirst_AndRouteRuleMatchesInput()
     {
         var context = CreateLoopContext();

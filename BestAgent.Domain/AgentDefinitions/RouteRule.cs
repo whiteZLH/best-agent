@@ -13,6 +13,7 @@ public record class RouteRule : AuditedEntity
     public string MatchType { get; init; } = string.Empty;
     public string? MatchExpression { get; init; }
     public string HandoffMode { get; init; } = string.Empty;
+    public string? MergeStrategy { get; init; }
     public string? ContextScope { get; init; }
     public string? MemoryScope { get; init; }
     public string? ToolScope { get; init; }

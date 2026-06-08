@@ -830,6 +830,7 @@ public static class AgentRunLoop
     {
         var handoffWaitToken = Guid.NewGuid().ToString("N");
         var childRunId = Guid.NewGuid().ToString("N");
+        var effectiveMergeStrategy = mergeStrategy ?? matchedRouteRule?.MergeStrategy;
         var pendingStep = CreateStep(
             run.RunId,
             stepNo,
@@ -859,7 +860,7 @@ public static class AgentRunLoop
                     contextOverrides,
                     memoryOverrides,
                     toolOverrides,
-                    mergeStrategy))
+                    effectiveMergeStrategy))
         };
 
         await agentStepRepository.AddAsync(pendingStep, cancellationToken);
@@ -885,7 +886,7 @@ public static class AgentRunLoop
             handoffMode,
             childRunId,
             totalCostDelta,
-            HandoffPayloadSerializer.NormalizeMergeStrategy(handoffMode, mergeStrategy));
+            HandoffPayloadSerializer.NormalizeMergeStrategy(handoffMode, effectiveMergeStrategy));
     }
 
     private static AgentLoopFailed CreateMaxCostExceededResult(int failedAtStepNo, AgentRun run, decimal totalCostDelta)

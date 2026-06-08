@@ -10,6 +10,7 @@ public record GetRouteRuleResponse(
     string MatchType,
     string? MatchExpression,
     string HandoffMode,
+    string? MergeStrategy,
     string? ContextScope,
     string? MemoryScope,
     string? ToolScope,

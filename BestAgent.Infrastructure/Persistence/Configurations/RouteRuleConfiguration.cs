@@ -20,6 +20,7 @@ public class RouteRuleConfiguration : IEntityTypeConfiguration<RouteRule>
         builder.Property(x => x.MatchType).HasColumnName("match_type").HasMaxLength(64);
         builder.Property(x => x.MatchExpression).HasColumnName("match_expression").HasColumnType("jsonb");
         builder.Property(x => x.HandoffMode).HasColumnName("handoff_mode").HasMaxLength(32);
+        builder.Property(x => x.MergeStrategy).HasColumnName("merge_strategy").HasMaxLength(64);
         builder.Property(x => x.ContextScope).HasColumnName("context_scope").HasColumnType("jsonb");
         builder.Property(x => x.MemoryScope).HasColumnName("memory_scope").HasColumnType("jsonb");
         builder.Property(x => x.ToolScope).HasColumnName("tool_scope").HasColumnType("jsonb");
