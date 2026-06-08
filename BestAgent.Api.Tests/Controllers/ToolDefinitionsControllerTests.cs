@@ -138,6 +138,34 @@ public class ToolDefinitionsControllerTests
     }
 
     [Fact]
+    public async Task GetAll_ShouldRejectAuthenticatedRequest_WhenManagementRoleIsNotAllowed()
+    {
+        var mediator = new FakeMediator((GetToolDefinitionsQuery _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when role is forbidden."));
+        var controller = new ToolDefinitionsController(
+            mediator,
+            _mapper,
+            new BestAgentAuthenticationOptions
+            {
+                ManagementAllowedRoles = ["admin", "owner"]
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal("user-1", "Reviewer User", "reviewer")
+                }
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.ForbiddenException>(() =>
+            controller.GetAll(true, CancellationToken.None));
+
+        Assert.Equal("Management access requires one of roles: admin, owner.", ex.Message);
+    }
+
+    [Fact]
     public async Task GetByName_ShouldReturnNotFound_WhenToolDoesNotExist()
     {
         var mediator = new FakeMediator((GetToolDefinitionByNameQuery _) => (ToolDefinitionViewModel?)null);

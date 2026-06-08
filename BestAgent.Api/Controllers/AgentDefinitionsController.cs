@@ -145,14 +145,22 @@ public class AgentDefinitionsController : ControllerBase
 
     private void EnsureAuthenticatedManagementAccess()
     {
-        if (!_authenticationOptions.RequireAuthenticatedManagementAccess)
+        var requiresRole = _authenticationOptions.ManagementAllowedRoles.Length > 0;
+        if (!_authenticationOptions.RequireAuthenticatedManagementAccess && !requiresRole)
         {
             return;
         }
 
         if (HttpContext?.User?.Identity?.IsAuthenticated == true)
         {
-            return;
+            if (!requiresRole
+                || _authenticationOptions.ManagementAllowedRoles.Any(HttpContext.User.IsInRole))
+            {
+                return;
+            }
+
+            throw new ForbiddenException(
+                $"Management access requires one of roles: {string.Join(", ", _authenticationOptions.ManagementAllowedRoles)}.");
         }
 
         throw new UnauthorizedException("Authenticated access is required for this management endpoint.");

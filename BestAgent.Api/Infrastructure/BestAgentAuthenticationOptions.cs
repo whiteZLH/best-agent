@@ -11,6 +11,8 @@ public sealed class BestAgentAuthenticationOptions
     public bool RequireAuthenticatedRunAccess { get; init; }
 
     public bool RequireAuthenticatedManagementAccess { get; init; }
+
+    public string[] ManagementAllowedRoles { get; init; } = [];
 }
 
 public sealed record BestAgentAuthenticatedUser(

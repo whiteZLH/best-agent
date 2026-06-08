@@ -125,6 +125,34 @@ public class AgentDefinitionsControllerTests
     }
 
     [Fact]
+    public async Task GetAll_ShouldRejectAuthenticatedRequest_WhenManagementRoleIsNotAllowed()
+    {
+        var mediator = new FakeMediator((GetAgentDefinitionsQuery _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when role is forbidden."));
+        var controller = new AgentDefinitionsController(
+            mediator,
+            _mapper,
+            new BestAgentAuthenticationOptions
+            {
+                ManagementAllowedRoles = ["admin", "owner"]
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal("user-1", "Reviewer User", "reviewer")
+                }
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.ForbiddenException>(() =>
+            controller.GetAll(CancellationToken.None));
+
+        Assert.Equal("Management access requires one of roles: admin, owner.", ex.Message);
+    }
+
+    [Fact]
     public async Task GetByCode_ShouldReturnNotFound_WhenDefinitionDoesNotExist()
     {
         var mediator = new FakeMediator((GetAgentDefinitionByCodeQuery _) => (AgentDefinitionViewModel?)null);
