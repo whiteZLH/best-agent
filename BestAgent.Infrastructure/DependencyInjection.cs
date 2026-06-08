@@ -44,6 +44,7 @@ public static class DependencyInjection
             FrequencyPenalty = decimal.TryParse(configuration["OpenAI:FrequencyPenalty"], out var frequencyPenalty)
                 ? frequencyPenalty
                 : null,
+            LogitBias = ParseLogitBias(configuration.GetSection("OpenAI:LogitBias")),
             Seed = int.TryParse(configuration["OpenAI:Seed"], out var seed)
                 ? seed
                 : null,
@@ -164,5 +165,27 @@ public static class DependencyInjection
     private static string EnsureTrailingSlash(string value)
     {
         return value.EndsWith("/", StringComparison.Ordinal) ? value : $"{value}/";
+    }
+
+    private static IReadOnlyDictionary<int, int>? ParseLogitBias(IConfigurationSection section)
+    {
+        if (!section.Exists())
+        {
+            return null;
+        }
+
+        var values = new Dictionary<int, int>();
+        foreach (var child in section.GetChildren())
+        {
+            if (!int.TryParse(child.Key, out var tokenId)
+                || !int.TryParse(child.Value, out var bias))
+            {
+                continue;
+            }
+
+            values[tokenId] = bias;
+        }
+
+        return values.Count == 0 ? null : values;
     }
 }

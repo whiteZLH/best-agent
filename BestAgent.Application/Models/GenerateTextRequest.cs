@@ -9,6 +9,7 @@ public record GenerateTextRequest(
     decimal? TopP = null,
     decimal? PresencePenalty = null,
     decimal? FrequencyPenalty = null,
+    IReadOnlyDictionary<int, int>? LogitBias = null,
     int? Seed = null,
     int? TimeoutSeconds = null,
     string? OutputMode = null,
