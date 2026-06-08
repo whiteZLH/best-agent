@@ -44,6 +44,9 @@ public static class DependencyInjection
             FrequencyPenalty = decimal.TryParse(configuration["OpenAI:FrequencyPenalty"], out var frequencyPenalty)
                 ? frequencyPenalty
                 : null,
+            StopSequences = configuration
+                .GetSection("OpenAI:StopSequences")
+                .Get<string[]?>(),
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60

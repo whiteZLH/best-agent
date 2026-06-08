@@ -16,4 +16,5 @@ public record GenerateTextRequest(
     bool? OutputStrict = null,
     IReadOnlyList<GenerateTextToolDefinition>? Tools = null,
     IReadOnlyList<GenerateTextMessage>? Messages = null,
-    string? ToolChoice = null);
+    string? ToolChoice = null,
+    IReadOnlyList<string>? StopSequences = null);

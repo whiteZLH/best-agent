@@ -20,6 +20,8 @@ public class OpenAiOptions
 
     public int TimeoutSeconds { get; init; } = 60;
 
+    public IReadOnlyList<string>? StopSequences { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }

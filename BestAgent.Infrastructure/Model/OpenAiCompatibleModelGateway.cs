@@ -62,6 +62,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
             var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
+            var stopSequences = NormalizeStopSequences(request.StopSequences ?? _options.StopSequences);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -79,12 +80,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 top_p = topP,
                 presence_penalty = presencePenalty,
                 frequency_penalty = frequencyPenalty,
+                stop = stopSequences,
                 response_format = responseFormat,
                 tools,
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, stop sequence count {StopSequenceCount}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -96,6 +98,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 topP,
                 presencePenalty,
                 frequencyPenalty,
+                stopSequences?.Length ?? 0,
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
 
@@ -334,6 +337,23 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return timeoutSeconds;
+    }
+
+    private static string[]? NormalizeStopSequences(IReadOnlyList<string>? stopSequences)
+    {
+        if (stopSequences is null || stopSequences.Count == 0)
+        {
+            return null;
+        }
+
+        var normalized = stopSequences
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .Take(4)
+            .ToArray();
+
+        return normalized.Length == 0 ? null : normalized;
     }
 
     private static object? BuildResponseFormat(
