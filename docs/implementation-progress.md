@@ -25,6 +25,7 @@
 - `GenerateTextRequest` 当前也已开始支持最小 `Tools` 输入模型；`AgentRunLoop` 会按版本级 `AllowedTools` 解析 enabled `ToolDefinition`，并向 OpenAI 兼容请求下发最小 `tools.function.parameters`
 - `GenerateTextRequest` 当前也已开始支持最小 `Messages` 输入模型；显式传入消息列表时，OpenAI 兼容请求会优先按多消息形式下发
 - OpenAI 兼容模型网关当前也已开始支持消费原生单个 `tool_calls` 响应，并归一回现有 `{"action":"tool_call",...}` JSON 决策输出
+- `GenerateTextRequest` 当前也已开始支持最小 `ToolChoice`；存在工具定义时，`AgentRunLoop` 会默认向 OpenAI 兼容请求下发 `tool_choice = auto`
 - `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook、本地 handler 与 `inline_result` 固定结果执行）
 - 已补上独立 `ToolResolver`，将工具绑定解析从 `ToolExecutor` 中拆出
 - 工具运行时输入 schema 校验 MVP：执行前按 `ToolDefinition.InputSchema` 校验 `type`、`required`、`properties`、`enum` 以及 `additionalProperties` 的布尔/对象形态

@@ -64,6 +64,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
             var responseFormat = BuildResponseFormat(request.OutputMode, request.OutputSchema);
             var tools = BuildTools(request.Tools);
+            var toolChoice = BuildToolChoice(request.ToolChoice, request.Tools);
 
             var payload = new
             {
@@ -75,14 +76,16 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 presence_penalty = presencePenalty,
                 frequency_penalty = frequencyPenalty,
                 response_format = responseFormat,
-                tools
+                tools,
+                tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
                 tools?.Length ?? 0,
+                NormalizeToolChoice(request.ToolChoice, request.Tools),
                 CountMessages(request),
                 temperature,
                 maxOutputTokens,
@@ -429,6 +432,68 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         {
             throw new InvalidOperationException($"Tool input schema for '{tool.Name}' must be valid JSON.", ex);
         }
+    }
+
+    private static object? BuildToolChoice(string? toolChoice, IReadOnlyList<GenerateTextToolDefinition>? tools)
+    {
+        var normalizedToolChoice = NormalizeToolChoice(toolChoice, tools);
+        if (string.IsNullOrWhiteSpace(normalizedToolChoice))
+        {
+            return null;
+        }
+
+        return normalizedToolChoice switch
+        {
+            "auto" => "auto",
+            "none" => "none",
+            "required" => "required",
+            _ => new
+            {
+                type = "function",
+                function = new
+                {
+                    name = normalizedToolChoice
+                }
+            }
+        };
+    }
+
+    private static string? NormalizeToolChoice(string? toolChoice, IReadOnlyList<GenerateTextToolDefinition>? tools)
+    {
+        if (string.IsNullOrWhiteSpace(toolChoice))
+        {
+            return null;
+        }
+
+        var normalized = toolChoice.Trim();
+        if (string.Equals(normalized, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "auto";
+        }
+
+        if (string.Equals(normalized, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            return "none";
+        }
+
+        if (string.Equals(normalized, "required", StringComparison.OrdinalIgnoreCase))
+        {
+            return "required";
+        }
+
+        if (tools is null || tools.Count == 0)
+        {
+            throw new InvalidOperationException("Model tool choice requires at least one declared tool.");
+        }
+
+        var matchedTool = tools.FirstOrDefault(tool =>
+            string.Equals(tool.Name, normalized, StringComparison.OrdinalIgnoreCase));
+        if (matchedTool is null || string.IsNullOrWhiteSpace(matchedTool.Name))
+        {
+            throw new InvalidOperationException($"Model tool choice '{toolChoice}' does not match any declared tool.");
+        }
+
+        return matchedTool.Name.Trim();
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)

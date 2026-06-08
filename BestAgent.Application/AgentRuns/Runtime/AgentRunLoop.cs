@@ -104,7 +104,8 @@ public static class AgentRunLoop
                         ? null
                         : GenerateTextOutputModes.JsonSchema,
                     OutputSchema: version.OutputSchema,
-                    Tools: modelTools),
+                    Tools: modelTools,
+                    ToolChoice: modelTools.Count > 0 ? "auto" : null),
                 cancellationToken);
             var endedAt = DateTime.UtcNow;
             totalCostDelta += NormalizeCost(modelResponse.Cost);

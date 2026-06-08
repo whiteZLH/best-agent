@@ -189,6 +189,7 @@ public class AgentRunLoopTests
             Arg.Is<GenerateTextRequest>(request =>
                 request.Tools != null
                 && request.Tools.Count == 1
+                && request.ToolChoice == "auto"
                 && request.Tools[0].Name == "weather"
                 && request.Tools[0].Description == "Get the weather for a city"
                 && request.Tools[0].InputSchema == "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}"),
