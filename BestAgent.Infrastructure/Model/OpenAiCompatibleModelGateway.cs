@@ -56,16 +56,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+            var temperature = NormalizeTemperature(request.Temperature ?? _options.Temperature);
 
             var payload = new
             {
                 model,
                 messages = BuildMessages(request),
-                temperature = 0.2
+                temperature
             };
             _logger.LogDebug(
-                "Calling model {Model} with system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with temperature {Temperature}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
+                temperature,
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
 
@@ -194,6 +196,16 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             : (completionTokens / 1_000_000m) * _options.CompletionTokenPricePerMillion;
 
         return promptCost + completionCost;
+    }
+
+    private static decimal NormalizeTemperature(decimal temperature)
+    {
+        return temperature switch
+        {
+            < 0m => 0m,
+            > 2m => 2m,
+            _ => temperature
+        };
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)

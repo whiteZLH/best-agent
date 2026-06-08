@@ -8,6 +8,8 @@ public class OpenAiOptions
 
     public string Model { get; init; } = string.Empty;
 
+    public decimal Temperature { get; init; } = 0.2m;
+
     public int TimeoutSeconds { get; init; } = 60;
 
     public decimal PromptTokenPricePerMillion { get; init; }

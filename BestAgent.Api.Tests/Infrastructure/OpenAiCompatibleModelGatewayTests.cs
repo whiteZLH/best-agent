@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using BestAgent.Api.Tests.Observability;
 using BestAgent.Application.Models;
 using BestAgent.Application.Observability;
@@ -15,6 +16,7 @@ public class OpenAiCompatibleModelGatewayTests
     public async Task GenerateTextAsync_ShouldEmitCompletedModelCallActivity()
     {
         using var collector = new ActivityTestCollector(AgentTracing.SourceName);
+        JsonElement? capturedPayload = null;
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
             new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -37,6 +39,10 @@ public class OpenAiCompatibleModelGatewayTests
                     """,
                     Encoding.UTF8,
                     "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
             }))
         {
             BaseAddress = new Uri("https://example.com/v1/")
@@ -57,10 +63,59 @@ public class OpenAiCompatibleModelGatewayTests
             CancellationToken.None);
 
         Assert.Equal("{\"action\":\"respond\",\"response\":\"hello\"}", result.Output);
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal(0.2m, capturedPayload.Value.GetProperty("temperature").GetDecimal());
         var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ModelCallActivityName);
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
         Assert.Equal(18, activity.GetTagItem("bestagent.total_tokens"));
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldPreferRequestTemperatureOverConfiguredDefault()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                Temperature = 0.1m
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello", 1.4m),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal(1.4m, capturedPayload.Value.GetProperty("temperature").GetDecimal());
     }
 
     [Fact]
@@ -98,15 +153,30 @@ public class OpenAiCompatibleModelGatewayTests
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+        private readonly Func<HttpRequestMessage, Task>? _beforeResponseAsync;
 
-        public StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handler)
+        public StubHttpMessageHandler(
+            Func<HttpRequestMessage, HttpResponseMessage> handler,
+            Func<HttpRequestMessage, Task>? beforeResponseAsync = null)
         {
             _handler = handler;
+            _beforeResponseAsync = beforeResponseAsync;
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            return Task.FromResult(_handler(request));
+            if (_beforeResponseAsync is not null)
+            {
+                await _beforeResponseAsync(request);
+            }
+
+            return _handler(request);
         }
+    }
+
+    private static async Task<JsonElement> ReadJsonAsync(HttpContent content)
+    {
+        using var document = JsonDocument.Parse(await content.ReadAsStringAsync());
+        return document.RootElement.Clone();
     }
 }

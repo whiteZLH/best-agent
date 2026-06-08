@@ -29,6 +29,9 @@ public static class DependencyInjection
             BaseUrl = configuration["OpenAI:BaseUrl"] ?? string.Empty,
             ApiKey = configuration["OpenAI:ApiKey"] ?? string.Empty,
             Model = configuration["OpenAI:Model"] ?? string.Empty,
+            Temperature = decimal.TryParse(configuration["OpenAI:Temperature"], out var openAiTemperature)
+                ? openAiTemperature
+                : 0.2m,
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60
