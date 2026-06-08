@@ -54,6 +54,9 @@ public static class DependencyInjection
             ParallelToolCalls = bool.TryParse(configuration["OpenAI:ParallelToolCalls"], out var parallelToolCalls)
                 ? parallelToolCalls
                 : null,
+            ReasoningEffort = string.IsNullOrWhiteSpace(configuration["OpenAI:ReasoningEffort"])
+                ? null
+                : configuration["OpenAI:ReasoningEffort"]!.Trim(),
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60

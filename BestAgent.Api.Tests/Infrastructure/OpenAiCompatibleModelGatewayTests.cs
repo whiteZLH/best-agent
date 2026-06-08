@@ -87,6 +87,8 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal(JsonValueKind.Null, toolsElement.ValueKind);
         Assert.True(capturedPayload.Value.TryGetProperty("tool_choice", out var toolChoiceElement));
         Assert.Equal(JsonValueKind.Null, toolChoiceElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("reasoning_effort", out var reasoningEffortElement));
+        Assert.Equal(JsonValueKind.Null, reasoningEffortElement.ValueKind);
         var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ModelCallActivityName);
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
@@ -546,6 +548,149 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.True(capturedPayload.HasValue);
         var stop = capturedPayload.Value.GetProperty("stop").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray();
         Assert.Equal(["DONE", "STOP", "TRIMMED"], stop);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldPreferRequestReasoningEffortOverConfiguredDefault()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                ReasoningEffort = GenerateTextReasoningEfforts.Low
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                ReasoningEffort: "HIGH"),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal("high", capturedPayload.Value.GetProperty("reasoning_effort").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldUseConfiguredReasoningEffort_WhenRequestDoesNotOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                ReasoningEffort = GenerateTextReasoningEfforts.Minimal
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal("minimal", capturedPayload.Value.GetProperty("reasoning_effort").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectUnsupportedReasoningEffort()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    ReasoningEffort: "turbo"),
+                CancellationToken.None));
+
+        Assert.Contains("reasoning effort 'turbo' is not supported", exception.Message);
     }
 
     [Fact]

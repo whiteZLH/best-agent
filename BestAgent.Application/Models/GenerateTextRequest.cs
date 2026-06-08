@@ -20,4 +20,5 @@ public record GenerateTextRequest(
     IReadOnlyList<GenerateTextMessage>? Messages = null,
     string? ToolChoice = null,
     IReadOnlyList<string>? StopSequences = null,
-    bool? ParallelToolCalls = null);
+    bool? ParallelToolCalls = null,
+    string? ReasoningEffort = null);

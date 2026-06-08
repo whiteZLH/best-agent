@@ -28,6 +28,8 @@ public class OpenAiOptions
 
     public bool? ParallelToolCalls { get; init; }
 
+    public string? ReasoningEffort { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }
