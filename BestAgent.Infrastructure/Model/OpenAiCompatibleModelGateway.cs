@@ -582,12 +582,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return null;
         }
 
-        if (TryCollectReasoningText(message, "reasoning_summary", out var reasoningSummary))
+        if (TryCollectText(message, "reasoning_summary", out var reasoningSummary))
         {
             return reasoningSummary;
         }
 
-        return TryCollectReasoningText(message, "reasoning", out var reasoning)
+        return TryCollectText(message, "reasoning", out var reasoning)
             ? reasoning
             : null;
     }
@@ -682,9 +682,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return toolCallDecision;
         }
 
-        return message.TryGetProperty("content", out var content)
-            && content.ValueKind == JsonValueKind.String
-            ? content.GetString()
+        return TryCollectText(message, "content", out var contentText)
+            ? contentText
             : null;
     }
 
@@ -714,9 +713,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return true;
     }
 
-    private static bool TryCollectReasoningText(JsonElement parent, string propertyName, out string? reasoningText)
+    private static bool TryCollectText(JsonElement parent, string propertyName, out string? text)
     {
-        reasoningText = null;
+        text = null;
         if (!parent.TryGetProperty(propertyName, out var value))
         {
             return false;
@@ -729,7 +728,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return false;
         }
 
-        reasoningText = string.Join("\n", segments);
+        text = string.Join("\n", segments);
         return true;
     }
 

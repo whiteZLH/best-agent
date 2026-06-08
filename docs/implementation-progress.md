@@ -24,6 +24,7 @@
 - OpenAI 兼容模型网关当前也已开始把 OpenAI 兼容响应中的 `finish_reason` 规范化为平台侧最小枚举（如 `completed` / `tool_call` / `max_output_tokens` / `content_filtered`），并写入 `GenerateTextResult` 与 `model_call` 审计 payload
 - `GenerateTextRequest` 当前也已开始支持最小 `Tools` 输入模型；`AgentRunLoop` 会按版本级 `AllowedTools` 解析 enabled `ToolDefinition`，并向 OpenAI 兼容请求下发最小 `tools.function.parameters`
 - `GenerateTextRequest` 当前也已开始支持最小 `Messages` 输入模型；显式传入消息列表时，OpenAI 兼容请求会优先按多消息形式下发
+- OpenAI 兼容模型网关当前也已开始兼容响应中 `message.content` 的字符串、数组文本片段与最小对象文本形态，不再只依赖单个字符串 `content`
 - OpenAI 兼容模型网关当前也已开始支持消费原生单个 `tool_calls` 响应，并归一回现有 `{"action":"tool_call",...}` JSON 决策输出
 - `GenerateTextRequest` 当前也已开始支持最小 `ToolChoice`；存在工具定义时，`AgentRunLoop` 会默认向 OpenAI 兼容请求下发 `tool_choice = auto`
 - OpenAI 兼容模型网关当前也已开始把响应中的最小 `reasoning_summary/reasoning` 归一到 `GenerateTextResult` 与 `model_call` 审计 payload
