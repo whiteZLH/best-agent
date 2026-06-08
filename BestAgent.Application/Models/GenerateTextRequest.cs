@@ -12,4 +12,5 @@ public record GenerateTextRequest(
     int? TimeoutSeconds = null,
     string? OutputMode = null,
     string? OutputSchema = null,
-    IReadOnlyList<GenerateTextToolDefinition>? Tools = null);
+    IReadOnlyList<GenerateTextToolDefinition>? Tools = null,
+    IReadOnlyList<GenerateTextMessage>? Messages = null);

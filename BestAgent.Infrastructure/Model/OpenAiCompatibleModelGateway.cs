@@ -78,11 +78,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 tools
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
                 tools?.Length ?? 0,
+                CountMessages(request),
                 temperature,
                 maxOutputTokens,
                 topP,
@@ -189,6 +190,25 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static object[] BuildMessages(GenerateTextRequest request)
     {
+        if (request.Messages is { Count: > 0 })
+        {
+            var messages = request.Messages
+                .Where(message =>
+                    !string.IsNullOrWhiteSpace(message.Role)
+                    && !string.IsNullOrWhiteSpace(message.Content))
+                .Select(message => new
+                {
+                    role = message.Role.Trim(),
+                    content = message.Content.Trim()
+                })
+                .Cast<object>()
+                .ToArray();
+            if (messages.Length > 0)
+            {
+                return messages;
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(request.SystemPrompt))
         {
             return
@@ -202,6 +222,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             new { role = "system", content = request.SystemPrompt },
             new { role = "user", content = request.Input }
         ];
+    }
+
+    private static int CountMessages(GenerateTextRequest request)
+    {
+        if (request.Messages is { Count: > 0 })
+        {
+            return request.Messages.Count(message =>
+                !string.IsNullOrWhiteSpace(message.Role)
+                && !string.IsNullOrWhiteSpace(message.Content));
+        }
+
+        return string.IsNullOrWhiteSpace(request.SystemPrompt) ? 1 : 2;
     }
 
     private static string Trim(string value, int maxLength)

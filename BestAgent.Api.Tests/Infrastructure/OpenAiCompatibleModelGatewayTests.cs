@@ -228,6 +228,68 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldPreferExplicitMessagesOverSystemPromptAndInput()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "Ignored system prompt",
+                "Ignored input",
+                Messages:
+                [
+                    new GenerateTextMessage("system", "You are helpful."),
+                    new GenerateTextMessage("user", "Hello"),
+                    new GenerateTextMessage("assistant", "Hi, how can I help?")
+                ]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var messages = capturedPayload.Value.GetProperty("messages").EnumerateArray().ToArray();
+        Assert.Equal(3, messages.Length);
+        Assert.Equal("system", messages[0].GetProperty("role").GetString());
+        Assert.Equal("You are helpful.", messages[0].GetProperty("content").GetString());
+        Assert.Equal("user", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Hello", messages[1].GetProperty("content").GetString());
+        Assert.Equal("assistant", messages[2].GetProperty("role").GetString());
+        Assert.Equal("Hi, how can I help?", messages[2].GetProperty("content").GetString());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldPreferRequestPresencePenaltyOverConfiguredDefault()
     {
         JsonElement? capturedPayload = null;
