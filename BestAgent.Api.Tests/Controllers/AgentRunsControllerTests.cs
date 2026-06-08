@@ -689,6 +689,12 @@ public class AgentRunsControllerTests
                                 ["score=3; source=faq/doc-1#1; chunk=1"])),
                         null,
                         null,
+                        new EventToolInvocationInfo(
+                            "invocation-1",
+                            "weather",
+                            "async",
+                            "Pending",
+                            "wait-1"),
                         new EventApprovalInfo(
                             "approval",
                             "issue_refund",
@@ -723,6 +729,8 @@ public class AgentRunsControllerTests
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
         Assert.Equal("refund manager approval", evt.Data.ModelCall.Retrieval!.QueryText);
+        Assert.Equal("invocation-1", evt.Data.ToolInvocation!.InvocationId);
+        Assert.Equal("wait-1", evt.Data.ToolInvocation.CallbackToken);
         Assert.Equal("issue_refund", evt.Data.Approval!.RequestedAction);
         Assert.Equal("Need manager approval.", evt.Data.Approval.Comment);
         Assert.Equal("pending", evt.PublishStatus);
@@ -1131,8 +1139,8 @@ public class AgentRunsControllerTests
         using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
 
-        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
-        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
+        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"toolInvocation\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
+        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"toolInvocation\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
     }
 
     [Fact]
@@ -1375,6 +1383,62 @@ public class AgentRunsControllerTests
         Assert.Equal("issue_refund", payload.Data.Approval!.RequestedAction);
         Assert.Equal("{\"token\":\"***\"}", payload.Data.Approval.RequestPayload);
         Assert.Equal("Need manager approval.", payload.Data.Approval.Comment);
+    }
+
+    [Fact]
+    public async Task Stream_ShouldIncludeStructuredToolInvocationData_ForLiveEvents()
+    {
+        var toolInvocationPayload = ToolInvocationEventPayloadSerializer.Create(
+            "invocation-1",
+            "weather",
+            "async",
+            "Pending",
+            "wait-1");
+        var eventBus = new RecordingEventBus(
+        [
+            new AgentRunEvent(
+                "run-001",
+                "waiting",
+                new AgentRunEventData(
+                    2,
+                    "tool_call",
+                    "Pending",
+                    ToolInvocation: toolInvocationPayload),
+                "evt-2",
+                2,
+                "WaitingTool",
+                new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc))
+        ]);
+        var controller = new AgentRunsController(new FakeMediator((CreateAgentRunCommand _) => throw new NotSupportedException()), _mapper, eventBus)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Response =
+                    {
+                        Body = new MemoryStream()
+                    }
+                }
+            }
+        };
+
+        await controller.Stream("run-001", CancellationToken.None);
+
+        controller.Response.Body.Position = 0;
+        using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        var dataLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.StartsWith("data: ", StringComparison.Ordinal));
+        var payload = JsonSerializer.Deserialize<StreamAgentRunEventResponse>(
+            dataLine["data: ".Length..],
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(payload);
+        Assert.Equal("waiting", payload!.EventType);
+        Assert.Equal("invocation-1", payload.Data.ToolInvocation!.InvocationId);
+        Assert.Equal("weather", payload.Data.ToolInvocation.ToolName);
+        Assert.Equal("wait-1", payload.Data.ToolInvocation.CallbackToken);
     }
 
     [Fact]

@@ -12,6 +12,7 @@ public record EventDataInfo(
     EventModelCallInfo? ModelCall,
     EventModelFailureInfo? ModelFailure,
     EventToolFailureInfo? ToolFailure,
+    EventToolInvocationInfo? ToolInvocation = null,
     EventApprovalInfo? Approval = null,
     EventHandoffInfo? Handoff = null,
     EventHumanWaitInfo? HumanWait = null)
@@ -82,9 +83,25 @@ public record EventDataInfo(
                         ? null
                         : new EventToolFailureCompensationInfo(toolFailure.Compensation.Mode))
                 : null,
+            MapToolInvocation(data.ToolInvocation),
             MapApproval(data.DecisionPayload),
             MapHandoff(data.DecisionPayload),
             MapHumanWait(data.DecisionPayload));
+    }
+
+    private static EventToolInvocationInfo? MapToolInvocation(string? toolInvocationPayload)
+    {
+        if (!ToolInvocationEventPayloadSerializer.TryParse(toolInvocationPayload, out var payload))
+        {
+            return null;
+        }
+
+        return new EventToolInvocationInfo(
+            payload!.InvocationId,
+            payload.ToolName,
+            payload.Mode,
+            payload.Status,
+            payload.CallbackToken);
     }
 
     private static EventApprovalInfo? MapApproval(string? decisionPayload)
@@ -193,6 +210,13 @@ public record EventToolFailureInfo(
 
 public record EventToolFailureCompensationInfo(
     string Mode);
+
+public record EventToolInvocationInfo(
+    string InvocationId,
+    string ToolName,
+    string Mode,
+    string Status,
+    string CallbackToken);
 
 public record EventApprovalInfo(
     string WaitType,

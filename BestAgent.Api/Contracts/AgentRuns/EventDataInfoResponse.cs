@@ -9,6 +9,7 @@ public record EventDataInfoResponse(
     EventModelCallInfoResponse? ModelCall,
     EventModelFailureInfoResponse? ModelFailure,
     EventToolFailureInfoResponse? ToolFailure,
+    EventToolInvocationInfoResponse? ToolInvocation = null,
     EventApprovalInfoResponse? Approval = null,
     EventHandoffInfoResponse? Handoff = null,
     EventHumanWaitInfoResponse? HumanWait = null);
@@ -42,6 +43,13 @@ public record EventToolFailureInfoResponse(
 
 public record EventToolFailureCompensationInfoResponse(
     string Mode);
+
+public record EventToolInvocationInfoResponse(
+    string InvocationId,
+    string ToolName,
+    string Mode,
+    string Status,
+    string CallbackToken);
 
 public record EventApprovalInfoResponse(
     string WaitType,

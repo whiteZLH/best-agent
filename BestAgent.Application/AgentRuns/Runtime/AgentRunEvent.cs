@@ -16,4 +16,5 @@ public record AgentRunEventData(
     string? Output = null,
     string? Error = null,
     string? ModelCall = null,
-    string? DecisionPayload = null);
+    string? DecisionPayload = null,
+    string? ToolInvocation = null);

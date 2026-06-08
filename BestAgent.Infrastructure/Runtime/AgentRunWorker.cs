@@ -1630,7 +1630,16 @@ public class AgentRunWorker : BackgroundService
                     agentRun.RunId,
                     "waiting",
                     "WaitingTool",
-                    new AgentRunEventData(suspended.SuspendedAtStepNo, "tool_call", "Pending"),
+                    new AgentRunEventData(
+                        suspended.SuspendedAtStepNo,
+                        "tool_call",
+                        "Pending",
+                        ToolInvocation: ToolInvocationEventPayloadSerializer.Create(
+                            suspended.InvocationId,
+                            suspended.ToolName,
+                            "async",
+                            "Pending",
+                            suspended.WaitToken)),
                     cancellationToken);
                 break;
 

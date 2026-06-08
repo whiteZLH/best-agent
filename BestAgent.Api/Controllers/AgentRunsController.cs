@@ -454,6 +454,14 @@ public class AgentRunsController : ControllerBase
                         ? null
                         : new EventToolFailureCompensationInfoResponse(
                             resolvedData.ToolFailure.Compensation.Mode)),
+            resolvedData.ToolInvocation is null
+                ? null
+                : new EventToolInvocationInfoResponse(
+                    resolvedData.ToolInvocation.InvocationId,
+                    resolvedData.ToolInvocation.ToolName,
+                    resolvedData.ToolInvocation.Mode,
+                    resolvedData.ToolInvocation.Status,
+                    resolvedData.ToolInvocation.CallbackToken),
             resolvedData.Approval is null
                 ? null
                 : new EventApprovalInfoResponse(

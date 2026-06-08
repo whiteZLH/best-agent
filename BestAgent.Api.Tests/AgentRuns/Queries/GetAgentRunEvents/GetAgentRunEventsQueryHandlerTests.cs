@@ -22,6 +22,13 @@ public class GetAgentRunEventsQueryHandlerTests
         await using var serviceProvider = services.BuildServiceProvider();
         var mediator = serviceProvider.GetRequiredService<IMediator>();
         var now = new DateTime(2026, 6, 6, 10, 0, 0, DateTimeKind.Utc);
+        var toolInvocationPayload = ToolInvocationEventPayloadSerializer.Create(
+            "invocation-1",
+            "weather",
+            "async",
+            "Pending",
+            "wait-1");
+        var escapedToolInvocationPayload = JsonSerializer.Serialize(toolInvocationPayload);
 
         outboxRepository.ListByRunIdAsync("run-1", 1, Arg.Any<CancellationToken>())
             .Returns(
@@ -33,7 +40,7 @@ public class GetAgentRunEventsQueryHandlerTests
                     SeqNo = 1,
                     EventType = "waiting",
                     RunStatus = "WaitingTool",
-                    Payload = "{\"stepNo\":4}",
+                    Payload = $$"""{"stepNo":4,"stepType":"tool_call","status":"Pending","toolInvocation":{{escapedToolInvocationPayload}}}""",
                     PublishStatus = "pending",
                     OccurredAt = now,
                     CreateTime = now,
@@ -68,6 +75,10 @@ public class GetAgentRunEventsQueryHandlerTests
                 Assert.Equal("WaitingTool", first.RunStatus);
                 Assert.NotNull(first.Data);
                 Assert.Equal(4, first.Data!.StepNo);
+                Assert.NotNull(first.Data.ToolInvocation);
+                Assert.Equal("invocation-1", first.Data.ToolInvocation!.InvocationId);
+                Assert.Equal("weather", first.Data.ToolInvocation.ToolName);
+                Assert.Equal("wait-1", first.Data.ToolInvocation.CallbackToken);
                 Assert.Equal("pending", first.PublishStatus);
             },
             second =>
