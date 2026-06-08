@@ -15,4 +15,5 @@ public record AgentRunEventData(
     string Status,
     string? Output = null,
     string? Error = null,
-    string? ModelCall = null);
+    string? ModelCall = null,
+    string? DecisionPayload = null);

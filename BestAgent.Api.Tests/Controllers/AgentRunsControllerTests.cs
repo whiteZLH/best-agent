@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentRuns;
 using BestAgent.Api.Controllers;
@@ -687,7 +688,15 @@ public class AgentRunsControllerTests
                                 ["faq/doc-1#1"],
                                 ["score=3; source=faq/doc-1#1; chunk=1"])),
                         null,
-                        null),
+                        null,
+                        new EventApprovalInfo(
+                            "approval",
+                            "issue_refund",
+                            "{\"amount\":120}",
+                            "external_write",
+                            "Pending",
+                            "Need manager approval.",
+                            null)),
                     "pending",
                     null,
                     0,
@@ -714,6 +723,8 @@ public class AgentRunsControllerTests
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
         Assert.Equal("refund manager approval", evt.Data.ModelCall.Retrieval!.QueryText);
+        Assert.Equal("issue_refund", evt.Data.Approval!.RequestedAction);
+        Assert.Equal("Need manager approval.", evt.Data.Approval.Comment);
         Assert.Equal("pending", evt.PublishStatus);
     }
 
@@ -1120,8 +1131,8 @@ public class AgentRunsControllerTests
         using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
 
-        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null}}\n\n", body);
-        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null}}\n\n", body);
+        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
+        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
     }
 
     [Fact]
@@ -1307,6 +1318,63 @@ public class AgentRunsControllerTests
         var body = await reader.ReadToEndAsync();
 
         Assert.Contains("id: 1\nevent: done\ndata:", body);
+    }
+
+    [Fact]
+    public async Task Stream_ShouldIncludeStructuredApprovalData_ForLiveEvents()
+    {
+        var approvalPayload = ApprovalPayloadSerializer.Serialize(
+            ApprovalPayloadSerializer.CreatePending(
+                "issue_refund",
+                "{\"token\":\"secret-1\"}",
+                "external_write",
+                "Need manager approval."));
+        var eventBus = new RecordingEventBus(
+        [
+            new AgentRunEvent(
+                "run-001",
+                "waiting_approval",
+                new AgentRunEventData(
+                    2,
+                    "approval_request",
+                    "Pending",
+                    "issue_refund",
+                    DecisionPayload: approvalPayload),
+                "evt-1",
+                1,
+                "WaitingApproval",
+                new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc))
+        ]);
+        var controller = new AgentRunsController(new FakeMediator((CreateAgentRunCommand _) => throw new NotSupportedException()), _mapper, eventBus)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Response =
+                    {
+                        Body = new MemoryStream()
+                    }
+                }
+            }
+        };
+
+        await controller.Stream("run-001", CancellationToken.None);
+
+        controller.Response.Body.Position = 0;
+        using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        var dataLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.StartsWith("data: ", StringComparison.Ordinal));
+        var payload = JsonSerializer.Deserialize<StreamAgentRunEventResponse>(
+            dataLine["data: ".Length..],
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(payload);
+        Assert.Equal("waiting_approval", payload!.EventType);
+        Assert.Equal("issue_refund", payload.Data.Approval!.RequestedAction);
+        Assert.Equal("{\"token\":\"***\"}", payload.Data.Approval.RequestPayload);
+        Assert.Equal("Need manager approval.", payload.Data.Approval.Comment);
     }
 
     [Fact]

@@ -358,7 +358,12 @@ public class RequestHumanAgentRunCommandHandler : IRequestHandler<RequestHumanAg
         string? comment,
         CancellationToken cancellationToken)
     {
-        var data = new AgentRunEventData(humanStep.StepNo, humanStep.StepType, "Pending", comment);
+        var data = new AgentRunEventData(
+            humanStep.StepNo,
+            humanStep.StepType,
+            "Pending",
+            comment,
+            DecisionPayload: humanStep.DecisionPayload);
         var now = DateTime.UtcNow;
         var nextSeqNo = await _runOutboxEventRepository.GetNextSeqNoAsync(agentRun.RunId, cancellationToken);
         var eventId = Guid.NewGuid().ToString("N");

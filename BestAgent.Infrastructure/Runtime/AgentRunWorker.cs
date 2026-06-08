@@ -620,7 +620,12 @@ public class AgentRunWorker : BackgroundService
                 runId,
                 "step",
                 agentRun.Status,
-                new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Completed", approvalContext.ToolName),
+                new AgentRunEventData(
+                    pendingStep.StepNo,
+                    pendingStep.StepType,
+                    "Completed",
+                    approvalContext.ToolName,
+                    DecisionPayload: pendingStep.DecisionPayload),
                 stoppingToken);
 
             var approvalFollowUpInput = AgentRunLoop.BuildApprovalFollowUpInput(
@@ -1016,13 +1021,23 @@ public class AgentRunWorker : BackgroundService
             runId,
             "approval_rejected",
             "Failed",
-            new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Failed", Error: reason),
+            new AgentRunEventData(
+                pendingStep.StepNo,
+                pendingStep.StepType,
+                "Failed",
+                Error: reason,
+                DecisionPayload: serializedRejectedPayload),
             stoppingToken);
         await PublishEventAsync(
             runId,
             "error",
             "Failed",
-            new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Failed", Error: reason),
+            new AgentRunEventData(
+                pendingStep.StepNo,
+                pendingStep.StepType,
+                "Failed",
+                Error: reason,
+                DecisionPayload: serializedRejectedPayload),
             stoppingToken);
         activity?.SetTag("bestagent.status", "rejected");
         activity?.SetStatus(ActivityStatusCode.Ok);
@@ -1127,13 +1142,23 @@ public class AgentRunWorker : BackgroundService
                 runId,
                 "step",
                 "Failed",
-                new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Failed", Error: reason),
+                new AgentRunEventData(
+                    pendingStep.StepNo,
+                    pendingStep.StepType,
+                    "Failed",
+                    Error: reason,
+                    DecisionPayload: pendingStep.DecisionPayload),
                 stoppingToken);
             await PublishEventAsync(
                 runId,
                 "error",
                 "Failed",
-                new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Failed", Error: reason),
+                new AgentRunEventData(
+                    pendingStep.StepNo,
+                    pendingStep.StepType,
+                    "Failed",
+                    Error: reason,
+                    DecisionPayload: pendingStep.DecisionPayload),
                 stoppingToken);
             activity?.SetTag("bestagent.status", "terminated");
             activity?.SetStatus(ActivityStatusCode.Ok);
@@ -1161,7 +1186,12 @@ public class AgentRunWorker : BackgroundService
             runId,
             "step",
             "Completed",
-            new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Completed", humanResult),
+            new AgentRunEventData(
+                pendingStep.StepNo,
+                pendingStep.StepType,
+                "Completed",
+                humanResult,
+                DecisionPayload: pendingStep.DecisionPayload),
             stoppingToken);
 
         if (completedPayload.ContinueAsToolResult
@@ -1411,7 +1441,12 @@ public class AgentRunWorker : BackgroundService
                 runId,
                 "step",
                 "WaitingHandoff",
-                new AgentRunEventData(handoffStep.StepNo, handoffStep.StepType, "Completed", childRun.OutputPayload),
+                new AgentRunEventData(
+                    handoffStep.StepNo,
+                    handoffStep.StepType,
+                    "Completed",
+                    childRun.OutputPayload,
+                    DecisionPayload: handoffStep.DecisionPayload),
                 stoppingToken);
 
             var resolvedDefinition = await GetResolvedDefinitionForRunAsync(agentDefRepo, agentRunRepo, agentStepRepo, parentRun, stoppingToken);
@@ -1529,7 +1564,12 @@ public class AgentRunWorker : BackgroundService
             runId,
             "error",
             "Failed",
-            new AgentRunEventData(handoffStep.StepNo, handoffStep.StepType, "Failed", Error: failureReason),
+            new AgentRunEventData(
+                handoffStep.StepNo,
+                handoffStep.StepType,
+                "Failed",
+                Error: failureReason,
+                DecisionPayload: handoffStep.DecisionPayload),
             stoppingToken);
     }
 
@@ -1616,6 +1656,7 @@ public class AgentRunWorker : BackgroundService
                 };
                 await agentApprovalRepository.AddAsync(approval, cancellationToken);
                 _agentMetrics.RecordApprovalWaitStarted(agentRun.AgentCode, waitingApproval.StepType);
+                var approvalStep = await agentStepRepo.GetByStepIdAsync(waitingApproval.StepId, cancellationToken);
 
                 agentRun = agentRun with
                 {
@@ -1630,7 +1671,12 @@ public class AgentRunWorker : BackgroundService
                     agentRun.RunId,
                     "waiting_approval",
                     "WaitingApproval",
-                    new AgentRunEventData(waitingApproval.SuspendedAtStepNo, waitingApproval.StepType, "Pending", waitingApproval.ToolName),
+                    new AgentRunEventData(
+                        waitingApproval.SuspendedAtStepNo,
+                        waitingApproval.StepType,
+                        "Pending",
+                        waitingApproval.ToolName,
+                        DecisionPayload: approvalStep?.DecisionPayload),
                     cancellationToken);
                 break;
 
@@ -1770,6 +1816,7 @@ public class AgentRunWorker : BackgroundService
         var currentHandoffDepth = await GetHandoffDepthAsync(agentRunRepo, parentRun, cancellationToken);
         var maxHandoffDepth = ResolveMaxHandoffDepth(parentDefinition.Version.ExecutionPolicy);
         var nextHandoffDepth = currentHandoffDepth + 1;
+        var parentHandoffPayload = await GetPendingHandoffPayloadAsync(agentStepRepo, parentRun.RunId, cancellationToken);
         if (nextHandoffDepth > maxHandoffDepth)
         {
             var error = $"Handoff depth {nextHandoffDepth} exceeds the configured maximum {maxHandoffDepth} for agent '{parentRun.AgentCode}'.";
@@ -1778,7 +1825,14 @@ public class AgentRunWorker : BackgroundService
                 parentRun.RunId,
                 "error",
                 "Failed",
-                new AgentRunEventData(waitingHandoff.SuspendedAtStepNo, "handoff", "Failed", Error: error),
+                new AgentRunEventData(
+                    waitingHandoff.SuspendedAtStepNo,
+                    "handoff",
+                    "Failed",
+                    Error: error,
+                    DecisionPayload: parentHandoffPayload is null
+                        ? null
+                        : HandoffPayloadSerializer.Serialize(parentHandoffPayload)),
                 cancellationToken);
             activity?.SetTag("bestagent.status", "failed");
             activity?.SetStatus(ActivityStatusCode.Error, error);
@@ -1793,7 +1847,14 @@ public class AgentRunWorker : BackgroundService
                 parentRun.RunId,
                 "error",
                 "Failed",
-                new AgentRunEventData(waitingHandoff.SuspendedAtStepNo, "handoff", "Failed", Error: $"Agent definition '{waitingHandoff.TargetAgent}' not found."),
+                new AgentRunEventData(
+                    waitingHandoff.SuspendedAtStepNo,
+                    "handoff",
+                    "Failed",
+                    Error: $"Agent definition '{waitingHandoff.TargetAgent}' not found.",
+                    DecisionPayload: parentHandoffPayload is null
+                        ? null
+                        : HandoffPayloadSerializer.Serialize(parentHandoffPayload)),
                 cancellationToken);
             activity?.SetTag("bestagent.status", "failed");
             activity?.SetStatus(ActivityStatusCode.Error, $"Agent definition '{waitingHandoff.TargetAgent}' not found.");
@@ -1801,7 +1862,6 @@ public class AgentRunWorker : BackgroundService
         }
 
         var now = DateTime.UtcNow;
-        var parentHandoffPayload = await GetPendingHandoffPayloadAsync(agentStepRepo, parentRun.RunId, cancellationToken);
         var childInput = BuildChildRunInput(parentRun.InputPayload, waitingHandoff.HandoffInput, parentHandoffPayload);
         var childRun = CreateAgentRunCommandHandler.BuildAgentRun(
             waitingHandoff.ChildRunId,
@@ -1861,7 +1921,14 @@ public class AgentRunWorker : BackgroundService
             parentRun.RunId,
             "waiting_handoff",
             "WaitingHandoff",
-            new AgentRunEventData(waitingHandoff.SuspendedAtStepNo, "handoff", "Pending", waitingHandoff.TargetAgent),
+            new AgentRunEventData(
+                waitingHandoff.SuspendedAtStepNo,
+                "handoff",
+                "Pending",
+                waitingHandoff.TargetAgent,
+                DecisionPayload: parentHandoffPayload is null
+                    ? null
+                    : HandoffPayloadSerializer.Serialize(parentHandoffPayload)),
             cancellationToken);
 
         await _channel.EnqueueAsync(new CreateAgentRunMessage(childRun.RunId), cancellationToken);
@@ -2848,7 +2915,12 @@ public class AgentRunWorker : BackgroundService
             agentRun.RunId,
             "waiting_human",
             "WaitingHuman",
-            new AgentRunEventData(humanStep.StepNo, humanStep.StepType, "Pending", waitingHuman.Comment),
+            new AgentRunEventData(
+                humanStep.StepNo,
+                humanStep.StepType,
+                "Pending",
+                waitingHuman.Comment,
+                DecisionPayload: humanStep.DecisionPayload),
             cancellationToken);
     }
 

@@ -380,25 +380,10 @@ public class AgentRunsController : ControllerBase
             evt.EventType,
             evt.RunStatus,
             evt.OccurredAt,
-            new EventDataInfoResponse(
-                maskedData.StepNo,
-                maskedData.StepType,
-                maskedData.Status,
-                maskedData.Output,
-                maskedData.Error,
-                BuildEventModelCallResponse(maskedData.ModelCall),
-                ModelFailurePayloadSerializer.TryParse(maskedData.Error, out var modelFailure)
-                    ? new EventModelFailureInfoResponse(modelFailure!.ErrorCode, modelFailure.Message)
-                    : null,
-                ToolFailurePayloadSerializer.TryParse(maskedData.Error, out var toolFailure)
-                    ? new EventToolFailureInfoResponse(
-                        toolFailure!.ToolName,
-                        toolFailure.Stage,
-                        toolFailure.Message,
-                        string.IsNullOrWhiteSpace(toolFailure.Compensation?.Mode)
-                            ? null
-                            : new EventToolFailureCompensationInfoResponse(toolFailure.Compensation.Mode))
-                    : null));
+            BuildEventDataResponse(
+                BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents.EventDataInfo.FromRuntimeData(maskedData),
+                null,
+                evt.RunStatus ?? maskedData.Status));
     }
 
     private static StreamAgentRunEventResponse BuildStreamEventResponse(GetAgentRunEventsItem evt)
@@ -468,32 +453,62 @@ public class AgentRunsController : ControllerBase
                     resolvedData.ToolFailure.Compensation is null
                         ? null
                         : new EventToolFailureCompensationInfoResponse(
-                            resolvedData.ToolFailure.Compensation.Mode)));
-    }
-
-    private static EventModelCallInfoResponse? BuildEventModelCallResponse(string? payload)
-    {
-        if (!ModelCallPayloadSerializer.TryParse(payload, out var modelCall))
-        {
-            return null;
-        }
-
-        return new EventModelCallInfoResponse(
-            modelCall!.Model,
-            modelCall.PromptTokens,
-            modelCall.CompletionTokens,
-            modelCall.TotalTokens,
-            modelCall.Cost,
-            modelCall.Retrieval is null
+                            resolvedData.ToolFailure.Compensation.Mode)),
+            resolvedData.Approval is null
                 ? null
-                : new EventModelCallRetrievalInfoResponse(
-                    modelCall.Retrieval.QueryText,
-                    modelCall.Retrieval.WasRewritten,
-                    modelCall.Retrieval.CandidateCount,
-                    modelCall.Retrieval.SelectedCount,
-                    modelCall.Retrieval.RequestedSources,
-                    modelCall.Retrieval.SelectedSources,
-                    modelCall.Retrieval.Citations));
+                : new EventApprovalInfoResponse(
+                    resolvedData.Approval.WaitType,
+                    resolvedData.Approval.RequestedAction,
+                    resolvedData.Approval.RequestPayload,
+                    resolvedData.Approval.SideEffectLevel,
+                    resolvedData.Approval.Decision,
+                    resolvedData.Approval.Comment,
+                    resolvedData.Approval.DecidedAt),
+            resolvedData.Handoff is null
+                ? null
+                : new EventHandoffInfoResponse(
+                    resolvedData.Handoff.WaitType,
+                    resolvedData.Handoff.TargetAgent,
+                    resolvedData.Handoff.HandoffInput,
+                    resolvedData.Handoff.Mode,
+                    resolvedData.Handoff.ChildRunId,
+                    resolvedData.Handoff.Decision,
+                    resolvedData.Handoff.ChildStatus,
+                    resolvedData.Handoff.ChildOutput,
+                    resolvedData.Handoff.Comment,
+                    resolvedData.Handoff.DecidedAt,
+                    resolvedData.Handoff.RouteRuleId,
+                    resolvedData.Handoff.ContextScope,
+                    resolvedData.Handoff.MemoryScope,
+                    resolvedData.Handoff.ToolScope,
+                    resolvedData.Handoff.KnowledgeScope,
+                    resolvedData.Handoff.ApprovalRequired,
+                    resolvedData.Handoff.Reason,
+                    resolvedData.Handoff.Confidence,
+                    resolvedData.Handoff.ContextOverrides,
+                    resolvedData.Handoff.MemoryOverrides,
+                    resolvedData.Handoff.ToolOverrides,
+                    resolvedData.Handoff.KnowledgeOverrides,
+                    resolvedData.Handoff.MergeStrategy),
+            resolvedData.HumanWait is null
+                ? null
+                : new EventHumanWaitInfoResponse(
+                    resolvedData.HumanWait.WaitType,
+                    resolvedData.HumanWait.Decision,
+                    resolvedData.HumanWait.Comment,
+                    resolvedData.HumanWait.DecidedAt,
+                    resolvedData.HumanWait.HumanOperatorId,
+                    resolvedData.HumanWait.HumanOperatorName,
+                    resolvedData.HumanWait.HumanOperatorRole,
+                    resolvedData.HumanWait.HumanResult,
+                    resolvedData.HumanWait.SourceType,
+                    resolvedData.HumanWait.SourceStepId,
+                    resolvedData.HumanWait.SourceInvocationId,
+                    resolvedData.HumanWait.SourceToolName,
+                    resolvedData.HumanWait.SourceToolInput,
+                    resolvedData.HumanWait.SourceToolOutput,
+                    resolvedData.HumanWait.SourceToolStatus,
+                    resolvedData.HumanWait.ContinueAsToolResult));
     }
 
     private async Task WriteSseEventAsync(

@@ -8,7 +8,10 @@ public record EventDataInfoResponse(
     string? Error,
     EventModelCallInfoResponse? ModelCall,
     EventModelFailureInfoResponse? ModelFailure,
-    EventToolFailureInfoResponse? ToolFailure);
+    EventToolFailureInfoResponse? ToolFailure,
+    EventApprovalInfoResponse? Approval = null,
+    EventHandoffInfoResponse? Handoff = null,
+    EventHumanWaitInfoResponse? HumanWait = null);
 
 public record EventModelCallInfoResponse(
     string Model,
@@ -39,3 +42,60 @@ public record EventToolFailureInfoResponse(
 
 public record EventToolFailureCompensationInfoResponse(
     string Mode);
+
+public record EventApprovalInfoResponse(
+    string WaitType,
+    string RequestedAction,
+    string? RequestPayload,
+    string SideEffectLevel,
+    string Decision,
+    string? Comment,
+    DateTime? DecidedAt)
+{
+    public string ToolName => RequestedAction;
+
+    public string? ToolInput => RequestPayload;
+}
+
+public record EventHandoffInfoResponse(
+    string WaitType,
+    string TargetAgent,
+    string? HandoffInput,
+    string Mode,
+    string ChildRunId,
+    string Decision,
+    string? ChildStatus,
+    string? ChildOutput,
+    string? Comment,
+    DateTime? DecidedAt,
+    string? RouteRuleId,
+    string? ContextScope,
+    string? MemoryScope,
+    string? ToolScope,
+    string? KnowledgeScope,
+    bool ApprovalRequired,
+    string? Reason,
+    double? Confidence,
+    string? ContextOverrides,
+    string? MemoryOverrides,
+    string? ToolOverrides,
+    string? KnowledgeOverrides,
+    string? MergeStrategy = null);
+
+public record EventHumanWaitInfoResponse(
+    string WaitType,
+    string Decision,
+    string? Comment,
+    DateTime? DecidedAt,
+    string? HumanOperatorId,
+    string? HumanOperatorName,
+    string? HumanOperatorRole,
+    string? HumanResult,
+    string? SourceType = null,
+    string? SourceStepId = null,
+    string? SourceInvocationId = null,
+    string? SourceToolName = null,
+    string? SourceToolInput = null,
+    string? SourceToolOutput = null,
+    string? SourceToolStatus = null,
+    bool ContinueAsToolResult = false);

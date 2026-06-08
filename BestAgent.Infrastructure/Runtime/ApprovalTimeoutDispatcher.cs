@@ -166,7 +166,12 @@ public class ApprovalTimeoutDispatcher : BackgroundService
                         approval.RunId,
                         "approval_timed_out",
                         "WaitingHuman",
-                        new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
+                        new AgentRunEventData(
+                            pendingStep.StepNo,
+                            pendingStep.StepType,
+                            "TimedOut",
+                            Error: timeoutReason,
+                            DecisionPayload: serializedRejectedPayload),
                         utcNow,
                         cancellationToken);
                     await PublishEventAsync(
@@ -175,7 +180,12 @@ public class ApprovalTimeoutDispatcher : BackgroundService
                         approval.RunId,
                         "waiting_human",
                         "WaitingHuman",
-                        new AgentRunEventData(humanStep.StepNo, humanStep.StepType, "Pending", timeoutReason),
+                        new AgentRunEventData(
+                            humanStep.StepNo,
+                            humanStep.StepType,
+                            "Pending",
+                            timeoutReason,
+                            DecisionPayload: humanStep.DecisionPayload),
                         utcNow,
                         cancellationToken);
                 }
@@ -206,7 +216,12 @@ public class ApprovalTimeoutDispatcher : BackgroundService
                         approval.RunId,
                         "approval_timed_out",
                         "TimedOut",
-                        new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
+                        new AgentRunEventData(
+                            pendingStep.StepNo,
+                            pendingStep.StepType,
+                            "TimedOut",
+                            Error: timeoutReason,
+                            DecisionPayload: serializedRejectedPayload),
                         utcNow,
                         cancellationToken);
                     await PublishEventAsync(
@@ -215,7 +230,12 @@ public class ApprovalTimeoutDispatcher : BackgroundService
                         approval.RunId,
                         "error",
                         "TimedOut",
-                        new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
+                        new AgentRunEventData(
+                            pendingStep.StepNo,
+                            pendingStep.StepType,
+                            "TimedOut",
+                            Error: timeoutReason,
+                            DecisionPayload: serializedRejectedPayload),
                         utcNow,
                         cancellationToken);
                 }
