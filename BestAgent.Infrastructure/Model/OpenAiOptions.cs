@@ -18,6 +18,8 @@ public class OpenAiOptions
 
     public decimal? FrequencyPenalty { get; init; }
 
+    public int? Seed { get; init; }
+
     public int TimeoutSeconds { get; init; } = 60;
 
     public IReadOnlyList<string>? StopSequences { get; init; }

@@ -44,6 +44,9 @@ public static class DependencyInjection
             FrequencyPenalty = decimal.TryParse(configuration["OpenAI:FrequencyPenalty"], out var frequencyPenalty)
                 ? frequencyPenalty
                 : null,
+            Seed = int.TryParse(configuration["OpenAI:Seed"], out var seed)
+                ? seed
+                : null,
             StopSequences = configuration
                 .GetSection("OpenAI:StopSequences")
                 .Get<string[]?>(),

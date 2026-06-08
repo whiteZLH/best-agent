@@ -62,6 +62,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
             var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
+            var seed = NormalizeSeed(request.Seed ?? _options.Seed);
             var stopSequences = NormalizeStopSequences(request.StopSequences ?? _options.StopSequences);
             var parallelToolCalls = NormalizeParallelToolCalls(request.ParallelToolCalls ?? _options.ParallelToolCalls, request.Tools);
             var responseFormat = BuildResponseFormat(
@@ -81,6 +82,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 top_p = topP,
                 presence_penalty = presencePenalty,
                 frequency_penalty = frequencyPenalty,
+                seed,
                 stop = stopSequences,
                 parallel_tool_calls = parallelToolCalls,
                 response_format = responseFormat,
@@ -88,7 +90,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -100,6 +102,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 topP,
                 presencePenalty,
                 frequencyPenalty,
+                seed,
                 stopSequences?.Length ?? 0,
                 parallelToolCalls,
                 request.SystemPrompt?.Length ?? 0,
@@ -330,6 +333,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             > 2m => 2m,
             _ => penalty
         };
+    }
+
+    private static int? NormalizeSeed(int? seed)
+    {
+        return seed is > 0 ? seed : null;
     }
 
     private static int? NormalizeTimeoutSeconds(int? timeoutSeconds)
