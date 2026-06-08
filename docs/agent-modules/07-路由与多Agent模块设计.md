@@ -125,12 +125,13 @@
 - `summary_only` 当前也已开始同步收紧子 Agent 的长期记忆写侧：会关闭 `toolResultMemoryEnabled`、`userMemoryWriteEnabled` 与 `summaryMemoryWriteEnabled`，避免子 Run 在仅拿到摘要上下文时继续向 `session_memory`、`user_memory` 或 `summary_memory` 写入放大后的派生结论
 - `RouteRule` 的 `context_scope` / `memory_scope` / `tool_scope` / `knowledge_scope` 当前会进入 handoff 审计 payload
 - `RouteRule.memory_scope` 当前已开始进入最小执行约束：支持 `{"mode":"read_only"}` 收紧子 Agent 的长期记忆写侧，只关闭 `toolResultMemoryEnabled`、`userMemoryWriteEnabled` 与 `summaryMemoryWriteEnabled`，但不额外关闭 `summary/session/user/knowledge` 的读侧上下文注入
+- `RouteRule.memory_scope` 与 handoff `memory_overrides` 当前也已支持 `{"mode":"disabled"}`：会同时关闭子 Agent 的长期记忆写侧，以及 `summary_memory`、`session_memory`、`user_memory` 与 `knowledge_chunk` 的读侧注入
 - Planner 产出的 `context_overrides` / `tool_overrides` 当前也会进入 handoff 审计 payload
-- 模型 handoff 决策当前也已开始支持最小 `memory_overrides` 元数据，并会进入 handoff 审计 payload；当前仅支持 `{"mode":"read_only"}` 这一类最小写侧收紧语义
+- 模型 handoff 决策当前也已开始支持最小 `memory_overrides` 元数据，并会进入 handoff 审计 payload；当前支持 `{"mode":"read_only"}` 与 `{"mode":"disabled"}` 两类最小记忆边界收紧语义
 - `tool_overrides` / `tool_scope` 当前也已开始最小影响子 Agent 的工具边界：支持用 `{"allowed":[...]}` 进一步收紧子 Agent 原本的 `AllowedTools`，但不会放大权限
 - `knowledge_scope` 当前也已开始最小影响子 Agent 的知识边界：支持用 `{"allowed":[...]}` 或 `{"sources":[...]}` 进一步收紧子 Agent 原本的 `KnowledgeSources`，但不会放大检索范围
 - 当版本级 `RoutingPolicy.strategy == "handoff-first"` 时，当前也已开始最小自动匹配 `RouteRule`：`match_type = intent|keyword` 时，会对 `match_expression` 中的 `intent` / `keyword` / `contains` / `any` / `all` / `keywords` / `terms` 做大小写不敏感包含匹配，命中后直接进入 handoff
-- 当前仍没有真正按这些字段执行更细粒度的长期记忆边界治理或更多上下文/工具策略模式；`memory_scope` 当前除 `read_only` 外的更多模式仍待继续落地
+- 当前仍没有真正按这些字段执行更细粒度的长期记忆边界治理或更多上下文/工具策略模式；`memory_scope` 当前虽已支持 `read_only` / `disabled`，但更多模式仍待继续落地
 
 ## 7. 权限继承规则
 

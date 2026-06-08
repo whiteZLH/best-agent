@@ -2564,9 +2564,11 @@ public class AgentRunWorker : BackgroundService
             ?? ResolveContextMode(handoffPayload.MemoryScope);
 
         var restrictReadContext = string.Equals(contextMode, "summary_only", StringComparison.OrdinalIgnoreCase);
+        var disableMemoryContext = string.Equals(memoryMode, "disabled", StringComparison.OrdinalIgnoreCase);
         var restrictMemoryWrites = restrictReadContext
+            || disableMemoryContext
             || string.Equals(memoryMode, "read_only", StringComparison.OrdinalIgnoreCase);
-        if (!restrictReadContext && !restrictMemoryWrites)
+        if (!restrictReadContext && !disableMemoryContext && !restrictMemoryWrites)
         {
             return null;
         }
@@ -2578,14 +2580,14 @@ public class AgentRunWorker : BackgroundService
             toolResultMemoryAllowedTools = policy.AllowedToolNames.Count == 0 ? null : policy.AllowedToolNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray(),
             userMemoryWriteEnabled = restrictMemoryWrites ? false : policy.UserMemoryWriteEnabled,
             summaryMemoryWriteEnabled = restrictMemoryWrites ? false : policy.SummaryMemoryWriteEnabled,
-            includeSummary = restrictReadContext ? false : policy.IncludeSummary,
-            includeKnowledge = restrictReadContext ? false : policy.IncludeKnowledge,
-            maxKnowledgeChunks = restrictReadContext ? 0 : policy.MaxKnowledgeChunks,
-            knowledgeCandidateCount = restrictReadContext ? 0 : policy.KnowledgeCandidateCount,
-            includeSessionMemory = restrictReadContext ? false : policy.IncludeSessionMemory,
-            maxSessionMemories = restrictReadContext ? 0 : policy.MaxSessionMemories,
-            includeUserMemory = restrictReadContext ? false : policy.IncludeUserMemory,
-            maxUserMemories = restrictReadContext ? 0 : policy.MaxUserMemories
+            includeSummary = restrictReadContext || disableMemoryContext ? false : policy.IncludeSummary,
+            includeKnowledge = restrictReadContext || disableMemoryContext ? false : policy.IncludeKnowledge,
+            maxKnowledgeChunks = restrictReadContext || disableMemoryContext ? 0 : policy.MaxKnowledgeChunks,
+            knowledgeCandidateCount = restrictReadContext || disableMemoryContext ? 0 : policy.KnowledgeCandidateCount,
+            includeSessionMemory = restrictReadContext || disableMemoryContext ? false : policy.IncludeSessionMemory,
+            maxSessionMemories = restrictReadContext || disableMemoryContext ? 0 : policy.MaxSessionMemories,
+            includeUserMemory = restrictReadContext || disableMemoryContext ? false : policy.IncludeUserMemory,
+            maxUserMemories = restrictReadContext || disableMemoryContext ? 0 : policy.MaxUserMemories
         });
     }
 

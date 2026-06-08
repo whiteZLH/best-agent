@@ -2225,6 +2225,243 @@ public class AgentRunWorkerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldSuppressChildMemoryContext_WhenMemoryModeIsDisabled()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var knowledgeChunkRepository = Substitute.For<IKnowledgeChunkRepository>();
+        var sessionMemoryRepository = Substitute.For<ISessionMemoryRepository>();
+        var userMemoryRepository = Substitute.For<IUserMemoryRepository>();
+        var summaryMemoryRepository = Substitute.For<ISummaryMemoryRepository>();
+        var runtimeContextComposer = new RuntimeContextComposer(
+            summaryMemoryRepository,
+            knowledgeChunkRepository,
+            sessionMemoryRepository,
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
+        var parentRun = CreateRunningRun() with { InputPayload = "User wants a refund and extra account details" };
+        var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
+        AgentRun? waitingParentRun = null;
+        AgentRun? childRun = null;
+        GenerateTextRequest? childModelRequest = null;
+        var modelCallCount = 0;
+
+        var parentDefinition = CreateResolvedDefinition(
+            versionId: "ver-1",
+            allowedHandoffs: "[\"support_agent\"]");
+        var childDefinition = CreateResolvedDefinition(
+            versionId: "ver-2",
+            agentCode: "support_agent",
+            memoryPolicy: "{\"includeKnowledge\":true,\"includeSummary\":true,\"includeSessionMemory\":true,\"maxSessionMemories\":2,\"includeUserMemory\":true,\"maxUserMemories\":2,\"maxKnowledgeChunks\":2,\"knowledgeCandidateCount\":4}",
+            knowledgeSources: "[\"faq\"]",
+            allowedHandoffs: "[]");
+
+        agentRunRepo.GetByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => waitingParentRun ?? parentRun);
+        agentRunRepo.GetLatestChildByParentRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => childRun);
+        agentDefinitionRepo.GetEnabledByCodeAsync("writer", Arg.Any<CancellationToken>())
+            .Returns(parentDefinition);
+        agentDefinitionRepo.GetEnabledByCodeAsync("support_agent", Arg.Any<CancellationToken>())
+            .Returns(childDefinition);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                modelCallCount++;
+                var request = call.Arg<GenerateTextRequest>();
+                if (modelCallCount == 1)
+                {
+                    return new GenerateTextResult("handoff-decision");
+                }
+
+                if (modelCallCount == 2)
+                {
+                    childModelRequest = request;
+                    return new GenerateTextResult("child-final");
+                }
+
+                return new GenerateTextResult("parent-final");
+            });
+        stepDecisionParser.Parse("handoff-decision")
+            .Returns(
+                StepDecision.Handoff(
+                    "support_agent",
+                    "Refund request with full context",
+                    "delegate_and_wait",
+                    memoryOverrides: "{\"mode\":\"disabled\"}"));
+        stepDecisionParser.Parse("child-final")
+            .Returns(StepDecision.Respond("Child answer"));
+        stepDecisionParser.Parse("parent-final")
+            .Returns(StepDecision.Respond("Parent answer"));
+
+        summaryMemoryRepository.GetLatestActiveAsync("tenant-1", "session-1", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SummaryMemory
+            {
+                Id = "summary-1",
+                TenantId = "tenant-1",
+                RunId = "child-run",
+                SessionId = "session-1",
+                SummaryText = "Conversation summary should not appear."
+            });
+        sessionMemoryRepository.ListActiveBySessionAsync("tenant-1", "session-1", 2, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new SessionMemory
+                {
+                    Id = "session-memory-1",
+                    TenantId = "tenant-1",
+                    UserId = "user-1",
+                    SessionId = "session-1",
+                    RunId = "run-001",
+                    ContentJson = "{\"lastTool\":\"weather\"}"
+                }
+            ]);
+        userMemoryRepository.ListActiveByUserAsync("tenant-1", "user-1", 2, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new UserMemory
+                {
+                    Id = "user-memory-1",
+                    TenantId = "tenant-1",
+                    UserId = "user-1",
+                    MemoryKey = "seat_preference",
+                    MemoryType = "preference",
+                    MemoryValue = "\"aisle\""
+                }
+            ]);
+        knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
+                "tenant-1",
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new KnowledgeChunk
+                {
+                    Id = "chunk-1",
+                    TenantId = "tenant-1",
+                    DocumentId = "doc-1",
+                    ChunkNo = 1,
+                    Content = "Knowledge from faq",
+                    Source = "faq"
+                }
+            ]);
+
+        agentRunRepo.When(repo => repo.AddAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var added = call.Arg<AgentRun>();
+                if (added.RunId != parentRun.RunId)
+                {
+                    childRun = added;
+                    childRunStore[added.RunId] = added;
+                }
+            });
+        agentRunRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var updated = call.Arg<AgentRun>();
+                if (updated.RunId == parentRun.RunId)
+                {
+                    waitingParentRun = updated;
+                }
+                else
+                {
+                    childRun = updated;
+                    childRunStore[updated.RunId] = updated;
+                }
+            });
+        agentRunRepo.GetByRunIdAsync(Arg.Is<string>(id => childRunStore.ContainsKey(id)), Arg.Any<CancellationToken>())
+            .Returns(call => childRunStore[call.Arg<string>()]);
+
+        AgentStep? parentHandoffStep = null;
+        agentStepRepo.GetLastByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => parentHandoffStep);
+        agentStepRepo.When(repo => repo.AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (step.RunId == parentRun.RunId && step.StepType == "handoff")
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (parentHandoffStep is not null && step.StepId == parentHandoffStep.StepId)
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.ListByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var steps = new List<AgentStep>();
+                if (parentHandoffStep is not null)
+                {
+                    steps.Add(AgentRunLoop.CreateStep(parentRun.RunId, 3, "model_call", "Completed", "hello", "handoff-decision", null, DateTime.UtcNow, DateTime.UtcNow));
+                    steps.Add(parentHandoffStep);
+                }
+
+                return (IReadOnlyList<AgentStep>)steps;
+            });
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter,
+            runtimeContextComposer: runtimeContextComposer);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(parentRun.RunId), cts.Token);
+
+        await WaitForChildRunStatusAsync(agentRunRepo, parentRun.RunId, "Completed");
+
+        Assert.NotNull(childModelRequest);
+        Assert.Contains("Refund request with full context", childModelRequest!.Input);
+        Assert.DoesNotContain("Conversation summary:", childModelRequest.Input);
+        Assert.DoesNotContain("Session memory:", childModelRequest.Input);
+        Assert.DoesNotContain("User memory:", childModelRequest.Input);
+        Assert.DoesNotContain("Reference knowledge:", childModelRequest.Input);
+        await knowledgeChunkRepository.DidNotReceive().ListByKnowledgeSourceCodesAsync(
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyList<string>>(),
+            Arg.Any<string>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldKeepChildMemoryReads_ButDisableWrites_WhenMemoryScopeIsReadOnly()
     {
         var channel = new AgentRunChannel();
@@ -2488,6 +2725,279 @@ public class AgentRunWorkerTests
         await runtimeMemoryWriter.Received(1).RecordRunCompletionSummaryAsync(
             Arg.Is<AgentRun>(run => run.RunId == parentRun.RunId && run.Status == "Completed"),
             "Parent answer",
+            Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldDisableChildMemoryReadsAndWrites_WhenRouteRuleMemoryScopeIsDisabled()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var knowledgeChunkRepository = Substitute.For<IKnowledgeChunkRepository>();
+        var sessionMemoryRepository = Substitute.For<ISessionMemoryRepository>();
+        var userMemoryRepository = Substitute.For<IUserMemoryRepository>();
+        var summaryMemoryRepository = Substitute.For<ISummaryMemoryRepository>();
+        var routeRuleRepository = Substitute.For<IRouteRuleRepository>();
+        var runtimeContextComposer = new RuntimeContextComposer(
+            summaryMemoryRepository,
+            knowledgeChunkRepository,
+            sessionMemoryRepository,
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
+        var parentRun = CreateRunningRun() with { InputPayload = "User asks for a refund on order #123" };
+        var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
+        AgentRun? waitingParentRun = null;
+        AgentRun? childRun = null;
+        GenerateTextRequest? childModelRequest = null;
+        var modelCallCount = 0;
+
+        var parentDefinition = CreateResolvedDefinition(
+            versionId: "ver-1",
+            routingPolicy: "{\"strategy\":\"handoff-first\"}",
+            allowedHandoffs: "[\"support_agent\"]");
+        var childDefinition = CreateResolvedDefinition(
+            versionId: "ver-2",
+            agentCode: "support_agent",
+            memoryPolicy: "{\"toolResultMemoryEnabled\":true,\"userMemoryWriteEnabled\":true,\"summaryMemoryWriteEnabled\":true,\"includeKnowledge\":true,\"includeSummary\":true,\"includeSessionMemory\":true,\"includeUserMemory\":true,\"maxKnowledgeChunks\":2,\"knowledgeCandidateCount\":4,\"maxSessionMemories\":2,\"maxUserMemories\":2}",
+            knowledgeSources: "[\"faq\"]",
+            allowedHandoffs: "[]");
+
+        routeRuleRepository.GetByAgentDefinitionVersionIdAsync("ver-1", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RouteRule
+                {
+                    Id = "rule-1",
+                    AgentDefinitionVersionId = "ver-1",
+                    SourceAgentCode = "writer",
+                    TargetAgentCode = "support_agent",
+                    RuleName = "Refund Route",
+                    Priority = 10,
+                    MatchType = "intent",
+                    MatchExpression = "{\"intent\":\"refund\"}",
+                    HandoffMode = "delegate_and_wait",
+                    MemoryScope = "{\"mode\":\"disabled\"}",
+                    Enabled = true
+                }
+            ]);
+        agentRunRepo.GetByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => waitingParentRun ?? parentRun);
+        agentRunRepo.GetLatestChildByParentRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => childRun);
+        agentDefinitionRepo.GetEnabledByCodeAsync("writer", Arg.Any<CancellationToken>())
+            .Returns(parentDefinition);
+        agentDefinitionRepo.GetEnabledByCodeAsync("support_agent", Arg.Any<CancellationToken>())
+            .Returns(childDefinition);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                modelCallCount++;
+                var request = call.Arg<GenerateTextRequest>();
+                if (modelCallCount == 1)
+                {
+                    childModelRequest = request;
+                    return new GenerateTextResult("child-tool-decision");
+                }
+
+                if (modelCallCount == 2)
+                {
+                    return new GenerateTextResult("child-final");
+                }
+
+                return new GenerateTextResult("parent-final");
+            });
+        stepDecisionParser.Parse("child-tool-decision")
+            .Returns(StepDecision.ToolCall("weather", "{\"city\":\"Shanghai\"}"));
+        stepDecisionParser.Parse("child-final")
+            .Returns(StepDecision.Respond("Child answer"));
+        stepDecisionParser.Parse("parent-final")
+            .Returns(StepDecision.Respond("Parent answer"));
+        toolExecutor.ExecuteAsync("weather", "{\"city\":\"Shanghai\"}", Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(ToolExecutionResult.Completed("weather", "sunny"));
+
+        summaryMemoryRepository.GetLatestActiveAsync("tenant-1", "session-1", Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new SummaryMemory
+            {
+                Id = "summary-1",
+                TenantId = "tenant-1",
+                RunId = "run-001",
+                SessionId = "session-1",
+                SummaryText = "Prior summary should not be visible."
+            });
+        sessionMemoryRepository.ListActiveBySessionAsync("tenant-1", "session-1", 2, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new SessionMemory
+                {
+                    Id = "session-memory-1",
+                    TenantId = "tenant-1",
+                    UserId = "user-1",
+                    SessionId = "session-1",
+                    RunId = "run-001",
+                    ContentJson = "{\"lastTool\":\"weather\"}"
+                }
+            ]);
+        userMemoryRepository.ListActiveByUserAsync("tenant-1", "user-1", 2, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new UserMemory
+                {
+                    Id = "user-memory-1",
+                    TenantId = "tenant-1",
+                    UserId = "user-1",
+                    MemoryKey = "refund_preference",
+                    MemoryType = "preference",
+                    MemoryValue = "\"email\""
+                }
+            ]);
+        knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
+                "tenant-1",
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new KnowledgeChunk
+                {
+                    Id = "chunk-1",
+                    TenantId = "tenant-1",
+                    DocumentId = "doc-1",
+                    ChunkNo = 1,
+                    Content = "Knowledge from faq",
+                    TokenCount = 12,
+                    Source = "faq",
+                    Metadata = "{}",
+                    CreateTime = DateTime.UtcNow,
+                    LastModifyTime = DateTime.UtcNow,
+                    Creator = "system",
+                    CreatorName = "system",
+                    LastModifier = "system",
+                    LastModifierName = "system"
+                }
+            ]);
+
+        agentRunRepo.When(repo => repo.AddAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var added = call.Arg<AgentRun>();
+                if (added.RunId != parentRun.RunId)
+                {
+                    childRun = added;
+                    childRunStore[added.RunId] = added;
+                }
+            });
+        agentRunRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var updated = call.Arg<AgentRun>();
+                if (updated.RunId == parentRun.RunId)
+                {
+                    waitingParentRun = updated;
+                }
+                else
+                {
+                    childRun = updated;
+                    childRunStore[updated.RunId] = updated;
+                }
+            });
+        agentRunRepo.GetByRunIdAsync(Arg.Is<string>(id => childRunStore.ContainsKey(id)), Arg.Any<CancellationToken>())
+            .Returns(call => childRunStore[call.Arg<string>()]);
+
+        AgentStep? parentHandoffStep = null;
+        agentStepRepo.GetLastByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => parentHandoffStep);
+        agentStepRepo.When(repo => repo.AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (step.RunId == parentRun.RunId && step.StepType == "handoff")
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (parentHandoffStep is not null && step.StepId == parentHandoffStep.StepId)
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.ListByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => parentHandoffStep is null
+                ? []
+                : (IReadOnlyList<AgentStep>)
+                [
+                    AgentRunLoop.CreateStep(parentRun.RunId, 3, "model_call", "Completed", "hello", "handoff-decision", null, DateTime.UtcNow, DateTime.UtcNow),
+                    parentHandoffStep
+                ]);
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter,
+            routeRuleRepository: routeRuleRepository,
+            runtimeContextComposer: runtimeContextComposer);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(parentRun.RunId), cts.Token);
+
+        var completedChildRun = await WaitForChildRunCompletionAsync(agentRunRepo, parentRun.RunId);
+        var completedParentRun = await WaitForFinalParentCompletionAsync(agentRunRepo, parentRun.RunId);
+
+        Assert.NotNull(childModelRequest);
+        Assert.DoesNotContain("Conversation summary:", childModelRequest!.Input);
+        Assert.DoesNotContain("Session memory:", childModelRequest.Input);
+        Assert.DoesNotContain("User memory:", childModelRequest.Input);
+        Assert.DoesNotContain("Reference knowledge:", childModelRequest.Input);
+        await knowledgeChunkRepository.DidNotReceive().ListByKnowledgeSourceCodesAsync(
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyList<string>>(),
+            Arg.Any<string>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+        Assert.Contains("Child answer", completedChildRun.OutputPayload);
+        Assert.Equal("Parent answer", completedParentRun.OutputPayload);
+        await runtimeMemoryWriter.DidNotReceive().RecordToolResultAsync(
+            Arg.Is<AgentRun>(run => run.ParentRunId == parentRun.RunId),
+            Arg.Any<string>(),
+            Arg.Any<string?>(),
+            Arg.Any<string?>(),
+            Arg.Any<bool>(),
+            Arg.Any<bool>(),
+            Arg.Any<CancellationToken>());
+        await runtimeMemoryWriter.DidNotReceive().RecordRunCompletionSummaryAsync(
+            Arg.Is<AgentRun>(run => run.ParentRunId == parentRun.RunId),
+            Arg.Any<string?>(),
             Arg.Any<CancellationToken>());
 
         cts.Cancel();
