@@ -7,6 +7,7 @@ using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Tools;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace BestAgent.Application.AgentRuns.Runtime;
 
@@ -1068,6 +1069,7 @@ public static class AgentRunLoop
         {
             "intent" => MatchRouteTerms(routeRule.MatchExpression, currentInput),
             "keyword" => MatchRouteTerms(routeRule.MatchExpression, currentInput),
+            "regex" => MatchRouteRegex(routeRule.MatchExpression, currentInput),
             _ => false
         };
     }
@@ -1122,6 +1124,71 @@ public static class AgentRunLoop
         }
 
         return requiredTerms.Count != 0;
+    }
+
+    private static bool MatchRouteRegex(string? matchExpression, string currentInput)
+    {
+        if (string.IsNullOrWhiteSpace(matchExpression)
+            || string.IsNullOrWhiteSpace(currentInput))
+        {
+            return false;
+        }
+
+        var pattern = ExtractRouteRegexPattern(matchExpression);
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            return false;
+        }
+
+        try
+        {
+            return Regex.IsMatch(
+                currentInput,
+                pattern,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+                TimeSpan.FromMilliseconds(200));
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static string? ExtractRouteRegexPattern(string matchExpression)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(matchExpression);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.String)
+            {
+                return root.GetString();
+            }
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            return ReadRouteMatchString(root, "pattern")
+                ?? ReadRouteMatchString(root, "regex")
+                ?? ReadRouteMatchString(root, "expression");
+        }
+        catch (JsonException)
+        {
+            return matchExpression.Trim();
+        }
+    }
+
+    private static string? ReadRouteMatchString(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return property.GetString();
     }
 
     private static IReadOnlyList<string> ReadRouteMatchTerms(JsonElement root, params string[] propertyNames)

@@ -1,6 +1,7 @@
 using BestAgent.Application.AgentDefinitions.Commands.CreateRouteRule;
 using BestAgent.Application.Exceptions;
 using BestAgent.Domain.AgentDefinitions;
+using System.Text.Json;
 using Xunit;
 
 namespace BestAgent.Api.Tests.AgentDefinitions.Commands;
@@ -133,6 +134,113 @@ public class RouteRuleCommandHandlerTests
             CancellationToken.None));
 
         Assert.Equal("Route rule 'Support' already exists for agent 'writer' version '2'.", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateRouteRule_ShouldNormalizeRegexMatchType_AndPersist()
+    {
+        var version = CreateVersion();
+        var routeRuleRepository = new FakeRouteRuleRepository();
+        var handler = new CreateRouteRuleCommandHandler(
+            new FakeAgentDefinitionRepository
+            {
+                GetVersionByCodeAsyncResult = version
+            },
+            routeRuleRepository);
+
+        var result = await handler.Handle(
+            new CreateRouteRuleCommand(
+                "writer",
+                2,
+                "support_agent",
+                "Regex Route",
+                10,
+                " Regex ",
+                """
+                { "pattern": "refund.+order\\s+#?123" }
+                """,
+                "route_only",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                true),
+            CancellationToken.None);
+
+        Assert.Equal("regex", result.MatchType);
+        using var document = JsonDocument.Parse(result.MatchExpression!);
+        Assert.Equal("refund.+order\\s+#?123", document.RootElement.GetProperty("pattern").GetString());
+        Assert.Equal("regex", routeRuleRepository.AddedRouteRule!.MatchType);
+    }
+
+    [Fact]
+    public async Task CreateRouteRule_ShouldThrow_WhenMatchTypeIsUnsupported()
+    {
+        var version = CreateVersion();
+        var handler = new CreateRouteRuleCommandHandler(
+            new FakeAgentDefinitionRepository
+            {
+                GetVersionByCodeAsyncResult = version
+            },
+            new FakeRouteRuleRepository());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new CreateRouteRuleCommand(
+                "writer",
+                2,
+                "support_agent",
+                "Unsupported Route",
+                10,
+                "semantic",
+                null,
+                "route_only",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                true),
+            CancellationToken.None));
+
+        Assert.Equal("Match type 'semantic' is not supported. Supported values: intent, keyword, regex.", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateRouteRule_ShouldThrow_WhenRegexPatternIsInvalid()
+    {
+        var version = CreateVersion();
+        var handler = new CreateRouteRuleCommandHandler(
+            new FakeAgentDefinitionRepository
+            {
+                GetVersionByCodeAsyncResult = version
+            },
+            new FakeRouteRuleRepository());
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new CreateRouteRuleCommand(
+                "writer",
+                2,
+                "support_agent",
+                "Invalid Regex Route",
+                10,
+                "regex",
+                """
+                { "pattern": "(" }
+                """,
+                "route_only",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                true),
+            CancellationToken.None));
+
+        Assert.StartsWith("Regex match expression is invalid:", exception.Message, StringComparison.Ordinal);
     }
 
     private static AgentDefinitionVersion CreateVersion()

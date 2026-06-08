@@ -1580,6 +1580,63 @@ public class AgentRunLoopTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldAutomaticallyRoute_WhenRegexRouteRuleMatchesInput()
+    {
+        var context = CreateLoopContext();
+        var resolvedDefinition = CreateResolvedDefinition(
+            allowedHandoffs: "[\"support_agent\"]",
+            routingPolicy: "{\"strategy\":\"handoff-first\"}");
+
+        _routeRuleRepository.GetByAgentDefinitionVersionIdAsync("ver-1", Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RouteRule
+                {
+                    Id = "rule-regex-1",
+                    AgentDefinitionVersionId = "ver-1",
+                    SourceAgentCode = "writer",
+                    TargetAgentCode = "support_agent",
+                    RuleName = "Refund Regex Route",
+                    Priority = 10,
+                    MatchType = "regex",
+                    MatchExpression = "{\"pattern\":\"refund.+order\\\\s+#?123\"}",
+                    HandoffMode = "route_only",
+                    Enabled = true
+                }
+            ]);
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context with { CurrentInput = "User asks for a refund on order #123" },
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None,
+            routeRuleRepository: _routeRuleRepository);
+
+        var waiting = Assert.IsType<AgentLoopWaitingHandoff>(result);
+        Assert.Equal("support_agent", waiting.TargetAgent);
+        Assert.Equal("route_only", waiting.HandoffMode);
+
+        await _modelGateway.DidNotReceive().GenerateTextAsync(
+            Arg.Any<GenerateTextRequest>(),
+            Arg.Any<CancellationToken>());
+
+        var pendingStep = _agentStepRepository.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.AddAsync))
+            .Select(call => call.GetArguments()[0])
+            .OfType<AgentStep>()
+            .Single(step => step.StepType == "handoff");
+        var payload = HandoffPayloadSerializer.Parse(pendingStep.DecisionPayload);
+
+        Assert.Equal("rule-regex-1", payload.RouteRuleId);
+        Assert.Equal("Matched route rule 'Refund Regex Route'.", payload.Reason);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldPersistRouteDecisionMetadata_WhenHandoffDecisionIncludesRouteFields()
     {
         var context = CreateLoopContext();

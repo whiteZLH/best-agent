@@ -2,11 +2,20 @@ using BestAgent.Application.Exceptions;
 using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentDefinitions;
 using MediatR;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace BestAgent.Application.AgentDefinitions.Commands.CreateRouteRule;
 
 public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleCommand, RouteRuleViewModel>
 {
+    private static readonly HashSet<string> SupportedMatchTypes =
+    [
+        "intent",
+        "keyword",
+        "regex"
+    ];
+
     private static readonly HashSet<string> SupportedHandoffModes =
     [
         "route_only",
@@ -30,7 +39,7 @@ public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleComm
         var agentCode = request.AgentCode.Trim();
         var targetAgentCode = request.TargetAgentCode.Trim();
         var ruleName = request.RuleName.Trim();
-        var matchType = request.MatchType.Trim();
+        var matchType = request.MatchType.Trim().ToLowerInvariant();
         var handoffMode = request.HandoffMode.Trim().ToLowerInvariant();
         var normalizedMergeStrategy = HandoffPayloadSerializer.NormalizeMergeStrategy(handoffMode, request.MergeStrategy);
         var normalizedMatchExpression = AgentDefinitionJsonPolicySerializer.NormalizeOptionalJson(request.MatchExpression, "Match expression");
@@ -64,6 +73,12 @@ public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleComm
             throw new InvalidOperationException("Match type is required.");
         }
 
+        if (!SupportedMatchTypes.Contains(matchType))
+        {
+            throw new InvalidOperationException(
+                $"Match type '{matchType}' is not supported. Supported values: intent, keyword, regex.");
+        }
+
         if (string.IsNullOrWhiteSpace(handoffMode))
         {
             throw new InvalidOperationException("Handoff mode is required.");
@@ -73,6 +88,11 @@ public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleComm
         {
             throw new InvalidOperationException(
                 $"Handoff mode '{handoffMode}' is not supported. Supported values: route_only, delegate_and_wait, delegate_and_merge.");
+        }
+
+        if (string.Equals(matchType, "regex", StringComparison.Ordinal))
+        {
+            ValidateRegexMatchExpression(normalizedMatchExpression);
         }
 
         var version = await _agentDefinitionRepository.GetVersionByCodeAsync(agentCode, request.Version, cancellationToken);
@@ -116,5 +136,65 @@ public class CreateRouteRuleCommandHandler : IRequestHandler<CreateRouteRuleComm
 
         await _routeRuleRepository.AddAsync(routeRule, cancellationToken);
         return RouteRuleViewModel.FromRouteRule(routeRule);
+    }
+
+    private static void ValidateRegexMatchExpression(string? matchExpression)
+    {
+        if (string.IsNullOrWhiteSpace(matchExpression))
+        {
+            throw new InvalidOperationException("Regex match expression is required when match type is 'regex'.");
+        }
+
+        var pattern = ExtractRegexPattern(matchExpression);
+        if (string.IsNullOrWhiteSpace(pattern))
+        {
+            throw new InvalidOperationException("Regex match expression must contain a non-empty pattern.");
+        }
+
+        try
+        {
+            _ = Regex.IsMatch(string.Empty, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(200));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException($"Regex match expression is invalid: {ex.Message}", ex);
+        }
+    }
+
+    private static string? ExtractRegexPattern(string matchExpression)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(matchExpression);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.String)
+            {
+                return root.GetString();
+            }
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            return ReadString(root, "pattern")
+                ?? ReadString(root, "regex")
+                ?? ReadString(root, "expression");
+        }
+        catch (JsonException)
+        {
+            return matchExpression.Trim();
+        }
+    }
+
+    private static string? ReadString(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return property.GetString();
     }
 }

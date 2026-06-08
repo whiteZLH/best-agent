@@ -132,7 +132,7 @@
 - 模型 handoff 决策当前也已开始支持最小 `memory_overrides` 元数据，并会进入 handoff 审计 payload；当前支持 `{"mode":"read_only"}` 与 `{"mode":"disabled"}` 两类最小记忆边界收紧语义
 - `tool_overrides` / `tool_scope` 当前也已开始最小影响子 Agent 的工具边界：支持用 `{"allowed":[...]}` 进一步收紧子 Agent 原本的 `AllowedTools`，但不会放大权限
 - `knowledge_overrides` / `knowledge_scope` 当前也已开始最小影响子 Agent 的知识边界：支持用 `{"allowed":[...]}` 或 `{"sources":[...]}` 进一步收紧子 Agent 原本的 `KnowledgeSources`，但不会放大检索范围；当二者同时存在时，当前优先使用 handoff 显式给出的 `knowledge_overrides`
-- 当版本级 `RoutingPolicy.strategy == "handoff-first"` 时，当前也已开始最小自动匹配 `RouteRule`：`match_type = intent|keyword` 时，会对 `match_expression` 中的 `intent` / `keyword` / `contains` / `any` / `all` / `keywords` / `terms` 做大小写不敏感包含匹配，命中后直接进入 handoff
+- 当版本级 `RoutingPolicy.strategy == "handoff-first"` 时，当前也已开始最小自动匹配 `RouteRule`：`match_type = intent|keyword` 时，会对 `match_expression` 中的 `intent` / `keyword` / `contains` / `any` / `all` / `keywords` / `terms` 做大小写不敏感包含匹配；`match_type = regex` 时，则会消费 `pattern` / `regex` / `expression` 正则表达式做大小写不敏感匹配，命中后直接进入 handoff
 - 当前仍没有真正按这些字段执行更细粒度的长期记忆边界治理或更多上下文/工具策略模式；`memory_scope` 当前虽已支持 `read_only` / `disabled`，但更多模式仍待继续落地
 
 ## 7. 权限继承规则
