@@ -7,6 +7,7 @@ public record EventDataInfoResponse(
     string? Output,
     string? Error,
     EventModelCallInfoResponse? ModelCall,
+    EventRetrievalInfoResponse? Retrieval,
     EventModelFailureInfoResponse? ModelFailure,
     EventToolFailureInfoResponse? ToolFailure,
     EventToolInvocationInfoResponse? ToolInvocation = null,
@@ -30,6 +31,9 @@ public record EventModelCallRetrievalInfoResponse(
     IReadOnlyList<string> RequestedSources,
     IReadOnlyList<string> SelectedSources,
     IReadOnlyList<string> Citations);
+
+public record EventRetrievalInfoResponse(
+    string QueryText);
 
 public record EventModelFailureInfoResponse(
     string? ErrorCode,

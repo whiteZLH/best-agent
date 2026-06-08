@@ -441,6 +441,7 @@ public class AgentRunsControllerTests
                             ["faq"],
                             ["faq/doc-1#1"],
                             ["score=3; source=faq/doc-1#1; chunk=1"])),
+                    new RetrievalInfo("hotel refund manager approval policy"),
                     new ModelFailureInfo("upstream_unavailable", "Planner could not continue."),
                     new ToolFailureInfo("weather", "execution", "tool backend crashed", new ToolFailureCompensationInfo("manual")),
                     now,
@@ -510,6 +511,7 @@ public class AgentRunsControllerTests
         Assert.Equal(45, step.ModelCall.CompletionTokens);
         Assert.Equal(165, step.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, step.ModelCall.Cost);
+        Assert.Equal("hotel refund manager approval policy", step.Retrieval!.QueryText);
         Assert.Equal("refund manager approval", step.ModelCall.Retrieval!.QueryText);
         Assert.True(step.ModelCall.Retrieval.WasRewritten);
         Assert.Equal(4, step.ModelCall.Retrieval.CandidateCount);
@@ -757,6 +759,7 @@ public class AgentRunsControllerTests
                                 ["faq"],
                                 ["faq/doc-1#1"],
                                 ["score=3; source=faq/doc-1#1; chunk=1"])),
+                        new EventRetrievalInfo("hotel refund manager approval policy"),
                         null,
                         null,
                         new EventToolInvocationInfo(
@@ -798,6 +801,7 @@ public class AgentRunsControllerTests
         Assert.Equal("Completed", evt.Data.Status);
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
+        Assert.Equal("hotel refund manager approval policy", evt.Data.Retrieval!.QueryText);
         Assert.Equal("refund manager approval", evt.Data.ModelCall.Retrieval!.QueryText);
         Assert.Equal("invocation-1", evt.Data.ToolInvocation!.InvocationId);
         Assert.Equal("wait-1", evt.Data.ToolInvocation.CallbackToken);
@@ -1209,8 +1213,8 @@ public class AgentRunsControllerTests
         using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
 
-        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"toolInvocation\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
-        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null,\"toolInvocation\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
+        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"retrieval\":null,\"modelFailure\":null,\"toolFailure\":null,\"toolInvocation\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
+        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"retrieval\":null,\"modelFailure\":null,\"toolFailure\":null,\"toolInvocation\":null,\"approval\":null,\"handoff\":null,\"humanWait\":null}}\n\n", body);
     }
 
     [Fact]
@@ -1269,7 +1273,7 @@ public class AgentRunsControllerTests
                     "step",
                     "Running",
                     "{\"stepNo\":2,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"replayed\"}",
-                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null),
+                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null, null),
                     "published",
                     now,
                     0,
@@ -1326,7 +1330,7 @@ public class AgentRunsControllerTests
                     "done",
                     "Completed",
                     "{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final\"}",
-                    new EventDataInfo(0, "completed", "Completed", "final", null, null, null, null),
+                    new EventDataInfo(0, "completed", "Completed", "final", null, null, null, null, null),
                     "published",
                     now,
                     0,
@@ -1512,6 +1516,56 @@ public class AgentRunsControllerTests
     }
 
     [Fact]
+    public async Task Stream_ShouldIncludeStructuredRetrievalData_ForLiveEvents()
+    {
+        var retrievalPayload = RetrievalPayloadSerializer.Create("hotel refund manager approval policy");
+        var eventBus = new RecordingEventBus(
+        [
+            new AgentRunEvent(
+                "run-001",
+                "step",
+                new AgentRunEventData(
+                    2,
+                    "retrieval",
+                    "Completed",
+                    "hotel refund manager approval policy",
+                    DecisionPayload: retrievalPayload),
+                "evt-retrieval-1",
+                3,
+                "Running",
+                new DateTime(2026, 6, 9, 0, 0, 0, DateTimeKind.Utc))
+        ]);
+        var controller = new AgentRunsController(new FakeMediator((CreateAgentRunCommand _) => throw new NotSupportedException()), _mapper, eventBus)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    Response =
+                    {
+                        Body = new MemoryStream()
+                    }
+                }
+            }
+        };
+
+        await controller.Stream("run-001", CancellationToken.None);
+
+        controller.Response.Body.Position = 0;
+        using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        var dataLine = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Single(line => line.StartsWith("data: ", StringComparison.Ordinal));
+        var payload = JsonSerializer.Deserialize<StreamAgentRunEventResponse>(
+            dataLine["data: ".Length..],
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(payload);
+        Assert.Equal("step", payload!.EventType);
+        Assert.Equal("hotel refund manager approval policy", payload.Data.Retrieval!.QueryText);
+    }
+
+    [Fact]
     public async Task Stream_ShouldSkipBufferedDuplicateEvents_WhenReplayOverlapsWithLiveSubscription()
     {
         var now = new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc);
@@ -1525,7 +1579,7 @@ public class AgentRunsControllerTests
                     "step",
                     "Running",
                     "{\"stepNo\":2,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"replayed\"}",
-                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null),
+                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null, null),
                     "published",
                     now,
                     0,

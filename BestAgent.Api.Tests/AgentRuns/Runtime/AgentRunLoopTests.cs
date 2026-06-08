@@ -956,9 +956,15 @@ public class AgentRunLoopTests
                 step.StepType == "retrieval" &&
                 step.Status == "Completed" &&
                 step.InputPayload == "hotel refund manager approval policy" &&
-                step.OutputPayload == "hotel refund manager approval policy"),
+                step.OutputPayload == "hotel refund manager approval policy" &&
+                HasRetrievalPayload(step.DecisionPayload, "hotel refund manager approval policy")),
             Arg.Any<CancellationToken>());
-        Assert.Contains(events, evt => evt.Data.StepType == "retrieval" && evt.Data.Output == "hotel refund manager approval policy");
+        Assert.Contains(
+            events,
+            evt =>
+                evt.Data.StepType == "retrieval"
+                && evt.Data.Output == "hotel refund manager approval policy"
+                && HasRetrievalPayload(evt.Data.DecisionPayload, "hotel refund manager approval policy"));
     }
 
     [Fact]
@@ -1868,6 +1874,13 @@ public class AgentRunLoopTests
         Assert.Equal(stepType, evt.Data.StepType);
         Assert.Equal(status, evt.Data.Status);
         Assert.Equal(output, evt.Data.Output);
+    }
+
+    private static bool HasRetrievalPayload(string? payload, string expectedQuery)
+    {
+        return RetrievalPayloadSerializer.TryParse(payload, out var parsed)
+            && parsed is not null
+            && parsed.QueryText == expectedQuery;
     }
 
     private static AgentLoopContext CreateLoopContext()

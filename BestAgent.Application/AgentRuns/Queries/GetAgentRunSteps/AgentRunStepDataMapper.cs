@@ -115,4 +115,14 @@ internal static class AgentRunStepDataMapper
             payload.SourceToolStatus,
             payload.ContinueAsToolResult);
     }
+
+    public static RetrievalInfo? MapRetrieval(string? decisionPayload)
+    {
+        if (!RetrievalPayloadSerializer.TryParse(decisionPayload, out var payload))
+        {
+            return null;
+        }
+
+        return new RetrievalInfo(payload!.QueryText);
+    }
 }

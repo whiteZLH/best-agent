@@ -196,6 +196,45 @@ public class GetAgentRunEventsQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ShouldReturnStructuredRetrievalInfo_WhenEventPayloadContainsRetrievalDecisionPayload()
+    {
+        var outboxRepository = Substitute.For<IRunOutboxEventRepository>();
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddSingleton(outboxRepository);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var mediator = serviceProvider.GetRequiredService<IMediator>();
+        var now = new DateTime(2026, 6, 9, 10, 0, 0, DateTimeKind.Utc);
+        var retrievalPayload = RetrievalPayloadSerializer.Create("hotel refund manager approval policy");
+        var escapedRetrievalPayload = JsonSerializer.Serialize(retrievalPayload);
+
+        outboxRepository.ListByRunIdAsync("run-1", null, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RunOutboxEvent
+                {
+                    EventId = "event-retrieval-1",
+                    RunId = "run-1",
+                    SeqNo = 8,
+                    EventType = "step",
+                    RunStatus = "Running",
+                    Payload = $$"""{"stepNo":4,"stepType":"retrieval","status":"Completed","output":"hotel refund manager approval policy","error":null,"decisionPayload":{{escapedRetrievalPayload}}}""",
+                    PublishStatus = "published",
+                    OccurredAt = now,
+                    CreateTime = now,
+                    LastModifyTime = now
+                }
+            ]);
+
+        var result = await mediator.Send(new GetAgentRunEventsQuery("run-1"));
+
+        var evt = Assert.Single(result);
+        var data = Assert.IsType<EventDataInfo>(evt.Data);
+        Assert.NotNull(data.Retrieval);
+        Assert.Equal("hotel refund manager approval policy", data.Retrieval!.QueryText);
+    }
+
+    [Fact]
     public async Task Handle_ShouldReturnStructuredDecisionInfo_WhenEventPayloadContainsDecisionPayload()
     {
         var outboxRepository = Substitute.For<IRunOutboxEventRepository>();

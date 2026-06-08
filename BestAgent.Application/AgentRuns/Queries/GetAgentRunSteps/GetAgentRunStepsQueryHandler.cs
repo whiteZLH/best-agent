@@ -49,6 +49,7 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
                 AgentRunStepDataMapper.MapHumanWait(step.DecisionPayload),
                 MapToolInvocation(step.StepId, invocationsByStepId),
                 MapModelCall(step.DecisionPayload),
+                AgentRunStepDataMapper.MapRetrieval(step.DecisionPayload),
                 MapModelFailure(step.ErrorPayload),
                 MapToolFailure(step.ErrorPayload),
                 step.CreateTime,

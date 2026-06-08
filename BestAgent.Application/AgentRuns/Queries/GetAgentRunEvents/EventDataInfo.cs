@@ -10,6 +10,7 @@ public record EventDataInfo(
     string? Output,
     string? Error,
     EventModelCallInfo? ModelCall,
+    EventRetrievalInfo? Retrieval,
     EventModelFailureInfo? ModelFailure,
     EventToolFailureInfo? ToolFailure,
     EventToolInvocationInfo? ToolInvocation = null,
@@ -70,6 +71,9 @@ public record EventDataInfo(
                             modelCall.Retrieval.RequestedSources,
                             modelCall.Retrieval.SelectedSources,
                             modelCall.Retrieval.Citations))
+                : null,
+            RetrievalPayloadSerializer.TryParse(data.DecisionPayload, out var retrieval)
+                ? new EventRetrievalInfo(retrieval!.QueryText)
                 : null,
             ModelFailurePayloadSerializer.TryParse(data.Error, out var modelFailure)
                 ? new EventModelFailureInfo(modelFailure!.ErrorCode, modelFailure.Message)
@@ -197,6 +201,9 @@ public record EventModelCallRetrievalInfo(
     IReadOnlyList<string> RequestedSources,
     IReadOnlyList<string> SelectedSources,
     IReadOnlyList<string> Citations);
+
+public record EventRetrievalInfo(
+    string QueryText);
 
 public record EventModelFailureInfo(
     string? ErrorCode,

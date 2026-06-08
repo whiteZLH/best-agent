@@ -14,6 +14,7 @@ public record GetAgentRunStepsItem(
     HumanWaitInfo? HumanWait,
     ToolInvocationInfo? ToolInvocation,
     ModelCallInfo? ModelCall,
+    RetrievalInfo? Retrieval,
     ModelFailureInfo? ModelFailure,
     ToolFailureInfo? ToolFailure,
     DateTime CreateTime,

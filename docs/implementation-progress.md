@@ -1,6 +1,6 @@
 # BestAgent MVP 实现进度
 
-更新日期：2026-06-08
+更新日期：2026-06-09
 
 ## 1. 当前状态
 
@@ -52,7 +52,7 @@
 - 多 Agent / handoff 当前已开始进入主链路：模型可返回 `handoff` 决策，Runtime 会按版本级 `AllowedHandoffs` 校验目标 Agent，创建父子 Run 关系并支持最小 `route_only` / `delegate_and_wait` / `delegate_and_merge` 闭环；子 Run 完成后父 Run 当前可按模式直接完成或恢复继续生成最终答复，其中 `delegate_and_merge` 已开始支持单子 Run 的显式 `merge_strategy`（默认 `supervisor_summary`，并支持 `first_success` / `all_results`）；相关 `ParentRunId` / `RootRunId` / `DelegatedBy*` 字段已进入 Run 查询读侧，`GetAgentRunSteps` 当前也已支持 typed `Handoff` 审计视图，`GET /agent-runs/{runId}/children` 与 `GET /agent-runs/{runId}/tree` 已开始提供最小父子链路聚合视图；handoff 链当前也已按版本级 `ExecutionPolicy.maxHandoffDepth`（默认 `3`）进入最小深度治理；同时 `RouteRule.context_scope` 与 handoff `context_overrides` 当前也已开始最小影响子 Run 输入，支持 `summary_only` 模式把子 Agent 输入收敛为“委派任务摘要 + 父请求摘要”，并进一步关闭子 Agent 模型调用前的 `summary/session/user/knowledge` 注入；`summary_only` 当前也会同步关闭子 Agent 的 `toolResultMemoryEnabled`、`userMemoryWriteEnabled` 与 `summaryMemoryWriteEnabled`，避免子 Run 在摘要上下文下继续写回长期记忆；`RouteRule.memory_scope` 与 handoff `memory_overrides` 当前也已开始进入最小长期记忆边界治理，支持 `{"mode":"read_only"}` 只关闭子 Agent 的长期记忆写侧、以及 `{"mode":"disabled"}` 同时关闭长期记忆/检索读写侧；`tool_scope/tool_overrides` 也已开始以 `allowed` 列表最小收紧子 Agent 的 `AllowedTools`，`knowledge_scope/knowledge_overrides` 当前也已开始以 `allowed` 或 `sources` 列表最小收紧子 Agent 的 `KnowledgeSources`，并在二者同时存在时优先使用 handoff 显式给出的 `knowledge_overrides`；子 Agent 的 `AllowedHandoffs` 也已开始继承父链路收紧后的有效边界，避免继续向父未放行目标扩权委派
 - `RouteRule` 当前已从纯设计态进入最小定义管理态，并开始进入最小 Runtime 自动路由：`route_rule` 已接入 EF / Repository，并开始提供按 `agentCode + version` 创建与列表查询接口（`GET/POST /agent-definitions/{agentCode}/versions/{version}/route-rules`）；handoff Runtime 当前除会在模型未显式给出 `mode` 时回退使用命中规则中的 `handoff_mode`、在 `delegate_and_merge` 下继续回退消费规则级 `merge_strategy`，并把 `routeRuleId/contextScope/toolScope/knowledgeScope/approvalRequired` 写入 handoff 审计 payload 外，也已开始支持最小自动路由切片：当版本级 `RoutingPolicy.strategy == "handoff-first"` 且存在匹配当前输入的启用 `RouteRule` 时，Runtime 会在首轮模型调用前直接进入 handoff；当前最小匹配能力支持 `match_type = intent|keyword|regex`，其中 `intent` / `keyword` 会对 `match_expression` 中的 `intent` / `keyword` / `contains` / `any` / `all` / `keywords` / `terms` 做大小写不敏感包含匹配，`regex` 会消费 `pattern` / `regex` / `expression` 正则表达式做大小写不敏感匹配；同时模型 handoff 决策也已开始支持最小 route metadata（`reason/confidence/context_overrides/memory_overrides/tool_overrides/knowledge_overrides/approval_required`）并进入 handoff 审计与 `GetAgentRunSteps` 读侧；`approval_required` 当前也已不再只是审计字段，handoff 命中后可真正进入 `WaitingApproval`，并支持 approve / reject / timeout / request-human 收尾；但 Runtime 目前仍未形成更完整的 Router Agent / Supervisor Agent 与复杂自动路由策略
 - 规划层结构化降级出口当前也已开始进入主链路：模型可直接返回 `request_human` 进入现有 `WaitingHuman` / `human_wait` 闭环，也可返回 `fail` 生成结构化 `model_failure` 审计载荷并进入失败终态
-- 规划层当前也已开始支持最小显式检索/审批决策：模型可返回 `retrieve`，Runtime 会记录 `retrieval` step、构造显式 retrieval follow-up，并在下一轮模型调用前复用现有 `RuntimeContextComposer` 执行真实知识检索；模型也可返回 `request_approval` 复用现有 `WaitingApproval` / approve / reject 闭环，审批通过后会把审批结果喂回下一轮规划继续执行
+- 规划层当前也已开始支持最小显式检索/审批决策：模型可返回 `retrieve`，Runtime 会记录带结构化 `DecisionPayload` 的 `retrieval` step、构造显式 retrieval follow-up，并在下一轮模型调用前复用现有 `RuntimeContextComposer` 执行真实知识检索；`GetAgentRunSteps`、`GetAgentRunEvents` 与 SSE 当前也已开始为该显式 retrieval step 返回 typed `Retrieval` 视图；模型也可返回 `request_approval` 复用现有 `WaitingApproval` / approve / reject 闭环，审批通过后会把审批结果喂回下一轮规划继续执行
 - 最小审批流闭环（`WaitingApproval` + `approve/reject`，当前已同时覆盖高风险 `tool_call` 与 `approval_required handoff`）
 - 最小审批超时闭环（`expires_at` + 后台扫描；默认拒绝进入 `TimedOut`，也支持按配置转入 `WaitingHuman`）
 - 最小人工接管闭环（`WaitingHuman` + `request-human` / `complete-human`）
@@ -65,7 +65,7 @@
 - `AgentDefinitionVersion.ContextPolicy` 当前也已开始最小进入主链路：`ContextPolicy.citations` 可同时控制检索知识注入时是否附带 citation/source 元数据，以及最终答复是否自动追加基于检索上下文提取的 `References`
 - `AgentRun.MaxCost` / `AgentDefinitionVersion.MaxCost` 当前也已开始最小进入主链路：OpenAI 兼容模型网关会读取 `usage` 并按配置的 `OpenAI:PromptTokenPricePerMillion` / `CompletionTokenPricePerMillion` 计算最小模型成本，Runtime 会累计到 `AgentRun.TotalCost`，并在后续模型调用前或单次模型调用后对 `max_cost` 做最小超限拦截
 - 模型调用审计当前也已开始补上最小 usage 读侧：`model_call` step 会把 `model`、`promptTokens`、`completionTokens`、`totalTokens` 与 `cost` 写入 `DecisionPayload`，`GetAgentRunSteps` / `GET /agent-runs/{runId}/steps` 现可返回 typed `ModelCall` 视图；若命中检索，当前也会补上最小 retrieval query / candidateCount / selectedSources / citations 审计
-- run outbox 事件读侧当前也已开始补上最小 typed payload 视图：`GetAgentRunEvents` / `GET /agent-runs/{runId}/events` 除保留脱敏后的原始 `Payload` 外，也会返回统一 `Data` 结构，并可进一步把事件中的 `model_call` / `model_failure` / `tool_error` 解析为 typed 读侧；SSE `stream` 当前也已开始同步回显最小 typed `ModelCall`
+- run outbox 事件读侧当前也已开始补上最小 typed payload 视图：`GetAgentRunEvents` / `GET /agent-runs/{runId}/events` 除保留脱敏后的原始 `Payload` 外，也会返回统一 `Data` 结构，并可进一步把事件中的 `model_call` / `retrieval` / `model_failure` / `tool_error` 解析为 typed 读侧；SSE `stream` 当前也已开始同步回显最小 typed `ModelCall` 与显式 `Retrieval`
 - `GetAgentRunEvents` 与 SSE `stream` 当前也已开始把事件中的 `Approval` / `Handoff` / `HumanWait` 决策载荷补成 typed 读侧，并对其中的工具输入 / 输出继续沿用最小递归脱敏
 - `GetAgentRunEvents` 与 SSE `stream` 当前也已开始把异步 `waiting` 事件中的 `ToolInvocation` 恢复信息补成 typed 读侧，显式回显 `invocationId/toolName/mode/status/callbackToken`
 - `GetAgentRunById` / `GET /agent-runs/{runId}` 当前也已开始补充最小等待定位字段：除 `WaitToken`、`CurrentStepNo`、`InterruptReason` 外，还会返回 `CurrentStepId`、`WaitStepType`，并在适用时补上 `CurrentInvocationId` / `CurrentApprovalId`
@@ -87,7 +87,7 @@
 - `AgentRunsController` 当前也已开始最小消费 `tenant/user/session` scope：创建 Run 时会优先继承已认证身份字段，并兼容 `X-BestAgent-Tenant-Id` / `X-BestAgent-User-Id` / `X-BestAgent-Session-Id` 显式 scope headers；Run 查询、恢复、取消、审批、人机协同、外部 tool/approval complete 回调与 SSE stream 入口在存在上述 scope 时也会校验当前 Run 是否仍处于相同 tenant/user/session 边界内
 - 已补上最小记忆写回闭环：可信工具完成结果可按 `MemoryPolicy` 最小 allowlist 门禁写入 `session_memory`，run 完成时可写入模板化 `summary_memory`
 - `MemoryPolicy` 写侧已细化为独立开关：`session_memory` 工具结果写入、结构化 `user_memory` 写入与 `summary_memory` 写入可分别控制
-- 检索链路已从固定顺序注入升级到最小 lexical retrieval：支持 query 归一化、候选召回、词法重排、prompt citation 注入与最终答复 `References` 追加；`model_call` 审计、`GetAgentRunSteps`、`GetAgentRunEvents` 与 SSE 当前也已开始回显最小 retrieval query / sources / citations 结构化信息
+- 检索链路已从固定顺序注入升级到最小 lexical retrieval：支持 query 归一化、候选召回、词法重排、prompt citation 注入与最终答复 `References` 追加；`model_call` 审计当前会回显最小 retrieval query / sources / citations 结构化信息，显式 `retrieval` step 本身也已开始在 `GetAgentRunSteps`、`GetAgentRunEvents` 与 SSE 中回显 typed retrieval query 视图
 - `user_memory` 已开始支持最小可信写入：仅消费工具结果中显式声明的结构化 memory 条目，并按 `memory_key` 覆写更新
 - 基础单元测试、控制器测试与部分集成 / 基础设施测试
 

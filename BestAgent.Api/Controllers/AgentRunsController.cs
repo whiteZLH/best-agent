@@ -413,6 +413,7 @@ public class AgentRunsController : ControllerBase
                 null,
                 null,
                 null,
+                null,
                 null);
 
         return new EventDataInfoResponse(
@@ -439,6 +440,10 @@ public class AgentRunsController : ControllerBase
                             resolvedData.ModelCall.Retrieval.RequestedSources,
                             resolvedData.ModelCall.Retrieval.SelectedSources,
                             resolvedData.ModelCall.Retrieval.Citations)),
+            resolvedData.Retrieval is null
+                ? null
+                : new EventRetrievalInfoResponse(
+                    resolvedData.Retrieval.QueryText),
             resolvedData.ModelFailure is null
                 ? null
                 : new EventModelFailureInfoResponse(

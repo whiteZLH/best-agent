@@ -141,6 +141,7 @@ public static class AgentRunLoop
                 var retrievalQuery = string.IsNullOrWhiteSpace(decision.RetrievalQuery)
                     ? currentInput
                     : decision.RetrievalQuery.Trim();
+                var retrievalPayload = RetrievalPayloadSerializer.Create(retrievalQuery);
                 var retrievalStep = CreateStep(
                     run.RunId,
                     nextStepNo++,
@@ -150,7 +151,10 @@ public static class AgentRunLoop
                     retrievalQuery,
                     null,
                     DateTime.UtcNow,
-                    DateTime.UtcNow);
+                    DateTime.UtcNow) with
+                {
+                    DecisionPayload = retrievalPayload
+                };
                 await agentStepRepository.AddAsync(retrievalStep, cancellationToken);
 
                 if (onEvent is not null)
@@ -158,7 +162,12 @@ public static class AgentRunLoop
                     await onEvent(new AgentRunEvent(
                         run.RunId,
                         "step",
-                        new AgentRunEventData(retrievalStep.StepNo, retrievalStep.StepType, "Completed", retrievalQuery)));
+                        new AgentRunEventData(
+                            retrievalStep.StepNo,
+                            retrievalStep.StepType,
+                            "Completed",
+                            retrievalQuery,
+                            DecisionPayload: retrievalPayload)));
                 }
 
                 currentInput = BuildRetrievalFollowUpInput(currentInput, retrievalQuery);

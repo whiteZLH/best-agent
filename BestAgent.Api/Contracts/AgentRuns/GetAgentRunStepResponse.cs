@@ -14,6 +14,7 @@ public record GetAgentRunStepResponse(
     HumanWaitInfoResponse? HumanWait,
     ToolInvocationInfoResponse? ToolInvocation,
     ModelCallInfoResponse? ModelCall,
+    RetrievalInfoResponse? Retrieval,
     ModelFailureInfoResponse? ModelFailure,
     ToolFailureInfoResponse? ToolFailure,
     DateTime CreateTime,

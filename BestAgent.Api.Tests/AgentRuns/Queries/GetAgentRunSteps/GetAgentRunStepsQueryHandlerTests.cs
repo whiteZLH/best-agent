@@ -271,6 +271,49 @@ public class GetAgentRunStepsQueryHandlerTests
     }
 
     [Fact]
+    public async Task Handle_ShouldReturnRetrievalInfo_WhenStepDecisionPayloadContainsExplicitRetrieval()
+    {
+        var stepRepository = Substitute.For<IAgentStepRepository>();
+        var approvalRepository = Substitute.For<IAgentApprovalRepository>();
+        var invocationRepository = Substitute.For<IToolInvocationRepository>();
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddSingleton(stepRepository);
+        services.AddSingleton(approvalRepository);
+        services.AddSingleton(invocationRepository);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var mediator = serviceProvider.GetRequiredService<IMediator>();
+        var now = new DateTime(2026, 6, 9, 0, 0, 0, DateTimeKind.Utc);
+        var retrievalStep = AgentRunLoop.CreateStep(
+            "run-1",
+            2,
+            "retrieval",
+            "Completed",
+            "hotel refund manager approval policy",
+            "hotel refund manager approval policy",
+            null,
+            now,
+            now) with
+        {
+            DecisionPayload = RetrievalPayloadSerializer.Create("hotel refund manager approval policy")
+        };
+
+        stepRepository.ListByRunIdAsync("run-1", Arg.Any<CancellationToken>())
+            .Returns([retrievalStep]);
+        approvalRepository.ListByRunIdAsync("run-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<AgentApproval>());
+        invocationRepository.ListByRunIdAsync("run-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ToolInvocation>());
+
+        var result = await mediator.Send(new GetAgentRunStepsQuery("run-1"));
+
+        var item = Assert.Single(result);
+        Assert.Equal("retrieval", item.StepType);
+        Assert.NotNull(item.Retrieval);
+        Assert.Equal("hotel refund manager approval policy", item.Retrieval!.QueryText);
+    }
+
+    [Fact]
     public async Task Handle_ShouldReturnStructuredFailureInfo_WhenStepErrorPayloadContainsModelAndToolFailures()
     {
         var stepRepository = Substitute.For<IAgentStepRepository>();

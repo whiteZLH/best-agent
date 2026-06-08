@@ -103,11 +103,13 @@ public class ApiMappingProfile : Profile
         CreateMap<ToolInvocationInfo, ToolInvocationInfoResponse>();
         CreateMap<ModelCallRetrievalInfo, ModelCallRetrievalInfoResponse>();
         CreateMap<ModelCallInfo, ModelCallInfoResponse>();
+        CreateMap<RetrievalInfo, RetrievalInfoResponse>();
         CreateMap<ModelFailureInfo, ModelFailureInfoResponse>();
         CreateMap<ToolFailureCompensationInfo, ToolFailureCompensationInfoResponse>();
         CreateMap<ToolFailureInfo, ToolFailureInfoResponse>();
         CreateMap<EventModelCallRetrievalInfo, EventModelCallRetrievalInfoResponse>();
         CreateMap<EventModelCallInfo, EventModelCallInfoResponse>();
+        CreateMap<EventRetrievalInfo, EventRetrievalInfoResponse>();
         CreateMap<GetAgentRunStepsItem, GetAgentRunStepResponse>();
         CreateMap<GetAgentRunApprovalsItem, GetAgentRunApprovalResponse>();
         CreateMap<EventModelFailureInfo, EventModelFailureInfoResponse>();
