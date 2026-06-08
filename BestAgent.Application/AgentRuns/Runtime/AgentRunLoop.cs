@@ -107,10 +107,11 @@ public static class AgentRunLoop
             }, cancellationToken);
             if (onEvent is not null)
             {
+                var modelCallPayload = ModelCallPayloadSerializer.Create(version.DefaultModel, modelResponse, runtimeContext.Retrieval);
                 await onEvent(new AgentRunEvent(
                     run.RunId,
                     "step",
-                    new AgentRunEventData(nextStepNo - 1, "model_call", "Completed", modelResponse.Output)));
+                    new AgentRunEventData(nextStepNo - 1, "model_call", "Completed", modelResponse.Output, null, modelCallPayload)));
             }
 
             if (HasExceededMaxCost(run, totalCostDelta))

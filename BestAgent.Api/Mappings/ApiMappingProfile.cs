@@ -106,6 +106,8 @@ public class ApiMappingProfile : Profile
         CreateMap<ModelFailureInfo, ModelFailureInfoResponse>();
         CreateMap<ToolFailureCompensationInfo, ToolFailureCompensationInfoResponse>();
         CreateMap<ToolFailureInfo, ToolFailureInfoResponse>();
+        CreateMap<EventModelCallRetrievalInfo, EventModelCallRetrievalInfoResponse>();
+        CreateMap<EventModelCallInfo, EventModelCallInfoResponse>();
         CreateMap<GetAgentRunStepsItem, GetAgentRunStepResponse>();
         CreateMap<GetAgentRunApprovalsItem, GetAgentRunApprovalResponse>();
         CreateMap<EventModelFailureInfo, EventModelFailureInfoResponse>();

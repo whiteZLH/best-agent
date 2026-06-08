@@ -14,4 +14,5 @@ public record AgentRunEventData(
     string StepType,
     string Status,
     string? Output = null,
-    string? Error = null);
+    string? Error = null,
+    string? ModelCall = null);

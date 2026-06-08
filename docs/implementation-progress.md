@@ -63,8 +63,8 @@
 - `AgentDefinitionVersion.KnowledgeSources` 与 `MemoryPolicy` 当前也已开始进入主链路：定义创建与版本创建接口可持久化知识源列表和最小记忆策略 JSON，Runtime 上下文装配与检索范围会按 run 绑定版本持续生效
 - `AgentDefinitionVersion.ContextPolicy` 当前也已开始最小进入主链路：`ContextPolicy.citations` 可同时控制检索知识注入时是否附带 citation/source 元数据，以及最终答复是否自动追加基于检索上下文提取的 `References`
 - `AgentRun.MaxCost` / `AgentDefinitionVersion.MaxCost` 当前也已开始最小进入主链路：OpenAI 兼容模型网关会读取 `usage` 并按配置的 `OpenAI:PromptTokenPricePerMillion` / `CompletionTokenPricePerMillion` 计算最小模型成本，Runtime 会累计到 `AgentRun.TotalCost`，并在后续模型调用前或单次模型调用后对 `max_cost` 做最小超限拦截
-- 模型调用审计当前也已开始补上最小 usage 读侧：`model_call` step 会把 `model`、`promptTokens`、`completionTokens`、`totalTokens` 与 `cost` 写入 `DecisionPayload`，`GetAgentRunSteps` / `GET /agent-runs/{runId}/steps` 现可返回 typed `ModelCall` 视图
-- run outbox 事件读侧当前也已开始补上最小 typed payload 视图：`GetAgentRunEvents` / `GET /agent-runs/{runId}/events` 除保留脱敏后的原始 `Payload` 外，也会返回统一 `Data` 结构，并可进一步把事件中的 `model_failure` / `tool_error` 解析为 typed failure 信息
+- 模型调用审计当前也已开始补上最小 usage 读侧：`model_call` step 会把 `model`、`promptTokens`、`completionTokens`、`totalTokens` 与 `cost` 写入 `DecisionPayload`，`GetAgentRunSteps` / `GET /agent-runs/{runId}/steps` 现可返回 typed `ModelCall` 视图；若命中检索，当前也会补上最小 retrieval query / candidateCount / selectedSources / citations 审计
+- run outbox 事件读侧当前也已开始补上最小 typed payload 视图：`GetAgentRunEvents` / `GET /agent-runs/{runId}/events` 除保留脱敏后的原始 `Payload` 外，也会返回统一 `Data` 结构，并可进一步把事件中的 `model_call` / `model_failure` / `tool_error` 解析为 typed 读侧；SSE `stream` 当前也已开始同步回显最小 typed `ModelCall`
 - `GET /agent-runs/{runId}/stream` 当前也已开始从轻量 `eventType + data` 收敛到最小统一事件 envelope：SSE `data` 会包含 `eventId/runId/seqNo/eventType/runStatus/occurredAt/data`，并在存在 `seqNo` 时写出 SSE `id`
 - `GET /agent-runs/{runId}/stream` 当前也已开始最小支持 `Last-Event-ID` 断线续传：建连时会先注册进程内缓冲订阅，再按 `afterSeqNo = Last-Event-ID` 回放 outbox 事件，最后按 `seqNo` 去重切换到实时 SSE；若回放已包含终态事件，则流会直接结束
 - `AgentDefinitionVersion.OutputSchema` 当前也已开始进入主链路：定义创建与版本创建接口可持久化最小 JSON Schema 对象，Worker 会在 run 完成前对最终答复执行最小结构化校验
@@ -80,7 +80,7 @@
 - `AgentRunsController` 当前也已开始最小消费 `tenant/user/session` scope：创建 Run 时会优先继承已认证身份字段，并兼容 `X-BestAgent-Tenant-Id` / `X-BestAgent-User-Id` / `X-BestAgent-Session-Id` 显式 scope headers；Run 查询、恢复、取消、审批、人机协同、外部 tool/approval complete 回调与 SSE stream 入口在存在上述 scope 时也会校验当前 Run 是否仍处于相同 tenant/user/session 边界内
 - 已补上最小记忆写回闭环：可信工具完成结果可按 `MemoryPolicy` 最小 allowlist 门禁写入 `session_memory`，run 完成时可写入模板化 `summary_memory`
 - `MemoryPolicy` 写侧已细化为独立开关：`session_memory` 工具结果写入、结构化 `user_memory` 写入与 `summary_memory` 写入可分别控制
-- 检索链路已从固定顺序注入升级到最小 lexical retrieval：支持 query 归一化、候选召回、词法重排、prompt citation 注入与最终答复 `References` 追加；`model_call` 审计与 `GetAgentRunSteps` 当前也已开始回显最小 retrieval query / sources / citations 结构化信息
+- 检索链路已从固定顺序注入升级到最小 lexical retrieval：支持 query 归一化、候选召回、词法重排、prompt citation 注入与最终答复 `References` 追加；`model_call` 审计、`GetAgentRunSteps`、`GetAgentRunEvents` 与 SSE 当前也已开始回显最小 retrieval query / sources / citations 结构化信息
 - `user_memory` 已开始支持最小可信写入：仅消费工具结果中显式声明的结构化 memory 条目，并按 `memory_key` 覆写更新
 - 基础单元测试、控制器测试与部分集成 / 基础设施测试
 

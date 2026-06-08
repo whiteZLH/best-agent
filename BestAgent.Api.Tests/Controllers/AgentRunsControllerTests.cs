@@ -666,7 +666,28 @@ public class AgentRunsControllerTests
                     "done",
                     "Completed",
                     "{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"{\\\"token\\\":\\\"***\\\",\\\"value\\\":\\\"done\\\"}\",\"error\":null}",
-                    new EventDataInfo(0, "completed", "Completed", "{\"token\":\"***\",\"value\":\"done\"}", null, null, null),
+                    new EventDataInfo(
+                        0,
+                        "completed",
+                        "Completed",
+                        "{\"token\":\"***\",\"value\":\"done\"}",
+                        null,
+                        new EventModelCallInfo(
+                            "gpt-4o-mini",
+                            120,
+                            45,
+                            165,
+                            0.0042m,
+                            new EventModelCallRetrievalInfo(
+                                "refund manager approval",
+                                true,
+                                4,
+                                1,
+                                ["faq"],
+                                ["faq/doc-1#1"],
+                                ["score=3; source=faq/doc-1#1; chunk=1"])),
+                        null,
+                        null),
                     "pending",
                     null,
                     0,
@@ -691,6 +712,8 @@ public class AgentRunsControllerTests
         Assert.Equal("completed", evt.Data!.StepType);
         Assert.Equal("Completed", evt.Data.Status);
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
+        Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
+        Assert.Equal("refund manager approval", evt.Data.ModelCall.Retrieval!.QueryText);
         Assert.Equal("pending", evt.PublishStatus);
     }
 
@@ -1097,8 +1120,8 @@ public class AgentRunsControllerTests
         using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
         var body = await reader.ReadToEndAsync();
 
-        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelFailure\":null,\"toolFailure\":null}}\n\n", body);
-        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelFailure\":null,\"toolFailure\":null}}\n\n", body);
+        Assert.Contains("id: 1\nevent: step\ndata: {\"eventId\":\"evt-1\",\"runId\":\"run-001\",\"seqNo\":1,\"eventType\":\"step\",\"runStatus\":\"Running\",\"occurredAt\":\"2026-06-08T00:00:00Z\",\"data\":{\"stepNo\":1,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"done\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null}}\n\n", body);
+        Assert.Contains("id: 2\nevent: done\ndata: {\"eventId\":\"evt-2\",\"runId\":\"run-001\",\"seqNo\":2,\"eventType\":\"done\",\"runStatus\":\"Completed\",\"occurredAt\":\"2026-06-08T00:00:01Z\",\"data\":{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final output\",\"error\":null,\"modelCall\":null,\"modelFailure\":null,\"toolFailure\":null}}\n\n", body);
     }
 
     [Fact]
@@ -1157,7 +1180,7 @@ public class AgentRunsControllerTests
                     "step",
                     "Running",
                     "{\"stepNo\":2,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"replayed\"}",
-                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null),
+                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null),
                     "published",
                     now,
                     0,
@@ -1214,7 +1237,7 @@ public class AgentRunsControllerTests
                     "done",
                     "Completed",
                     "{\"stepNo\":0,\"stepType\":\"completed\",\"status\":\"Completed\",\"output\":\"final\"}",
-                    new EventDataInfo(0, "completed", "Completed", "final", null, null, null),
+                    new EventDataInfo(0, "completed", "Completed", "final", null, null, null, null),
                     "published",
                     now,
                     0,
@@ -1300,7 +1323,7 @@ public class AgentRunsControllerTests
                     "step",
                     "Running",
                     "{\"stepNo\":2,\"stepType\":\"tool_call\",\"status\":\"Completed\",\"output\":\"replayed\"}",
-                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null),
+                    new EventDataInfo(2, "tool_call", "Completed", "replayed", null, null, null, null),
                     "published",
                     now,
                     0,

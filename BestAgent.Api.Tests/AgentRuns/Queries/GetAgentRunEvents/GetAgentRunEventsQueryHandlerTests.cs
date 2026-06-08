@@ -1,9 +1,11 @@
 using BestAgent.Application;
 using BestAgent.Application.AgentRuns.Queries.GetAgentRunEvents;
+using BestAgent.Application.AgentRuns.Runtime;
 using BestAgent.Domain.AgentRuns;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using System.Text.Json;
 using Xunit;
 
 namespace BestAgent.Api.Tests.AgentRuns.Queries.GetAgentRunEvents;
@@ -122,5 +124,63 @@ public class GetAgentRunEventsQueryHandlerTests
         Assert.Equal("execution", toolFailure.Stage);
         Assert.Equal("backend crashed", toolFailure.Message);
         Assert.Equal("manual", Assert.IsType<EventToolFailureCompensationInfo>(toolFailure.Compensation).Mode);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldReturnStructuredModelCallInfo_WhenEventPayloadContainsModelCallAudit()
+    {
+        var outboxRepository = Substitute.For<IRunOutboxEventRepository>();
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddSingleton(outboxRepository);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var mediator = serviceProvider.GetRequiredService<IMediator>();
+        var now = new DateTime(2026, 6, 6, 10, 0, 0, DateTimeKind.Utc);
+        var modelCallPayload = ModelCallPayloadSerializer.Create(
+            "gpt-4o-mini",
+            new BestAgent.Application.Models.GenerateTextResult(
+                "{\"action\":\"respond\",\"response\":\"Hi\"}",
+                PromptTokens: 120,
+                CompletionTokens: 45,
+                TotalTokens: 165,
+                Cost: 0.0042m),
+            new RuntimeRetrievalAudit(
+                "refund manager approval",
+                true,
+                4,
+                1,
+                ["faq"],
+                ["faq/doc-1#1"],
+                ["score=3; source=faq/doc-1#1; chunk=1"]));
+        var escapedModelCallPayload = JsonSerializer.Serialize(modelCallPayload);
+
+        outboxRepository.ListByRunIdAsync("run-1", null, Arg.Any<CancellationToken>())
+            .Returns(
+            [
+                new RunOutboxEvent
+                {
+                    EventId = "event-4",
+                    RunId = "run-1",
+                    SeqNo = 4,
+                    EventType = "step",
+                    RunStatus = "Running",
+                    Payload = $$"""{"stepNo":3,"stepType":"model_call","status":"Completed","output":"{\"action\":\"respond\",\"response\":\"Hi\"}","error":null,"modelCall":{{escapedModelCallPayload}}}""",
+                    PublishStatus = "published",
+                    OccurredAt = now,
+                    CreateTime = now,
+                    LastModifyTime = now
+                }
+            ]);
+
+        var result = await mediator.Send(new GetAgentRunEventsQuery("run-1"));
+
+        var evt = Assert.Single(result);
+        var data = Assert.IsType<EventDataInfo>(evt.Data);
+        Assert.NotNull(data.ModelCall);
+        Assert.Equal("gpt-4o-mini", data.ModelCall!.Model);
+        Assert.Equal(120, data.ModelCall.PromptTokens);
+        Assert.Equal("refund manager approval", data.ModelCall.Retrieval!.QueryText);
+        Assert.True(data.ModelCall.Retrieval.WasRewritten);
+        Assert.Equal("faq/doc-1#1", Assert.Single(data.ModelCall.Retrieval.SelectedSources));
     }
 }

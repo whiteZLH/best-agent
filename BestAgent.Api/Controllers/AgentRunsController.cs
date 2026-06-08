@@ -386,6 +386,7 @@ public class AgentRunsController : ControllerBase
                 maskedData.Status,
                 maskedData.Output,
                 maskedData.Error,
+                BuildEventModelCallResponse(maskedData.ModelCall),
                 ModelFailurePayloadSerializer.TryParse(maskedData.Error, out var modelFailure)
                     ? new EventModelFailureInfoResponse(modelFailure!.ErrorCode, modelFailure.Message)
                     : null,
@@ -426,6 +427,7 @@ public class AgentRunsController : ControllerBase
                 null,
                 null,
                 null,
+                null,
                 null);
 
         return new EventDataInfoResponse(
@@ -434,6 +436,24 @@ public class AgentRunsController : ControllerBase
             resolvedData.Status,
             resolvedData.Output,
             resolvedData.Error,
+            resolvedData.ModelCall is null
+                ? null
+                : new EventModelCallInfoResponse(
+                    resolvedData.ModelCall.Model,
+                    resolvedData.ModelCall.PromptTokens,
+                    resolvedData.ModelCall.CompletionTokens,
+                    resolvedData.ModelCall.TotalTokens,
+                    resolvedData.ModelCall.Cost,
+                    resolvedData.ModelCall.Retrieval is null
+                        ? null
+                        : new EventModelCallRetrievalInfoResponse(
+                            resolvedData.ModelCall.Retrieval.QueryText,
+                            resolvedData.ModelCall.Retrieval.WasRewritten,
+                            resolvedData.ModelCall.Retrieval.CandidateCount,
+                            resolvedData.ModelCall.Retrieval.SelectedCount,
+                            resolvedData.ModelCall.Retrieval.RequestedSources,
+                            resolvedData.ModelCall.Retrieval.SelectedSources,
+                            resolvedData.ModelCall.Retrieval.Citations)),
             resolvedData.ModelFailure is null
                 ? null
                 : new EventModelFailureInfoResponse(
@@ -449,6 +469,31 @@ public class AgentRunsController : ControllerBase
                         ? null
                         : new EventToolFailureCompensationInfoResponse(
                             resolvedData.ToolFailure.Compensation.Mode)));
+    }
+
+    private static EventModelCallInfoResponse? BuildEventModelCallResponse(string? payload)
+    {
+        if (!ModelCallPayloadSerializer.TryParse(payload, out var modelCall))
+        {
+            return null;
+        }
+
+        return new EventModelCallInfoResponse(
+            modelCall!.Model,
+            modelCall.PromptTokens,
+            modelCall.CompletionTokens,
+            modelCall.TotalTokens,
+            modelCall.Cost,
+            modelCall.Retrieval is null
+                ? null
+                : new EventModelCallRetrievalInfoResponse(
+                    modelCall.Retrieval.QueryText,
+                    modelCall.Retrieval.WasRewritten,
+                    modelCall.Retrieval.CandidateCount,
+                    modelCall.Retrieval.SelectedCount,
+                    modelCall.Retrieval.RequestedSources,
+                    modelCall.Retrieval.SelectedSources,
+                    modelCall.Retrieval.Citations));
     }
 
     private async Task WriteSseEventAsync(
