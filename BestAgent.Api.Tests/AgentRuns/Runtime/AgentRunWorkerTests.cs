@@ -4634,6 +4634,96 @@ public class AgentRunWorkerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldApprovePlannerApproval_ContinueLoop_AndCompleteRun()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var run = CreateApprovalWaitingRun();
+        var pendingStep = AgentRunLoop.CreateStep(
+            run.RunId,
+            4,
+            "approval_request",
+            "Pending",
+            "{\"amount\":120,\"currency\":\"USD\"}",
+            null,
+            null,
+            DateTime.UtcNow,
+            DateTime.UtcNow) with
+        {
+            DecisionPayload = ApprovalPayloadSerializer.Serialize(
+                ApprovalPayloadSerializer.CreatePending(
+                    "issue refund",
+                    "{\"amount\":120,\"currency\":\"USD\"}",
+                    "external_write",
+                    "Refund exceeds auto-approval threshold."))
+        };
+        var approval = CreatePendingApproval(run.RunId, pendingStep.StepId) with
+        {
+            RequestedAction = "issue refund",
+            RiskLevel = "external_write",
+            RequestPayload = "{\"amount\":120,\"currency\":\"USD\"}"
+        };
+        var resolvedDefinition = CreateResolvedDefinition();
+
+        agentRunRepo.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        agentStepRepo.GetLastByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(pendingStep);
+        agentDefinitionRepo.GetEnabledByCodeAsync(run.AgentCode, Arg.Any<CancellationToken>()).Returns(resolvedDefinition);
+        agentApprovalRepo.GetByRunIdAndStepIdAsync(run.RunId, pendingStep.StepId, Arg.Any<CancellationToken>()).Returns(approval);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("final-answer"));
+        stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("All done"));
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter);
+        var worker = new AgentRunWorker(channel, eventBus, services.GetRequiredService<IServiceScopeFactory>(), NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new ApproveAgentRunStepMessage(run.RunId, pendingStep.StepId, "u-1", "Alice", "admin", "Approved by supervisor"), cts.Token);
+
+        var completedRun = await WaitForUpdatedRunAsync(agentRunRepo, expectedStatus: "Completed");
+        var completedPendingStep = await WaitForUpdatedStepAsync(agentStepRepo, expectedStatus: "Completed");
+        var updatedApproval = await WaitForUpdatedApprovalAsync(agentApprovalRepo, expectedDecision: ApprovalDecisions.Approved);
+        await WaitForEventAsync(eventBus, eventType: "done");
+
+        Assert.Equal("Completed", completedRun.Status);
+        Assert.Equal("All done", completedRun.OutputPayload);
+        Assert.Equal("Completed", completedPendingStep.Status);
+        Assert.Null(completedPendingStep.OutputPayload);
+        var approvedPayload = ApprovalPayloadSerializer.Parse(completedPendingStep.DecisionPayload);
+        Assert.Equal(ApprovalDecisions.Approved, approvedPayload.Decision);
+        Assert.Equal("Approved by supervisor", approvedPayload.Comment);
+        Assert.Equal("Alice", updatedApproval.ApproverName);
+        Assert.Equal("admin", updatedApproval.ApproverRole);
+        Assert.Equal("Approved by supervisor", updatedApproval.Comment);
+        await toolExecutor.DidNotReceive().ExecuteAsync(Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<ToolExecutionContext>(), Arg.Any<CancellationToken>());
+        Assert.Contains(eventBus.Events, evt => evt.EventType == "step" && evt.Data.StepType == "approval_request" && evt.Data.Status == "Completed");
+        Assert.Contains(eventBus.Events, evt => evt.EventType == "done" && evt.Data.Output == "All done");
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldOnlyPersistUserMemory_WhenMemoryPolicyDisallowsSessionToolMemory()
     {
         var channel = new AgentRunChannel();

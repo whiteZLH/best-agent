@@ -604,6 +604,65 @@ public class AgentRunWorker : BackgroundService
                 approvedToolPayload.DecidedAt ?? DateTime.UtcNow);
         }
 
+        if (string.Equals(pendingStep.StepType, "approval_request", StringComparison.OrdinalIgnoreCase))
+        {
+            var completedAt = approvedToolPayload.DecidedAt ?? DateTime.UtcNow;
+            pendingStep = pendingStep with
+            {
+                Status = "Completed",
+                DecisionPayload = ApprovalPayloadSerializer.Serialize(approvedToolPayload),
+                EndedAt = completedAt,
+                LastModifyTime = completedAt
+            };
+            await agentStepRepo.UpdateAsync(pendingStep, stoppingToken);
+
+            await PublishEventAsync(
+                runId,
+                "step",
+                agentRun.Status,
+                new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "Completed", approvalContext.ToolName),
+                stoppingToken);
+
+            var approvalFollowUpInput = AgentRunLoop.BuildApprovalFollowUpInput(
+                agentRun.InputPayload ?? string.Empty,
+                approvalContext.ToolName,
+                approvalContext.ToolInput,
+                approvalContext.SideEffectLevel,
+                approvedToolPayload.Comment);
+            var approvalNextStepNo = agentRun.CurrentStepNo + 1;
+            var approvalStartTurn = await CountCompletedModelTurnsAsync(agentStepRepo, runId, stoppingToken);
+            var approvalLoopContext = new AgentLoopContext(agentRun, resolvedDefinition.Version, approvalFollowUpInput, approvalNextStepNo, approvalStartTurn);
+
+            var approvalLoopResult = await AgentRunLoop.ExecuteAsync(
+                approvalLoopContext,
+                resolvedDefinition,
+                modelGateway,
+                stepDecisionParser,
+                toolExecutor,
+                agentStepRepo,
+                toolDefinitionRepository,
+                toolInvocationRepository,
+                stoppingToken,
+                evt => PublishEventAsync(evt.RunId, evt.EventType, agentRun.Status, evt.Data, stoppingToken),
+                runtimeContextComposer,
+                ResolveApprovalPolicyOptions(resolvedDefinition),
+                routeRuleRepository);
+
+            await ApplyLoopResult(
+                agentRunRepo,
+                agentStepRepo,
+                agentApprovalRepository,
+                agentRun,
+                resolvedDefinition,
+                approvalLoopResult,
+                runtimeMemoryWriter,
+                agentOutputValidator,
+                stoppingToken);
+            activity?.SetTag("bestagent.status", "approved");
+            activity?.SetStatus(ActivityStatusCode.Ok);
+            return;
+        }
+
         var toolStartedAt = DateTime.UtcNow;
         ToolExecutionResult toolResult;
         try

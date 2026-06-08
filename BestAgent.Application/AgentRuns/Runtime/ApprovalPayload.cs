@@ -18,7 +18,7 @@ public static class ApprovalPayloadSerializer
         PropertyNameCaseInsensitive = true
     };
 
-    public static ApprovalPayload CreatePending(string toolName, string? toolInput, string sideEffectLevel)
+    public static ApprovalPayload CreatePending(string toolName, string? toolInput, string sideEffectLevel, string? comment = null)
     {
         return new ApprovalPayload(
             "approval",
@@ -26,7 +26,7 @@ public static class ApprovalPayloadSerializer
             toolInput,
             sideEffectLevel,
             ApprovalDecisions.Pending,
-            null,
+            string.IsNullOrWhiteSpace(comment) ? null : comment.Trim(),
             null);
     }
 

@@ -136,6 +136,31 @@ public class StepDecisionParserTests
     }
 
     [Fact]
+    public void Parse_ShouldReadRequestApprovalDecision()
+    {
+        const string json =
+            """
+            {
+              "action": "request_approval",
+              "approval": {
+                "requestedAction": "issue refund",
+                "requestPayload": "{\"amount\":120,\"currency\":\"USD\"}",
+                "sideEffectLevel": "external_write",
+                "comment": "Refund exceeds auto-approval threshold."
+              }
+            }
+            """;
+
+        var decision = _parser.Parse(json);
+
+        Assert.Equal("request_approval", decision.Action);
+        Assert.Equal("issue refund", decision.ApprovalRequestedAction);
+        Assert.Equal("{\"amount\":120,\"currency\":\"USD\"}", decision.ApprovalRequestPayload);
+        Assert.Equal("external_write", decision.ApprovalSideEffectLevel);
+        Assert.Equal("Refund exceeds auto-approval threshold.", decision.ApprovalComment);
+    }
+
+    [Fact]
     public void Parse_ShouldReadFailDecision()
     {
         const string json =

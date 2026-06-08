@@ -19,7 +19,11 @@ public record StepDecision(
     string? FailErrorCode,
     string? FailMessage,
     string? HandoffMergeStrategy = null,
-    string? RetrievalQuery = null)
+    string? RetrievalQuery = null,
+    string? ApprovalRequestedAction = null,
+    string? ApprovalRequestPayload = null,
+    string? ApprovalSideEffectLevel = null,
+    string? ApprovalComment = null)
 {
     public static StepDecision Respond(string response)
     {
@@ -33,7 +37,7 @@ public record StepDecision(
 
     public static StepDecision Retrieve(string? query)
     {
-        return new("retrieve", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, query);
+        return new("retrieve", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, query, null, null, null, null);
     }
 
     public static StepDecision Handoff(
@@ -68,16 +72,52 @@ public record StepDecision(
             null,
             null,
             mergeStrategy,
+            null,
+            null,
+            null,
+            null,
             null);
+    }
+
+    public static StepDecision RequestApproval(
+        string requestedAction,
+        string? requestPayload,
+        string? sideEffectLevel,
+        string? comment)
+    {
+        return new(
+            "request_approval",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            requestedAction,
+            requestPayload,
+            sideEffectLevel,
+            comment);
     }
 
     public static StepDecision RequestHuman(string? comment)
     {
-        return new("request_human", null, null, null, null, null, null, null, null, null, null, null, null, null, comment, null, null, null, null);
+        return new("request_human", null, null, null, null, null, null, null, null, null, null, null, null, null, comment, null, null, null, null, null, null, null, null);
     }
 
     public static StepDecision Fail(string? errorCode, string errorMessage)
     {
-        return new("fail", null, null, null, null, null, null, null, null, null, null, null, null, null, null, errorCode, errorMessage, null, null);
+        return new("fail", null, null, null, null, null, null, null, null, null, null, null, null, null, null, errorCode, errorMessage, null, null, null, null, null, null);
     }
 }

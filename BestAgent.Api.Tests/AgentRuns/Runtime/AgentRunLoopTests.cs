@@ -251,6 +251,72 @@ public class AgentRunLoopTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldWaitForPlannerApproval_WhenDecisionRequestsApproval()
+    {
+        var context = CreateLoopContext();
+        var resolvedDefinition = CreateResolvedDefinition();
+        var events = new List<AgentRunEvent>();
+
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("approval-decision"));
+
+        _stepDecisionParser.Parse("approval-decision")
+            .Returns(StepDecision.RequestApproval(
+                "issue refund",
+                "{\"amount\":120,\"currency\":\"USD\"}",
+                "external_write",
+                "Refund exceeds auto-approval threshold."));
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None,
+            evt =>
+            {
+                events.Add(evt);
+                return Task.CompletedTask;
+            });
+
+        var waiting = Assert.IsType<AgentLoopWaitingApproval>(result);
+        Assert.Equal(4, waiting.SuspendedAtStepNo);
+        Assert.Equal("approval_request", waiting.StepType);
+        Assert.Equal("issue refund", waiting.ToolName);
+        Assert.Equal("external_write", waiting.SideEffectLevel);
+
+        await _agentStepRepository.Received(2).AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>());
+        await _agentStepRepository.Received(1).AddAsync(
+            Arg.Is<AgentStep>(step =>
+                step.StepId == waiting.StepId &&
+                step.StepNo == 4 &&
+                step.StepType == "approval_request" &&
+                step.Status == "Pending" &&
+                step.InputPayload == "{\"amount\":120,\"currency\":\"USD\"}" &&
+                step.DecisionPayload != null),
+            Arg.Any<CancellationToken>());
+
+        var pendingStep = _agentStepRepository.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.AddAsync))
+            .Select(call => call.GetArguments()[0])
+            .OfType<AgentStep>()
+            .Last(step => step.StepType == "approval_request");
+        var approvalPayload = ApprovalPayloadSerializer.Parse(pendingStep.DecisionPayload!);
+        Assert.Equal("issue refund", approvalPayload.ToolName);
+        Assert.Equal("{\"amount\":120,\"currency\":\"USD\"}", approvalPayload.ToolInput);
+        Assert.Equal("external_write", approvalPayload.SideEffectLevel);
+        Assert.Equal("Refund exceeds auto-approval threshold.", approvalPayload.Comment);
+        Assert.Equal(ApprovalDecisions.Pending, approvalPayload.Decision);
+
+        Assert.Single(events);
+        AssertEvent(events[0], "step", 3, "model_call", "Completed", "approval-decision");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldThrow_WhenToolIsExplicitlyDenied()
     {
         var context = CreateLoopContext();

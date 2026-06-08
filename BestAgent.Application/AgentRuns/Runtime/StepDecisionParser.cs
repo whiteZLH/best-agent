@@ -169,6 +169,52 @@ public class StepDecisionParser : IStepDecisionParser
                 return true;
             }
 
+            if (string.Equals(action, "request_approval", StringComparison.OrdinalIgnoreCase))
+            {
+                var requestedAction = GetString(root, "requestedAction")
+                    ?? GetString(root, "requested_action")
+                    ?? GetString(root, "actionName")
+                    ?? GetString(root, "action_name")
+                    ?? GetNestedString(root, "approval", "requestedAction")
+                    ?? GetNestedString(root, "approval", "requested_action")
+                    ?? GetNestedString(root, "approval", "actionName")
+                    ?? GetNestedString(root, "approval", "action_name");
+                if (string.IsNullOrWhiteSpace(requestedAction))
+                {
+                    throw new InvalidOperationException("Approval decision did not include a requested action.");
+                }
+
+                var requestPayload = GetString(root, "requestPayload")
+                    ?? GetString(root, "request_payload")
+                    ?? GetString(root, "payload")
+                    ?? GetString(root, "input")
+                    ?? GetNestedString(root, "approval", "requestPayload")
+                    ?? GetNestedString(root, "approval", "request_payload")
+                    ?? GetNestedString(root, "approval", "payload")
+                    ?? GetNestedString(root, "approval", "input");
+                var sideEffectLevel = GetString(root, "sideEffectLevel")
+                    ?? GetString(root, "side_effect_level")
+                    ?? GetString(root, "riskLevel")
+                    ?? GetString(root, "risk_level")
+                    ?? GetNestedString(root, "approval", "sideEffectLevel")
+                    ?? GetNestedString(root, "approval", "side_effect_level")
+                    ?? GetNestedString(root, "approval", "riskLevel")
+                    ?? GetNestedString(root, "approval", "risk_level");
+                var comment = GetString(root, "comment")
+                    ?? GetString(root, "message")
+                    ?? GetString(root, "reason")
+                    ?? GetNestedString(root, "approval", "comment")
+                    ?? GetNestedString(root, "approval", "message")
+                    ?? GetNestedString(root, "approval", "reason");
+
+                decision = StepDecision.RequestApproval(
+                    requestedAction.Trim(),
+                    requestPayload?.Trim(),
+                    sideEffectLevel?.Trim(),
+                    comment?.Trim());
+                return true;
+            }
+
             if (string.Equals(action, "request_human", StringComparison.OrdinalIgnoreCase))
             {
                 var comment = GetString(root, "comment")

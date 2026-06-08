@@ -23,6 +23,7 @@ public static class AgentRunLoop
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"delegate_and_merge"} to delegate and then merge the child result into the final answer.
         Optional handoff fields: "reason", "confidence", "context_overrides", "memory_overrides", "tool_overrides", "knowledge_overrides", "approval_required", "merge_strategy".
         Supported merge_strategy values for delegate_and_merge: "supervisor_summary", "first_success", "all_results".
+        Use {"action":"request_approval","requestedAction":"...","requestPayload":"...","sideEffectLevel":"internal_write","comment":"..."} when a human must explicitly approve the next action before you continue.
         Use {"action":"request_human","comment":"..."} when a human operator must review or provide the answer.
         Use {"action":"fail","errorCode":"...","message":"..."} when the run cannot continue automatically.
         """;
@@ -234,6 +235,48 @@ public static class AgentRunLoop
                     "run",
                     null,
                     false,
+                    totalCostDelta);
+            }
+
+            if (string.Equals(decision.Action, "request_approval", StringComparison.OrdinalIgnoreCase))
+            {
+                var requestedAction = string.IsNullOrWhiteSpace(decision.ApprovalRequestedAction)
+                    ? throw new InvalidOperationException("Approval decision did not include a requested action.")
+                    : decision.ApprovalRequestedAction.Trim();
+                var normalizedSideEffectLevel = string.IsNullOrWhiteSpace(decision.ApprovalSideEffectLevel)
+                    ? HandoffApprovalDefaults.SideEffectLevel
+                    : ToolDefinitionPolicyValidator.NormalizeSideEffectLevel(
+                        decision.ApprovalSideEffectLevel,
+                        nameof(decision.ApprovalSideEffectLevel));
+                var waitToken = Guid.NewGuid().ToString("N");
+                var approvalPayload = ApprovalPayloadSerializer.CreatePending(
+                    requestedAction,
+                    decision.ApprovalRequestPayload,
+                    normalizedSideEffectLevel,
+                    decision.ApprovalComment);
+                var pendingStep = CreateStep(
+                    run.RunId,
+                    nextStepNo,
+                    "approval_request",
+                    "Pending",
+                    decision.ApprovalRequestPayload,
+                    null,
+                    null,
+                    DateTime.UtcNow,
+                    DateTime.UtcNow) with
+                {
+                    DecisionPayload = ApprovalPayloadSerializer.Serialize(approvalPayload)
+                };
+
+                await agentStepRepository.AddAsync(pendingStep, cancellationToken);
+                return new AgentLoopWaitingApproval(
+                    waitToken,
+                    nextStepNo,
+                    pendingStep.StepId,
+                    requestedAction,
+                    decision.ApprovalRequestPayload,
+                    normalizedSideEffectLevel,
+                    "approval_request",
                     totalCostDelta);
             }
 
@@ -668,6 +711,41 @@ public static class AgentRunLoop
 
             Use the retrieved knowledge to continue planning and answer the user.
             """;
+    }
+
+    public static string BuildApprovalFollowUpInput(
+        string originalInput,
+        string requestedAction,
+        string? requestPayload,
+        string sideEffectLevel,
+        string? comment)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Original user input:");
+        builder.AppendLine(originalInput);
+        builder.AppendLine();
+        builder.AppendLine("Approval granted for:");
+        builder.AppendLine(requestedAction);
+        builder.AppendLine();
+        builder.AppendLine($"Side effect level: {sideEffectLevel}");
+
+        if (!string.IsNullOrWhiteSpace(requestPayload))
+        {
+            builder.AppendLine();
+            builder.AppendLine("Approval request payload:");
+            builder.AppendLine(requestPayload.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(comment))
+        {
+            builder.AppendLine();
+            builder.AppendLine("Approval note:");
+            builder.AppendLine(comment.Trim());
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Use the approval result to continue planning and answer the user.");
+        return builder.ToString().Trim();
     }
 
     private static bool ShouldAppendKnowledgeCitations(string? contextPolicy)
