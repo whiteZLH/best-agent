@@ -12,5 +12,7 @@ public interface IRunOutboxEventRepository
 
     Task MarkPublishedAsync(string eventId, DateTime publishedAt, CancellationToken cancellationToken);
 
-    Task MarkFailedAsync(string eventId, CancellationToken cancellationToken);
+    Task MarkRetryPendingAsync(string eventId, CancellationToken cancellationToken);
+
+    Task MarkDeadAsync(string eventId, CancellationToken cancellationToken);
 }

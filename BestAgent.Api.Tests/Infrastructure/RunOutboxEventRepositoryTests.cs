@@ -42,20 +42,25 @@ public class RunOutboxEventRepositoryTests
             Assert.Equal(1, firstSeqNo);
 
             await repository.MarkPublishedAsync("event-1", now.AddMinutes(1), CancellationToken.None);
-            await repository.MarkFailedAsync("event-2", CancellationToken.None);
+            await repository.MarkRetryPendingAsync("event-2", CancellationToken.None);
+            await repository.MarkDeadAsync("event-3", CancellationToken.None);
         }
 
         await using (var dbContext = new BestAgentDbContext(options))
         {
             var published = await dbContext.RunOutboxEvents.SingleAsync(x => x.EventId == "event-1");
-            var failed = await dbContext.RunOutboxEvents.SingleAsync(x => x.EventId == "event-2");
+            var retryPending = await dbContext.RunOutboxEvents.SingleAsync(x => x.EventId == "event-2");
+            var failed = await dbContext.RunOutboxEvents.SingleAsync(x => x.EventId == "event-3");
             var pending = await new RunOutboxEventRepository(dbContext).ListPendingAsync(10, CancellationToken.None);
 
             Assert.Equal("published", published.PublishStatus);
             Assert.Equal(now.AddMinutes(1), published.PublishedAt);
+            Assert.Equal("pending", retryPending.PublishStatus);
+            Assert.Equal(1, retryPending.RetryCount);
             Assert.Equal("failed", failed.PublishStatus);
             Assert.Equal(1, failed.RetryCount);
-            Assert.DoesNotContain(pending, x => x.EventId is "event-1" or "event-2");
+            Assert.DoesNotContain(pending, x => x.EventId is "event-1" or "event-3");
+            Assert.Contains(pending, x => x.EventId == "event-2");
         }
     }
 

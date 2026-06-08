@@ -77,7 +77,28 @@ public class RunOutboxEventRepository : IRunOutboxEventRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task MarkFailedAsync(string eventId, CancellationToken cancellationToken)
+    public async Task MarkRetryPendingAsync(string eventId, CancellationToken cancellationToken)
+    {
+        var outboxEvent = await _dbContext.RunOutboxEvents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.EventId == eventId && !x.Deleted, cancellationToken);
+        if (outboxEvent is null)
+        {
+            return;
+        }
+
+        var failedAt = DateTime.UtcNow;
+        outboxEvent = outboxEvent with
+        {
+            PublishStatus = "pending",
+            RetryCount = outboxEvent.RetryCount + 1,
+            LastModifyTime = failedAt
+        };
+        _dbContext.RunOutboxEvents.Update(outboxEvent);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task MarkDeadAsync(string eventId, CancellationToken cancellationToken)
     {
         var outboxEvent = await _dbContext.RunOutboxEvents
             .AsNoTracking()

@@ -83,6 +83,8 @@ public class ProgramCompositionTests
         Assert.NotNull(provider.GetRequiredService<ApprovalPolicyOptions>());
         Assert.NotNull(provider.GetRequiredService<HumanTakeoverPolicyOptions>());
         Assert.NotNull(provider.GetRequiredService<TenantApprovalPolicyOptions>());
+        Assert.NotNull(provider.GetRequiredService<RunOutboxPublisherOptions>());
+        Assert.NotNull(provider.GetRequiredService<RunOutboxDispatcherOptions>());
         Assert.IsType<HmacWebhookRequestAuthorizer>(provider.GetRequiredService<IWebhookRequestAuthorizer>());
         Assert.IsType<RuntimeContextComposer>(provider.GetRequiredService<IRuntimeContextComposer>());
         Assert.IsType<RuntimeMemoryWriter>(provider.GetRequiredService<IRuntimeMemoryWriter>());

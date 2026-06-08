@@ -59,11 +59,24 @@ public static class DependencyInjection
                 ? outboxTimeoutSeconds
                 : 5
         };
+        var runOutboxDispatcherOptions = new RunOutboxDispatcherOptions
+        {
+            BatchSize = int.TryParse(configuration["Outbox:Dispatcher:BatchSize"], out var outboxBatchSize)
+                ? outboxBatchSize
+                : 100,
+            PollIntervalSeconds = int.TryParse(configuration["Outbox:Dispatcher:PollIntervalSeconds"], out var outboxPollIntervalSeconds)
+                ? outboxPollIntervalSeconds
+                : 2,
+            MaxRetryCount = int.TryParse(configuration["Outbox:Dispatcher:MaxRetryCount"], out var outboxMaxRetryCount)
+                ? outboxMaxRetryCount
+                : 3
+        };
 
         services.AddDbContext<BestAgentDbContext>(options => options.UseNpgsql(connectionString));
         services.AddSingleton(openAiOptions);
         services.AddSingleton(approvalTimeoutOptions);
         services.AddSingleton(runOutboxPublisherOptions);
+        services.AddSingleton(runOutboxDispatcherOptions);
         services.AddSingleton<BestAgent.Application.Observability.IAgentMetrics, AgentMetrics>();
         services.AddSingleton(sp =>
         {

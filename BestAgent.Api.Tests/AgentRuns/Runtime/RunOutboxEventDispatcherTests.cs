@@ -32,11 +32,12 @@ public class RunOutboxEventDispatcherTests
             "event-1",
             Arg.Any<DateTime>(),
             Arg.Any<CancellationToken>());
-        await repository.DidNotReceive().MarkFailedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().MarkRetryPendingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().MarkDeadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task DispatchPendingAsync_ShouldMarkFailed_WhenPublisherThrows()
+    public async Task DispatchPendingAsync_ShouldKeepEventPendingForRetry_WhenPublisherThrowsBeforeRetryLimit()
     {
         var repository = Substitute.For<IRunOutboxEventRepository>();
         var publisher = Substitute.For<IRunOutboxEventPublisher>();
@@ -54,7 +55,42 @@ public class RunOutboxEventDispatcherTests
         var dispatched = await dispatcher.DispatchPendingAsync(CancellationToken.None);
 
         Assert.Equal(0, dispatched);
-        await repository.Received(1).MarkFailedAsync("event-1", Arg.Any<CancellationToken>());
+        await repository.Received(1).MarkRetryPendingAsync("event-1", Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().MarkDeadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().MarkPublishedAsync(
+            Arg.Any<string>(),
+            Arg.Any<DateTime>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DispatchPendingAsync_ShouldMarkDead_WhenPublisherThrowsAtRetryLimit()
+    {
+        var repository = Substitute.For<IRunOutboxEventRepository>();
+        var publisher = Substitute.For<IRunOutboxEventPublisher>();
+        var outboxEvent = CreateOutboxEvent("event-1") with
+        {
+            RetryCount = 2
+        };
+
+        repository.ListPendingAsync(100, Arg.Any<CancellationToken>())
+            .Returns([outboxEvent]);
+        publisher.PublishAsync(outboxEvent, Arg.Any<CancellationToken>())
+            .Returns<Task>(_ => throw new InvalidOperationException("publish failed"));
+        using var services = CreateServiceProvider(repository, publisher);
+        var dispatcher = new RunOutboxEventDispatcher(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<RunOutboxEventDispatcher>.Instance,
+            new RunOutboxDispatcherOptions
+            {
+                MaxRetryCount = 3
+            });
+
+        var dispatched = await dispatcher.DispatchPendingAsync(CancellationToken.None);
+
+        Assert.Equal(0, dispatched);
+        await repository.Received(1).MarkDeadAsync("event-1", Arg.Any<CancellationToken>());
+        await repository.DidNotReceive().MarkRetryPendingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await repository.DidNotReceive().MarkPublishedAsync(
             Arg.Any<string>(),
             Arg.Any<DateTime>(),

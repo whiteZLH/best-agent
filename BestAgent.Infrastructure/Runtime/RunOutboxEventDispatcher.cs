@@ -8,18 +8,18 @@ namespace BestAgent.Infrastructure.Runtime;
 
 public class RunOutboxEventDispatcher : BackgroundService
 {
-    private const int BatchSize = 100;
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
-
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<RunOutboxEventDispatcher> _logger;
+    private readonly RunOutboxDispatcherOptions _options;
 
     public RunOutboxEventDispatcher(
         IServiceScopeFactory scopeFactory,
-        ILogger<RunOutboxEventDispatcher> logger)
+        ILogger<RunOutboxEventDispatcher> logger,
+        RunOutboxDispatcherOptions? options = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _options = NormalizeOptions(options);
     }
 
     public async Task<int> DispatchPendingAsync(CancellationToken cancellationToken)
@@ -27,7 +27,7 @@ public class RunOutboxEventDispatcher : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IRunOutboxEventRepository>();
         var publisher = scope.ServiceProvider.GetRequiredService<IRunOutboxEventPublisher>();
-        var pendingEvents = await repository.ListPendingAsync(BatchSize, cancellationToken);
+        var pendingEvents = await repository.ListPendingAsync(_options.BatchSize, cancellationToken);
         var dispatched = 0;
 
         foreach (var outboxEvent in pendingEvents)
@@ -47,7 +47,14 @@ public class RunOutboxEventDispatcher : BackgroundService
                     "Failed to dispatch outbox event {EventId} for run {RunId}",
                     outboxEvent.EventId,
                     outboxEvent.RunId);
-                await repository.MarkFailedAsync(outboxEvent.EventId, cancellationToken);
+                if (outboxEvent.RetryCount + 1 >= _options.MaxRetryCount)
+                {
+                    await repository.MarkDeadAsync(outboxEvent.EventId, cancellationToken);
+                }
+                else
+                {
+                    await repository.MarkRetryPendingAsync(outboxEvent.EventId, cancellationToken);
+                }
             }
         }
 
@@ -59,7 +66,17 @@ public class RunOutboxEventDispatcher : BackgroundService
         while (!stoppingToken.IsCancellationRequested)
         {
             await DispatchPendingAsync(stoppingToken);
-            await Task.Delay(PollInterval, stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(_options.PollIntervalSeconds), stoppingToken);
         }
+    }
+
+    private static RunOutboxDispatcherOptions NormalizeOptions(RunOutboxDispatcherOptions? options)
+    {
+        return new RunOutboxDispatcherOptions
+        {
+            BatchSize = options?.BatchSize > 0 ? options.BatchSize : 100,
+            PollIntervalSeconds = options?.PollIntervalSeconds > 0 ? options.PollIntervalSeconds : 2,
+            MaxRetryCount = options?.MaxRetryCount > 0 ? options.MaxRetryCount : 3
+        };
     }
 }
