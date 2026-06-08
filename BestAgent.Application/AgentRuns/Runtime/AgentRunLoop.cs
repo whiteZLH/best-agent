@@ -95,7 +95,14 @@ public static class AgentRunLoop
             var modelInput = runtimeContext.ModelInput;
             var startedAt = DateTime.UtcNow;
             var modelResponse = await modelGateway.GenerateTextAsync(
-                new GenerateTextRequest(version.DefaultModel, BuildRuntimePrompt(version.SystemPromptTemplate), modelInput),
+                new GenerateTextRequest(
+                    version.DefaultModel,
+                    BuildRuntimePrompt(version.SystemPromptTemplate),
+                    modelInput,
+                    OutputMode: string.IsNullOrWhiteSpace(version.OutputSchema)
+                        ? null
+                        : GenerateTextOutputModes.JsonSchema,
+                    OutputSchema: version.OutputSchema),
                 cancellationToken);
             var endedAt = DateTime.UtcNow;
             totalCostDelta += NormalizeCost(modelResponse.Cost);

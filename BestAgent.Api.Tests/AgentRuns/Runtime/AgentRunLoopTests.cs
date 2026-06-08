@@ -107,6 +107,51 @@ public class AgentRunLoopTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldForwardVersionOutputSchemaToModelGateway()
+    {
+        const string outputSchema = "{\"type\":\"object\",\"required\":[\"answer\"],\"properties\":{\"answer\":{\"type\":\"string\"}},\"additionalProperties\":false}";
+        var resolvedDefinition = CreateResolvedDefinition(outputSchema: outputSchema);
+        var context = new AgentLoopContext(
+            new AgentRun
+            {
+                RunId = "run-001",
+                AgentCode = "writer",
+                Status = "Running",
+                InputPayload = "hello",
+                CurrentStepNo = 2,
+                MaxTurns = 5
+            },
+            resolvedDefinition.Version,
+            "hello",
+            3,
+            0);
+
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("final-answer"));
+        _stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("{\"answer\":\"hello\"}"));
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None);
+
+        var completed = Assert.IsType<AgentLoopCompleted>(result);
+        Assert.Equal("{\"answer\":\"hello\"}", completed.Output);
+        await _modelGateway.Received(1).GenerateTextAsync(
+            Arg.Is<GenerateTextRequest>(request =>
+                request.OutputMode == GenerateTextOutputModes.JsonSchema &&
+                request.OutputSchema == outputSchema),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldSuspendRun_WhenToolReturnsPending()
     {
         var context = CreateLoopContext();

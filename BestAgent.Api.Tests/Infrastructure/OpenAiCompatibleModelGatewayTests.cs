@@ -73,6 +73,8 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal(JsonValueKind.Null, presencePenaltyElement.ValueKind);
         Assert.True(capturedPayload.Value.TryGetProperty("frequency_penalty", out var frequencyPenaltyElement));
         Assert.Equal(JsonValueKind.Null, frequencyPenaltyElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("response_format", out var responseFormatElement));
+        Assert.Equal(JsonValueKind.Null, responseFormatElement.ValueKind);
         var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ModelCallActivityName);
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
@@ -357,6 +359,114 @@ public class OpenAiCompatibleModelGatewayTests
                 CancellationToken.None));
 
         Assert.Equal("Model gateway timed out after 1s.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldInferJsonSchemaResponseFormat_WhenOutputSchemaProvided()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+        const string outputSchema = "{\"type\":\"object\",\"required\":[\"answer\"],\"properties\":{\"answer\":{\"type\":\"string\"}},\"additionalProperties\":false}";
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                OutputSchema: outputSchema),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var responseFormat = capturedPayload.Value.GetProperty("response_format");
+        Assert.Equal("json_schema", responseFormat.GetProperty("type").GetString());
+        var jsonSchema = responseFormat.GetProperty("json_schema");
+        Assert.Equal("bestagent_output", jsonSchema.GetProperty("name").GetString());
+        Assert.True(jsonSchema.GetProperty("strict").GetBoolean());
+        Assert.Equal("object", jsonSchema.GetProperty("schema").GetProperty("type").GetString());
+        Assert.Equal("string", jsonSchema.GetProperty("schema").GetProperty("properties").GetProperty("answer").GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldSendJsonObjectResponseFormat_WhenRequested()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                OutputMode: GenerateTextOutputModes.JsonObject),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var responseFormat = capturedPayload.Value.GetProperty("response_format");
+        Assert.Equal("json_object", responseFormat.GetProperty("type").GetString());
     }
 
     [Fact]

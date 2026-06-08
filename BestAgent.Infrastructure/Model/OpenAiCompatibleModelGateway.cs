@@ -62,6 +62,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
             var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
+            var responseFormat = BuildResponseFormat(request.OutputMode, request.OutputSchema);
 
             var payload = new
             {
@@ -71,12 +72,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 max_tokens = maxOutputTokens,
                 top_p = topP,
                 presence_penalty = presencePenalty,
-                frequency_penalty = frequencyPenalty
+                frequency_penalty = frequencyPenalty,
+                response_format = responseFormat
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
+                NormalizeOutputMode(request.OutputMode, request.OutputSchema),
                 temperature,
                 maxOutputTokens,
                 topP,
@@ -272,6 +275,72 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return timeoutSeconds;
+    }
+
+    private static object? BuildResponseFormat(string? outputMode, string? outputSchema)
+    {
+        var normalizedOutputMode = NormalizeOutputMode(outputMode, outputSchema);
+        return normalizedOutputMode switch
+        {
+            null or GenerateTextOutputModes.Text => null,
+            GenerateTextOutputModes.JsonObject => new
+            {
+                type = GenerateTextOutputModes.JsonObject
+            },
+            GenerateTextOutputModes.JsonSchema => new
+            {
+                type = GenerateTextOutputModes.JsonSchema,
+                json_schema = new
+                {
+                    name = "bestagent_output",
+                    strict = true,
+                    schema = ParseOutputSchema(outputSchema)
+                }
+            },
+            _ => throw new InvalidOperationException($"Model output mode '{outputMode}' is not supported.")
+        };
+    }
+
+    private static string? NormalizeOutputMode(string? outputMode, string? outputSchema)
+    {
+        if (string.IsNullOrWhiteSpace(outputMode))
+        {
+            return string.IsNullOrWhiteSpace(outputSchema)
+                ? null
+                : GenerateTextOutputModes.JsonSchema;
+        }
+
+        var normalized = outputMode.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            GenerateTextOutputModes.Text => GenerateTextOutputModes.Text,
+            GenerateTextOutputModes.JsonObject => GenerateTextOutputModes.JsonObject,
+            GenerateTextOutputModes.JsonSchema => GenerateTextOutputModes.JsonSchema,
+            _ => throw new InvalidOperationException($"Model output mode '{outputMode}' is not supported.")
+        };
+    }
+
+    private static JsonElement ParseOutputSchema(string? outputSchema)
+    {
+        if (string.IsNullOrWhiteSpace(outputSchema))
+        {
+            throw new InvalidOperationException("Model output schema must be provided when output mode is json_schema.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(outputSchema);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("Model output schema must be a JSON object.");
+            }
+
+            return document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Model output schema must be valid JSON.", ex);
+        }
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)
