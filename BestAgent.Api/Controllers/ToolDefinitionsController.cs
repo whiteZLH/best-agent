@@ -1,5 +1,7 @@
 using AutoMapper;
+using BestAgent.Api.Infrastructure;
 using BestAgent.Api.Contracts.Tools;
+using BestAgent.Application.Exceptions;
 using BestAgent.Application.Tools;
 using BestAgent.Application.Tools.Commands.CreateToolDefinition;
 using BestAgent.Application.Tools.Commands.UpdateToolDefinition;
@@ -16,11 +18,16 @@ public class ToolDefinitionsController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly BestAgentAuthenticationOptions _authenticationOptions;
 
-    public ToolDefinitionsController(IMediator mediator, IMapper mapper)
+    public ToolDefinitionsController(
+        IMediator mediator,
+        IMapper mapper,
+        BestAgentAuthenticationOptions? authenticationOptions = null)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _authenticationOptions = authenticationOptions ?? new BestAgentAuthenticationOptions();
     }
 
     [HttpGet]
@@ -28,6 +35,7 @@ public class ToolDefinitionsController : ControllerBase
         [FromQuery] bool? enabledOnly,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var tools = await _mediator.Send(new GetToolDefinitionsQuery(enabledOnly), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetToolDefinitionResponse>>(tools));
     }
@@ -37,6 +45,7 @@ public class ToolDefinitionsController : ControllerBase
         [FromRoute] string toolName,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var tool = await _mediator.Send(new GetToolDefinitionByNameQuery(toolName), cancellationToken);
         if (tool is null)
         {
@@ -51,6 +60,7 @@ public class ToolDefinitionsController : ControllerBase
         [FromBody] CreateToolDefinitionRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var execution = ResolveExecutionRequest(
             request.ExecutionKind,
             request.ExecutionBinding,
@@ -99,6 +109,7 @@ public class ToolDefinitionsController : ControllerBase
         [FromBody] UpdateToolDefinitionRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var execution = ResolveExecutionRequest(
             request.ExecutionKind,
             request.ExecutionBinding,
@@ -145,8 +156,24 @@ public class ToolDefinitionsController : ControllerBase
         [FromRoute] string id,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         await _mediator.Send(new Application.Tools.Commands.DeleteToolDefinition.DeleteToolDefinitionCommand(id), cancellationToken);
         return NoContent();
+    }
+
+    private void EnsureAuthenticatedManagementAccess()
+    {
+        if (!_authenticationOptions.RequireAuthenticatedManagementAccess)
+        {
+            return;
+        }
+
+        if (HttpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            return;
+        }
+
+        throw new UnauthorizedException("Authenticated access is required for this management endpoint.");
     }
 
     private static ResolvedToolExecutionRequest ResolveExecutionRequest(

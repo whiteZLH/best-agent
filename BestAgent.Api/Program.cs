@@ -37,7 +37,11 @@ builder.Services.AddSingleton(new BestAgentAuthenticationOptions
     RequireAuthenticatedRunAccess = bool.TryParse(
         builder.Configuration["Authentication:RequireAuthenticatedRunAccess"],
         out var requireAuthenticatedRunAccess)
-        && requireAuthenticatedRunAccess
+        && requireAuthenticatedRunAccess,
+    RequireAuthenticatedManagementAccess = bool.TryParse(
+        builder.Configuration["Authentication:RequireAuthenticatedManagementAccess"],
+        out var requireAuthenticatedManagementAccess)
+        && requireAuthenticatedManagementAccess
 });
 builder.Services
     .AddAuthentication(BestAgentAuthenticationOptions.SchemeName)

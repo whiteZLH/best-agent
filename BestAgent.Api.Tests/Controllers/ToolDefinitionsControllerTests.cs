@@ -1,6 +1,7 @@
 using AutoMapper;
 using BestAgent.Api.Contracts.Tools;
 using BestAgent.Api.Controllers;
+using BestAgent.Api.Infrastructure;
 using BestAgent.Api.Mappings;
 using BestAgent.Application.Tools;
 using BestAgent.Application.Tools.Commands.CreateToolDefinition;
@@ -9,8 +10,10 @@ using BestAgent.Application.Tools.Commands.UpdateToolDefinition;
 using BestAgent.Application.Tools.Queries.GetToolDefinitionByName;
 using BestAgent.Application.Tools.Queries.GetToolDefinitions;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Claims;
 using Xunit;
 
 namespace BestAgent.Api.Tests.Controllers;
@@ -72,6 +75,66 @@ public class ToolDefinitionsControllerTests
         Assert.Equal("none", tool.Policies.Compensation!.Mode);
         Assert.Equal(5000, tool.TimeoutMs);
         Assert.True(tool.Enabled);
+    }
+
+    [Fact]
+    public async Task GetAll_ShouldRejectAnonymousRequest_WhenAuthenticatedManagementAccessIsRequired()
+    {
+        var mediator = new FakeMediator((GetToolDefinitionsQuery _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when authentication is required."));
+        var controller = new ToolDefinitionsController(
+            mediator,
+            _mapper,
+            new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedManagementAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.UnauthorizedException>(() =>
+            controller.GetAll(true, CancellationToken.None));
+
+        Assert.Equal("Authenticated access is required for this management endpoint.", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetAll_ShouldAllowAuthenticatedRequest_WhenAuthenticatedManagementAccessIsRequired()
+    {
+        var mediator = new FakeMediator((GetToolDefinitionsQuery query) =>
+        {
+            Assert.Null(query.EnabledOnly);
+            return (IReadOnlyList<ToolDefinitionViewModel>)
+            [
+                CreateViewModel(toolName: "weather", enabled: true)
+            ];
+        });
+        var controller = new ToolDefinitionsController(
+            mediator,
+            _mapper,
+            new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedManagementAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal("admin-1", "Admin User", "admin")
+                }
+            }
+        };
+
+        var actionResult = await controller.GetAll(null, CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var response = Assert.IsAssignableFrom<IReadOnlyList<GetToolDefinitionResponse>>(okResult.Value);
+        Assert.Single(response);
     }
 
     [Fact]
@@ -1281,6 +1344,18 @@ public class ToolDefinitionsControllerTests
         return parsed is null
             ? null
             : new ParameterToolPolicyViewModel(parsed.AllowedPaths, parsed.DeniedPaths);
+    }
+
+    private static ClaimsPrincipal CreatePrincipal(string userId, string userName, string role)
+    {
+        return new ClaimsPrincipal(
+            new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Name, userName),
+                new Claim(ClaimTypes.Role, role)
+            ],
+            authenticationType: "TestAuth"));
     }
 
     private sealed class FakeMediator : IMediator

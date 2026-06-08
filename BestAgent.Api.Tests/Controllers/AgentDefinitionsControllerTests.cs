@@ -1,6 +1,7 @@
 using AutoMapper;
 using BestAgent.Api.Contracts.AgentDefinitions;
 using BestAgent.Api.Controllers;
+using BestAgent.Api.Infrastructure;
 using BestAgent.Api.Mappings;
 using BestAgent.Application.AgentDefinitions;
 using BestAgent.Application.AgentDefinitions.Commands.ActivateAgentDefinitionVersion;
@@ -12,8 +13,10 @@ using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitions;
 using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitionVersions;
 using BestAgent.Application.AgentDefinitions.Queries.GetRouteRules;
 using MediatR;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Security.Claims;
 using Xunit;
 
 namespace BestAgent.Api.Tests.Controllers;
@@ -62,6 +65,63 @@ public class AgentDefinitionsControllerTests
         Assert.Equal("{\"citations\":true}", definition.ContextPolicy);
         Assert.Equal(["support_agent", "finance_agent"], definition.AllowedHandoffs);
         Assert.Equal("{\"type\":\"object\",\"required\":[\"answer\"]}", definition.OutputSchema);
+    }
+
+    [Fact]
+    public async Task GetAll_ShouldRejectAnonymousRequest_WhenAuthenticatedManagementAccessIsRequired()
+    {
+        var mediator = new FakeMediator((GetAgentDefinitionsQuery _) =>
+            throw new InvalidOperationException("Mediator should not be invoked when authentication is required."));
+        var controller = new AgentDefinitionsController(
+            mediator,
+            _mapper,
+            new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedManagementAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+
+        var ex = await Assert.ThrowsAsync<BestAgent.Application.Exceptions.UnauthorizedException>(() =>
+            controller.GetAll(CancellationToken.None));
+
+        Assert.Equal("Authenticated access is required for this management endpoint.", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetAll_ShouldAllowAuthenticatedRequest_WhenAuthenticatedManagementAccessIsRequired()
+    {
+        var mediator = new FakeMediator((GetAgentDefinitionsQuery _) =>
+            (IReadOnlyList<AgentDefinitionViewModel>)
+            [
+                CreateDefinitionViewModel(code: "writer", name: "Writer")
+            ]);
+        var controller = new AgentDefinitionsController(
+            mediator,
+            _mapper,
+            new BestAgentAuthenticationOptions
+            {
+                RequireAuthenticatedManagementAccess = true
+            })
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = CreatePrincipal("admin-1", "Admin User", "admin")
+                }
+            }
+        };
+
+        var actionResult = await controller.GetAll(CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
+        var response = Assert.IsAssignableFrom<IReadOnlyList<GetAgentDefinitionResponse>>(okResult.Value);
+        Assert.Single(response);
     }
 
     [Fact]
@@ -603,6 +663,18 @@ public class AgentDefinitionsControllerTests
             true,
             now,
             now);
+    }
+
+    private static ClaimsPrincipal CreatePrincipal(string userId, string userName, string role)
+    {
+        return new ClaimsPrincipal(
+            new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Name, userName),
+                new Claim(ClaimTypes.Role, role)
+            ],
+            authenticationType: "TestAuth"));
     }
 
     private sealed class FakeMediator : IMediator

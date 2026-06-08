@@ -1,4 +1,5 @@
 using AutoMapper;
+using BestAgent.Api.Infrastructure;
 using BestAgent.Api.Contracts.AgentDefinitions;
 using BestAgent.Application.AgentDefinitions.Commands.ActivateAgentDefinitionVersion;
 using BestAgent.Application.AgentDefinitions.Commands.CreateAgentDefinition;
@@ -8,6 +9,7 @@ using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitionByCode;
 using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitions;
 using BestAgent.Application.AgentDefinitions.Queries.GetAgentDefinitionVersions;
 using BestAgent.Application.AgentDefinitions.Queries.GetRouteRules;
+using BestAgent.Application.Exceptions;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,16 +21,22 @@ public class AgentDefinitionsController : ControllerBase
 {
     private readonly IMediator _mediator;
     private readonly IMapper _mapper;
+    private readonly BestAgentAuthenticationOptions _authenticationOptions;
 
-    public AgentDefinitionsController(IMediator mediator, IMapper mapper)
+    public AgentDefinitionsController(
+        IMediator mediator,
+        IMapper mapper,
+        BestAgentAuthenticationOptions? authenticationOptions = null)
     {
         _mediator = mediator;
         _mapper = mapper;
+        _authenticationOptions = authenticationOptions ?? new BestAgentAuthenticationOptions();
     }
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<GetAgentDefinitionResponse>>> GetAll(CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var definitions = await _mediator.Send(new GetAgentDefinitionsQuery(), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetAgentDefinitionResponse>>(definitions));
     }
@@ -38,6 +46,7 @@ public class AgentDefinitionsController : ControllerBase
         [FromRoute] string agentCode,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var definition = await _mediator.Send(new GetAgentDefinitionByCodeQuery(agentCode), cancellationToken);
         if (definition is null)
         {
@@ -52,6 +61,7 @@ public class AgentDefinitionsController : ControllerBase
         [FromBody] CreateAgentDefinitionRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var command = _mapper.Map<CreateAgentDefinitionCommand>(request);
         var definition = await _mediator.Send(command, cancellationToken);
         var response = _mapper.Map<GetAgentDefinitionResponse>(definition);
@@ -64,6 +74,7 @@ public class AgentDefinitionsController : ControllerBase
         [FromRoute] string agentCode,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var definition = await _mediator.Send(new GetAgentDefinitionByCodeQuery(agentCode), cancellationToken);
         if (definition is null)
         {
@@ -80,6 +91,7 @@ public class AgentDefinitionsController : ControllerBase
         [FromBody] CreateAgentDefinitionVersionRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var command = _mapper.Map<CreateAgentDefinitionVersionCommand>(request) with { AgentCode = agentCode };
         var version = await _mediator.Send(command, cancellationToken);
         var response = _mapper.Map<GetAgentDefinitionVersionResponse>(version);
@@ -93,6 +105,7 @@ public class AgentDefinitionsController : ControllerBase
         [FromRoute] int version,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var routeRules = await _mediator.Send(new GetRouteRulesQuery(agentCode, version), cancellationToken);
         return Ok(_mapper.Map<IReadOnlyList<GetRouteRuleResponse>>(routeRules));
     }
@@ -104,6 +117,7 @@ public class AgentDefinitionsController : ControllerBase
         [FromBody] CreateRouteRuleRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var command = _mapper.Map<CreateRouteRuleCommand>(request) with
         {
             AgentCode = agentCode,
@@ -121,10 +135,26 @@ public class AgentDefinitionsController : ControllerBase
         [FromBody] ActivateAgentDefinitionVersionRequest request,
         CancellationToken cancellationToken)
     {
+        EnsureAuthenticatedManagementAccess();
         var definition = await _mediator.Send(
             new ActivateAgentDefinitionVersionCommand(agentCode, request.Version),
             cancellationToken);
 
         return Ok(_mapper.Map<GetAgentDefinitionResponse>(definition));
+    }
+
+    private void EnsureAuthenticatedManagementAccess()
+    {
+        if (!_authenticationOptions.RequireAuthenticatedManagementAccess)
+        {
+            return;
+        }
+
+        if (HttpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            return;
+        }
+
+        throw new UnauthorizedException("Authenticated access is required for this management endpoint.");
     }
 }
