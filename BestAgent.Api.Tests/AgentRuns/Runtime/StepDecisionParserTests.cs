@@ -22,6 +22,7 @@ public class StepDecisionParserTests
               "context_overrides": {"mode":"summary_only"},
               "memory_overrides": {"mode":"read_only"},
               "tool_overrides": {"allowed":["faq_search"]},
+              "knowledge_overrides": {"allowed":["faq"]},
               "approval_required": true,
               "merge_strategy": "first_success"
             }
@@ -38,6 +39,7 @@ public class StepDecisionParserTests
         Assert.Equal("{\"mode\":\"summary_only\"}", decision.HandoffContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", decision.HandoffMemoryOverrides);
         Assert.Equal("{\"allowed\":[\"faq_search\"]}", decision.HandoffToolOverrides);
+        Assert.Equal("{\"allowed\":[\"faq\"]}", decision.HandoffKnowledgeOverrides);
         Assert.True(decision.HandoffApprovalRequired);
         Assert.Equal("first_success", decision.HandoffMergeStrategy);
     }
@@ -58,6 +60,7 @@ public class StepDecisionParserTests
                 "contextOverrides": {"mode":"summary_only"},
                 "memoryOverrides": {"mode":"read_only"},
                 "toolOverrides": {"inherit":false},
+                "knowledgeOverrides": {"sources":["faq"]},
                 "approvalRequired": "false",
                 "mergeStrategy": "all_results"
               }
@@ -74,6 +77,7 @@ public class StepDecisionParserTests
         Assert.Equal("{\"mode\":\"summary_only\"}", decision.HandoffContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", decision.HandoffMemoryOverrides);
         Assert.Equal("{\"inherit\":false}", decision.HandoffToolOverrides);
+        Assert.Equal("{\"sources\":[\"faq\"]}", decision.HandoffKnowledgeOverrides);
         Assert.False(decision.HandoffApprovalRequired);
         Assert.Equal("all_results", decision.HandoffMergeStrategy);
     }

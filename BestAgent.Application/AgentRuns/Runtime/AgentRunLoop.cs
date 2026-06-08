@@ -20,7 +20,7 @@ public static class AgentRunLoop
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"route_only"} to route directly to another allowed agent.
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"delegate_and_wait"} to delegate to another allowed agent and then continue.
         Use {"action":"handoff","targetAgent":"...","input":"...","mode":"delegate_and_merge"} to delegate and then merge the child result into the final answer.
-        Optional handoff fields: "reason", "confidence", "context_overrides", "memory_overrides", "tool_overrides", "approval_required", "merge_strategy".
+        Optional handoff fields: "reason", "confidence", "context_overrides", "memory_overrides", "tool_overrides", "knowledge_overrides", "approval_required", "merge_strategy".
         Supported merge_strategy values for delegate_and_merge: "supervisor_summary", "first_success", "all_results".
         Use {"action":"request_human","comment":"..."} when a human operator must review or provide the answer.
         Use {"action":"fail","errorCode":"...","message":"..."} when the run cannot continue automatically.
@@ -74,6 +74,7 @@ public static class AgentRunLoop
                     automaticRouteRule,
                     automaticRouteRule.ApprovalRequired,
                     $"Matched route rule '{automaticRouteRule.RuleName}'.",
+                    null,
                     null,
                     null,
                     null,
@@ -177,6 +178,7 @@ public static class AgentRunLoop
                     decision.HandoffContextOverrides,
                     decision.HandoffMemoryOverrides,
                     decision.HandoffToolOverrides,
+                    decision.HandoffKnowledgeOverrides,
                     cancellationToken,
                     decision.HandoffConfidence,
                     totalCostDelta,
@@ -823,6 +825,7 @@ public static class AgentRunLoop
         string? contextOverrides,
         string? memoryOverrides,
         string? toolOverrides,
+        string? knowledgeOverrides,
         CancellationToken cancellationToken,
         double? confidence = null,
         decimal totalCostDelta = 0m,
@@ -860,6 +863,7 @@ public static class AgentRunLoop
                     contextOverrides,
                     memoryOverrides,
                     toolOverrides,
+                    knowledgeOverrides,
                     effectiveMergeStrategy))
         };
 

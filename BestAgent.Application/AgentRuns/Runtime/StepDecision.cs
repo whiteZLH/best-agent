@@ -13,6 +13,7 @@ public record StepDecision(
     string? HandoffContextOverrides,
     string? HandoffMemoryOverrides,
     string? HandoffToolOverrides,
+    string? HandoffKnowledgeOverrides,
     bool? HandoffApprovalRequired,
     string? HumanComment,
     string? FailErrorCode,
@@ -21,12 +22,12 @@ public record StepDecision(
 {
     public static StepDecision Respond(string response)
     {
-        return new("respond", response, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new("respond", response, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public static StepDecision ToolCall(string toolName, string? toolInput)
     {
-        return new("tool_call", null, toolName, toolInput, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new("tool_call", null, toolName, toolInput, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     public static StepDecision Handoff(
@@ -38,6 +39,7 @@ public record StepDecision(
         string? contextOverrides = null,
         string? memoryOverrides = null,
         string? toolOverrides = null,
+        string? knowledgeOverrides = null,
         bool? approvalRequired = null,
         string? mergeStrategy = null)
     {
@@ -54,6 +56,7 @@ public record StepDecision(
             contextOverrides,
             memoryOverrides,
             toolOverrides,
+            knowledgeOverrides,
             approvalRequired,
             null,
             null,
@@ -63,11 +66,11 @@ public record StepDecision(
 
     public static StepDecision RequestHuman(string? comment)
     {
-        return new("request_human", null, null, null, null, null, null, null, null, null, null, null, null, comment, null, null, null);
+        return new("request_human", null, null, null, null, null, null, null, null, null, null, null, null, null, comment, null, null, null);
     }
 
     public static StepDecision Fail(string? errorCode, string errorMessage)
     {
-        return new("fail", null, null, null, null, null, null, null, null, null, null, null, null, null, errorCode, errorMessage, null);
+        return new("fail", null, null, null, null, null, null, null, null, null, null, null, null, null, null, errorCode, errorMessage, null);
     }
 }

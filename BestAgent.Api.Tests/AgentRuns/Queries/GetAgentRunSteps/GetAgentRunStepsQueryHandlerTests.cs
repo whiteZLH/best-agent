@@ -158,6 +158,7 @@ public class GetAgentRunStepsQueryHandlerTests
                         "{\"mode\":\"summary_only\"}",
                         "{\"mode\":\"read_only\"}",
                         "{\"allowed\":[\"faq_search\"]}",
+                        "{\"allowed\":[\"faq\"]}",
                         "first_success"),
                     "Completed",
                     "Child answer"))
@@ -194,6 +195,7 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal("{\"mode\":\"summary_only\"}", item.Handoff.ContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", item.Handoff.MemoryOverrides);
         Assert.Equal("{\"allowed\":[\"faq_search\"]}", item.Handoff.ToolOverrides);
+        Assert.Equal("{\"allowed\":[\"faq\"]}", item.Handoff.KnowledgeOverrides);
         Assert.Equal("first_success", item.Handoff.MergeStrategy);
     }
 

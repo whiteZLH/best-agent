@@ -25,6 +25,7 @@ public record HandoffPayload(
     string? ContextOverrides,
     string? MemoryOverrides,
     string? ToolOverrides,
+    string? KnowledgeOverrides,
     string? MergeStrategy = null);
 
 public static class HandoffPayloadSerializer
@@ -51,6 +52,7 @@ public static class HandoffPayloadSerializer
         string? contextOverrides = null,
         string? memoryOverrides = null,
         string? toolOverrides = null,
+        string? knowledgeOverrides = null,
         string? mergeStrategy = null)
     {
         var normalizedMode = NormalizeMode(mode);
@@ -77,6 +79,7 @@ public static class HandoffPayloadSerializer
             Normalize(contextOverrides),
             Normalize(memoryOverrides),
             Normalize(toolOverrides),
+            Normalize(knowledgeOverrides),
             NormalizeMergeStrategy(normalizedMode, mergeStrategy));
     }
 
@@ -100,6 +103,7 @@ public static class HandoffPayloadSerializer
         return handoffPayload with
         {
             Mode = NormalizeMode(handoffPayload.Mode),
+            KnowledgeOverrides = Normalize(handoffPayload.KnowledgeOverrides),
             MergeStrategy = NormalizeMergeStrategy(handoffPayload.Mode, handoffPayload.MergeStrategy)
         };
     }
@@ -128,6 +132,7 @@ public static class HandoffPayloadSerializer
         return JsonSerializer.Serialize(payload with
         {
             Mode = NormalizeMode(payload.Mode),
+            KnowledgeOverrides = Normalize(payload.KnowledgeOverrides),
             MergeStrategy = NormalizeMergeStrategy(payload.Mode, payload.MergeStrategy)
         });
     }

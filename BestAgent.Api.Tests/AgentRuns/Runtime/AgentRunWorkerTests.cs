@@ -1986,6 +1986,223 @@ public class AgentRunWorkerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldPreferKnowledgeOverrides_WhenHandoffKnowledgeOverridesArePresent()
+    {
+        var channel = new AgentRunChannel();
+        var eventBus = new RecordingEventBus();
+        var agentRunRepo = Substitute.For<IAgentRunRepository>();
+        var agentStepRepo = Substitute.For<IAgentStepRepository>();
+        var agentApprovalRepo = Substitute.For<IAgentApprovalRepository>();
+        var runtimeMemoryWriter = Substitute.For<IRuntimeMemoryWriter>();
+        var agentDefinitionRepo = Substitute.For<IAgentDefinitionRepository>();
+        var stepDecisionParser = Substitute.For<IStepDecisionParser>();
+        var toolExecutor = Substitute.For<IToolExecutor>();
+        var modelGateway = Substitute.For<IModelGateway>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var knowledgeChunkRepository = Substitute.For<IKnowledgeChunkRepository>();
+        var sessionMemoryRepository = Substitute.For<ISessionMemoryRepository>();
+        var userMemoryRepository = Substitute.For<IUserMemoryRepository>();
+        var summaryMemoryRepository = Substitute.For<ISummaryMemoryRepository>();
+        var runtimeContextComposer = new RuntimeContextComposer(
+            summaryMemoryRepository,
+            knowledgeChunkRepository,
+            sessionMemoryRepository,
+            userMemoryRepository,
+            NullAgentMetrics.Instance);
+        var parentRun = CreateRunningRun();
+        var childRunStore = new ConcurrentDictionary<string, AgentRun>(StringComparer.Ordinal);
+        AgentRun? waitingParentRun = null;
+        AgentRun? childRun = null;
+        GenerateTextRequest? childModelRequest = null;
+        var modelCallCount = 0;
+
+        var parentDefinition = CreateResolvedDefinition(
+            versionId: "ver-1",
+            allowedHandoffs: "[\"support_agent\"]");
+        var childDefinition = CreateResolvedDefinition(
+            versionId: "ver-2",
+            agentCode: "support_agent",
+            memoryPolicy: "{\"includeKnowledge\":true,\"includeSummary\":false,\"includeSessionMemory\":false,\"includeUserMemory\":false,\"maxKnowledgeChunks\":3,\"knowledgeCandidateCount\":3}",
+            knowledgeSources: "[\"faq\",\"travel-guide\"]",
+            allowedHandoffs: "[]");
+
+        agentRunRepo.GetByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => waitingParentRun ?? parentRun);
+        agentRunRepo.GetLatestChildByParentRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => childRun);
+        agentDefinitionRepo.GetEnabledByCodeAsync("writer", Arg.Any<CancellationToken>())
+            .Returns(parentDefinition);
+        agentDefinitionRepo.GetEnabledByCodeAsync("support_agent", Arg.Any<CancellationToken>())
+            .Returns(childDefinition);
+        modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                modelCallCount++;
+                var request = call.Arg<GenerateTextRequest>();
+                if (modelCallCount == 1)
+                {
+                    return new GenerateTextResult("handoff-decision");
+                }
+
+                if (modelCallCount == 2)
+                {
+                    childModelRequest = request;
+                    return new GenerateTextResult("child-final");
+                }
+
+                return new GenerateTextResult("parent-final");
+            });
+        stepDecisionParser.Parse("handoff-decision")
+            .Returns(StepDecision.Handoff("support_agent", "Please help with policy details", "delegate_and_wait"));
+        stepDecisionParser.Parse("child-final")
+            .Returns(StepDecision.Respond("Child answer"));
+        stepDecisionParser.Parse("parent-final")
+            .Returns(StepDecision.Respond("Parent answer"));
+
+        knowledgeChunkRepository.ListByKnowledgeSourceCodesAsync(
+                "tenant-1",
+                Arg.Any<IReadOnlyList<string>>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var sourceCodes = call.Arg<IReadOnlyList<string>>();
+                var selectedSource = sourceCodes.Single();
+                return (IReadOnlyList<KnowledgeChunk>)
+                [
+                    new KnowledgeChunk
+                    {
+                        Id = "chunk-1",
+                        TenantId = "tenant-1",
+                        DocumentId = "doc-1",
+                        ChunkNo = 1,
+                        Content = $"Knowledge from {selectedSource}",
+                        TokenCount = 12,
+                        Source = selectedSource,
+                        Metadata = "{}",
+                        CreateTime = DateTime.UtcNow,
+                        LastModifyTime = DateTime.UtcNow,
+                        Creator = "system",
+                        CreatorName = "system",
+                        LastModifier = "system",
+                        LastModifierName = "system"
+                    }
+                ];
+            });
+
+        agentRunRepo.When(repo => repo.AddAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var added = call.Arg<AgentRun>();
+                if (added.RunId != parentRun.RunId)
+                {
+                    childRun = added;
+                    childRunStore[added.RunId] = added;
+                }
+            });
+        agentRunRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentRun>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var updated = call.Arg<AgentRun>();
+                if (updated.RunId == parentRun.RunId)
+                {
+                    waitingParentRun = updated;
+                }
+                else
+                {
+                    childRun = updated;
+                    childRunStore[updated.RunId] = updated;
+                }
+            });
+        agentRunRepo.GetByRunIdAsync(Arg.Is<string>(id => childRunStore.ContainsKey(id)), Arg.Any<CancellationToken>())
+            .Returns(call => childRunStore[call.Arg<string>()]);
+
+        AgentStep? parentHandoffStep = null;
+        agentStepRepo.GetLastByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ => parentHandoffStep);
+        agentStepRepo.When(repo => repo.AddAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (step.RunId == parentRun.RunId && step.StepType == "handoff")
+                {
+                    var payload = HandoffPayloadSerializer.Parse(step.DecisionPayload);
+                    parentHandoffStep = step with
+                    {
+                        DecisionPayload = HandoffPayloadSerializer.Serialize(payload with
+                        {
+                            KnowledgeScope = "{\"allowed\":[\"travel-guide\"]}",
+                            KnowledgeOverrides = "{\"allowed\":[\"faq\",\"non-existent\"]}"
+                        })
+                    };
+                }
+            });
+        agentStepRepo.When(repo => repo.UpdateAsync(Arg.Any<AgentStep>(), Arg.Any<CancellationToken>()))
+            .Do(call =>
+            {
+                var step = call.Arg<AgentStep>();
+                if (parentHandoffStep is not null && step.StepId == parentHandoffStep.StepId)
+                {
+                    parentHandoffStep = step;
+                }
+            });
+        agentStepRepo.ListByRunIdAsync(parentRun.RunId, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var steps = new List<AgentStep>();
+                if (parentHandoffStep is not null)
+                {
+                    steps.Add(AgentRunLoop.CreateStep(parentRun.RunId, 3, "model_call", "Completed", "hello", "handoff-decision", null, DateTime.UtcNow, DateTime.UtcNow));
+                    steps.Add(parentHandoffStep);
+                }
+
+                return (IReadOnlyList<AgentStep>)steps;
+            });
+
+        using var services = CreateServiceProvider(
+            agentRunRepo,
+            agentStepRepo,
+            agentApprovalRepo,
+            null,
+            agentDefinitionRepo,
+            stepDecisionParser,
+            toolExecutor,
+            modelGateway,
+            toolDefinitionRepository,
+            runtimeMemoryWriter,
+            runtimeContextComposer: runtimeContextComposer);
+        var worker = new AgentRunWorker(
+            channel,
+            eventBus,
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<AgentRunWorker>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await worker.StartAsync(cts.Token);
+        await channel.EnqueueAsync(new CreateAgentRunMessage(parentRun.RunId), cts.Token);
+
+        await WaitForChildRunStatusAsync(agentRunRepo, parentRun.RunId, "Completed");
+
+        Assert.NotNull(childModelRequest);
+        Assert.Contains("Knowledge from faq", childModelRequest!.Input);
+        Assert.DoesNotContain("Knowledge from travel-guide", childModelRequest.Input);
+        await knowledgeChunkRepository.Received(1).ListByKnowledgeSourceCodesAsync(
+            "tenant-1",
+            Arg.Is<IReadOnlyList<string>>(sources =>
+                sources.Count == 1 &&
+                string.Equals(sources[0], "faq", StringComparison.Ordinal)),
+            Arg.Any<string>(),
+            Arg.Any<int>(),
+            Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+
+        cts.Cancel();
+        await worker.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldSuppressChildMemoryContext_WhenContextModeIsSummaryOnly()
     {
         var channel = new AgentRunChannel();
@@ -5890,7 +6107,7 @@ public class AgentRunWorkerTests
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"route_only\"} to route directly to another allowed agent.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"delegate_and_wait\"} to delegate to another allowed agent and then continue.") &&
                 request.SystemPrompt.Contains("Use {\"action\":\"handoff\",\"targetAgent\":\"...\",\"input\":\"...\",\"mode\":\"delegate_and_merge\"} to delegate and then merge the child result into the final answer.") &&
-                request.SystemPrompt.Contains("Optional handoff fields: \"reason\", \"confidence\", \"context_overrides\", \"memory_overrides\", \"tool_overrides\", \"approval_required\", \"merge_strategy\".") &&
+                request.SystemPrompt.Contains("Optional handoff fields: \"reason\", \"confidence\", \"context_overrides\", \"memory_overrides\", \"tool_overrides\", \"knowledge_overrides\", \"approval_required\", \"merge_strategy\".") &&
                 request.SystemPrompt.Contains("Supported merge_strategy values for delegate_and_merge: \"supervisor_summary\", \"first_success\", \"all_results\".")),
             Arg.Any<CancellationToken>());
 

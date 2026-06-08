@@ -144,6 +144,7 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
             payload.ContextOverrides,
             payload.MemoryOverrides,
             payload.ToolOverrides,
+            payload.KnowledgeOverrides,
             payload.MergeStrategy);
     }
 

@@ -128,6 +128,10 @@ public class StepDecisionParser : IStepDecisionParser
                     ?? GetString(root, "tool_overrides")
                     ?? GetNestedString(root, "handoff", "toolOverrides")
                     ?? GetNestedString(root, "handoff", "tool_overrides");
+                var knowledgeOverrides = GetString(root, "knowledgeOverrides")
+                    ?? GetString(root, "knowledge_overrides")
+                    ?? GetNestedString(root, "handoff", "knowledgeOverrides")
+                    ?? GetNestedString(root, "handoff", "knowledge_overrides");
                 var mergeStrategy = GetString(root, "mergeStrategy")
                     ?? GetString(root, "merge_strategy")
                     ?? GetNestedString(root, "handoff", "mergeStrategy")
@@ -146,6 +150,7 @@ public class StepDecisionParser : IStepDecisionParser
                     contextOverrides?.Trim(),
                     memoryOverrides?.Trim(),
                     toolOverrides?.Trim(),
+                    knowledgeOverrides?.Trim(),
                     approvalRequired,
                     mergeStrategy?.Trim());
                 return true;

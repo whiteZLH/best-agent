@@ -2555,7 +2555,8 @@ public class AgentRunWorker : BackgroundService
 
     private static string? ResolveRestrictedKnowledgeSources(HandoffPayload handoffPayload, string? currentKnowledgeSources)
     {
-        var allowedOverride = ReadStringArrayOverride(handoffPayload.KnowledgeScope, "allowed", "sources");
+        var allowedOverride = ReadStringArrayOverride(handoffPayload.KnowledgeOverrides, "allowed", "sources")
+            ?? ReadStringArrayOverride(handoffPayload.KnowledgeScope, "allowed", "sources");
         if (allowedOverride is null)
         {
             return null;

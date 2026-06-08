@@ -22,4 +22,5 @@ public record HandoffInfo(
     string? ContextOverrides,
     string? MemoryOverrides,
     string? ToolOverrides,
+    string? KnowledgeOverrides,
     string? MergeStrategy = null);

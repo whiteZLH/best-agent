@@ -405,7 +405,7 @@ public class AgentRunsControllerTests
                     "output",
                     null,
                     "plan",
-                    new HandoffInfo("handoff", "support_agent", "handoff-input", "delegate_and_merge", "child-run-1", "Approved", "Completed", "child-output", null, now, "route-rule-1", "{\"mode\":\"summary_only\"}", "{\"mode\":\"read_only\"}", "{\"inherit\":false}", "{\"sources\":[\"faq\"]}", true, "Route to refund specialist", 0.91, "{\"mode\":\"summary_only\"}", "{\"mode\":\"read_only\"}", "{\"allowed\":[\"faq_search\"]}", "first_success"),
+                    new HandoffInfo("handoff", "support_agent", "handoff-input", "delegate_and_merge", "child-run-1", "Approved", "Completed", "child-output", null, now, "route-rule-1", "{\"mode\":\"summary_only\"}", "{\"mode\":\"read_only\"}", "{\"inherit\":false}", "{\"sources\":[\"faq\"]}", true, "Route to refund specialist", 0.91, "{\"mode\":\"summary_only\"}", "{\"mode\":\"read_only\"}", "{\"allowed\":[\"faq_search\"]}", "{\"allowed\":[\"faq\"]}", "first_success"),
                     new ApprovalInfo("approval", "weather", "{}", "internal_write", "Pending", null, null, "approval-1", "u-1", "Alice", "admin"),
                     new HumanWaitInfo("human", "Pending", "Need operator input", null, "u-2", "Bob", "operator", null, "tool_wait", "step-0", "invocation-0", "weather", "{}", null, "Pending", true),
                     new ToolInvocationInfo("invocation-1", "weather", "async", "Pending", "wait-1", now, null, 0),
@@ -451,6 +451,7 @@ public class AgentRunsControllerTests
         Assert.Equal("{\"mode\":\"summary_only\"}", step.Handoff.ContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", step.Handoff.MemoryOverrides);
         Assert.Equal("{\"allowed\":[\"faq_search\"]}", step.Handoff.ToolOverrides);
+        Assert.Equal("{\"allowed\":[\"faq\"]}", step.Handoff.KnowledgeOverrides);
         Assert.Equal("first_success", step.Handoff.MergeStrategy);
         Assert.Equal("approval", step.Approval!.WaitType);
         Assert.Equal("weather", step.Approval.ToolName);

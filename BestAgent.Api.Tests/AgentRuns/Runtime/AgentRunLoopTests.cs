@@ -1472,6 +1472,7 @@ public class AgentRunLoopTests
                     contextOverrides: "{\"mode\":\"summary_only\"}",
                     memoryOverrides: "{\"mode\":\"read_only\"}",
                     toolOverrides: "{\"allowed\":[\"faq_search\"]}",
+                    knowledgeOverrides: "{\"allowed\":[\"faq\"]}",
                     approvalRequired: true));
 
         var result = await AgentRunLoop.ExecuteAsync(
@@ -1502,6 +1503,7 @@ public class AgentRunLoopTests
         Assert.Equal("{\"mode\":\"summary_only\"}", payload.ContextOverrides);
         Assert.Equal("{\"mode\":\"read_only\"}", payload.MemoryOverrides);
         Assert.Equal("{\"allowed\":[\"faq_search\"]}", payload.ToolOverrides);
+        Assert.Equal("{\"allowed\":[\"faq\"]}", payload.KnowledgeOverrides);
         Assert.True(payload.ApprovalRequired);
     }
 
