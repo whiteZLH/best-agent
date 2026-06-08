@@ -334,7 +334,7 @@ public class DatabaseInitializationHostedServiceTests
             AuthHeaders = "{ \"Authorization\" : \"Bearer token\" }",
             TimeoutMs = 5000,
             RetryPolicy = "retry-once",
-            AuthPolicy = "bearer",
+            AuthPolicy = "Bearer",
             IdempotencyPolicy = "disabled",
             CompensationPolicy = "manual",
             SideEffectLevel = "ReadOnly",
@@ -372,5 +372,59 @@ public class DatabaseInitializationHostedServiceTests
                 tool.SideEffectLevel == "read_only" &&
                 tool.ConsistencyMode == "strong"),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_ShouldThrow_WhenPersistedWebhookAuthPolicyRequiresBearerHeader()
+    {
+        var options = new DbContextOptionsBuilder<BestAgentDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var dbContext = new BestAgentDbContext(options);
+        var agentDefinitionRepository = Substitute.For<IAgentDefinitionRepository>();
+        var toolDefinitionRepository = Substitute.For<IToolDefinitionRepository>();
+        var persistedTool = new ToolDefinition
+        {
+            Id = "tool-policy-invalid",
+            ToolName = "weather",
+            DisplayName = "Weather",
+            Enabled = true,
+            ExecutionKind = ToolExecutionBindingHelper.Webhook,
+            ExecutionBinding = ToolExecutionBindingHelper.CreateWebhookBinding(
+                "https://example.com/tools/weather",
+                "POST",
+                "{\"X-Api-Key\":\"token\"}"),
+            EndpointUrl = "https://example.com/tools/weather",
+            HttpMethod = "POST",
+            AuthHeaders = "{\"X-Api-Key\":\"token\"}",
+            TimeoutMs = 5000,
+            AuthPolicy = "bearer",
+            SideEffectLevel = "read_only",
+            ConsistencyMode = "none",
+            Creator = "system",
+            CreatorName = "system",
+            LastModifier = "system",
+            LastModifierName = "system",
+            CreateTime = DateTime.UtcNow,
+            LastModifyTime = DateTime.UtcNow
+        };
+
+        agentDefinitionRepository.AnyAsync(Arg.Any<CancellationToken>()).Returns(true);
+        toolDefinitionRepository.ExistsByToolNameAsync("echo_context", Arg.Any<CancellationToken>()).Returns(true);
+        toolDefinitionRepository.ExistsByToolNameAsync("async_task", Arg.Any<CancellationToken>()).Returns(true);
+        toolDefinitionRepository.GetAllAsync(Arg.Any<CancellationToken>()).Returns([persistedTool]);
+
+        var services = new ServiceCollection();
+        services.AddSingleton(dbContext);
+        services.AddSingleton(agentDefinitionRepository);
+        services.AddSingleton(toolDefinitionRepository);
+        await using var serviceProvider = services.BuildServiceProvider();
+
+        var hostedService = new DatabaseInitializationHostedService(serviceProvider);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            hostedService.StartAsync(CancellationToken.None));
+
+        Assert.Equal("AuthHeaders must include Authorization Bearer header when AuthPolicy.scheme is 'bearer'.", exception.Message);
     }
 }

@@ -151,7 +151,11 @@ public class DatabaseInitializationHostedService : IHostedService
                 nameof(toolDefinition.IdempotencyPolicy),
                 nameof(toolDefinition.CompensationPolicy),
                 nameof(toolDefinition.ConsistencyMode),
-                nameof(toolDefinition.SideEffectLevel));
+                nameof(toolDefinition.SideEffectLevel),
+                executionSettings.ExecutionKind,
+                executionSettings.AuthHeaders,
+                nameof(toolDefinition.ExecutionKind),
+                nameof(toolDefinition.AuthHeaders));
 
             if (string.Equals(toolDefinition.ExecutionKind, executionSettings.ExecutionKind, StringComparison.Ordinal)
                 && string.Equals(toolDefinition.ExecutionBinding, executionSettings.ExecutionBinding, StringComparison.Ordinal)

@@ -138,6 +138,45 @@ public class ToolResolverTests
     }
 
     [Fact]
+    public async Task ResolveAsync_ShouldThrow_WhenWebhookAuthPolicyRequiresBearerHeader()
+    {
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.Webhook,
+                executionBinding: ToolExecutionBindingHelper.CreateWebhookBinding(
+                    "https://example.com/tools/weather",
+                    "POST",
+                    "{\"X-Api-Key\":\"token\"}"),
+                authPolicy: "bearer"));
+        var resolver = CreateResolver();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveAsync("weather", "input", _context, CancellationToken.None));
+
+        Assert.Equal("AuthHeaders must include Authorization Bearer header when AuthPolicy.scheme is 'bearer'.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ShouldThrow_WhenLocalHandlerAuthPolicyRequiresWebhook()
+    {
+        _toolRegistry.RegisterHandler("custom-weather-handler", (_, _, _) => Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
+        _toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(CreateToolDefinition(
+                endpointUrl: null,
+                executionKind: ToolExecutionBindingHelper.LocalHandler,
+                executionBinding: ToolExecutionBindingHelper.CreateLocalHandlerBinding("custom-weather-handler"),
+                authPolicy: "oauth",
+                authHeaders: null));
+        var resolver = CreateResolver();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            resolver.ResolveAsync("weather", "input", _context, CancellationToken.None));
+
+        Assert.Equal("AuthPolicy.scheme 'oauth' is only supported for 'webhook' execution kind.", exception.Message);
+    }
+
+    [Fact]
     public async Task ResolveAsync_ShouldThrow_WhenDefinitionDisabledEvenIfHandlerExists()
     {
         _toolRegistry.RegisterHandler("weather", (_, _, _) => Task.FromResult(ToolExecutionResult.Completed("weather", "from-handler")));
@@ -218,7 +257,9 @@ public class ToolResolverTests
         string? endpointUrl = "https://example.com/tools/weather",
         string? executionKind = null,
         string? executionBinding = null,
-        string? idempotencyPolicy = null)
+        string? idempotencyPolicy = null,
+        string? authPolicy = null,
+        string? authHeaders = "{\"Authorization\":\"Bearer token\"}")
     {
         if (executionKind is null
             && executionBinding is null
@@ -228,7 +269,7 @@ public class ToolResolverTests
             executionBinding = ToolExecutionBindingHelper.CreateWebhookBinding(
                 endpointUrl.Trim(),
                 "POST",
-                "{\"Authorization\":\"Bearer token\"}");
+                authHeaders);
         }
 
         return new ToolDefinition
@@ -241,9 +282,10 @@ public class ToolResolverTests
             ExecutionBinding = executionBinding,
             EndpointUrl = endpointUrl,
             HttpMethod = "POST",
-            AuthHeaders = "{\"Authorization\":\"Bearer token\"}",
+            AuthHeaders = authHeaders,
             InputSchema = "{\"type\":\"object\"}",
             OutputSchema = "{\"type\":\"string\"}",
+            AuthPolicy = authPolicy,
             IdempotencyPolicy = idempotencyPolicy,
             TimeoutMs = 5000
         };

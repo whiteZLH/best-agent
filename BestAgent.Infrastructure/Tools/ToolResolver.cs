@@ -31,14 +31,31 @@ public class ToolResolver : IToolResolver
             }
 
             var executionKind = ToolExecutionBindingHelper.NormalizeExecutionKind(definition.ExecutionKind, nameof(definition.ExecutionKind));
+            var normalizedAuthPolicy = ToolAuthPolicyHelper.NormalizeOptionalPolicy(
+                definition.AuthPolicy,
+                nameof(definition.AuthPolicy));
             if (executionKind == ToolExecutionBindingHelper.Webhook)
             {
                 var webhookBinding = ToolExecutionBindingHelper.ParseWebhookBinding(definition.ExecutionBinding, nameof(definition.ExecutionBinding));
+                ToolAuthPolicyHelper.ValidateExecutionCompatibility(
+                    normalizedAuthPolicy,
+                    executionKind,
+                    webhookBinding.AuthHeaders,
+                    nameof(definition.AuthPolicy),
+                    nameof(definition.ExecutionKind),
+                    nameof(definition.AuthHeaders));
                 return ResolveWebhook(toolName, input, context, definition, webhookBinding);
             }
 
             if (executionKind == ToolExecutionBindingHelper.LocalHandler)
             {
+                ToolAuthPolicyHelper.ValidateExecutionCompatibility(
+                    normalizedAuthPolicy,
+                    executionKind,
+                    null,
+                    nameof(definition.AuthPolicy),
+                    nameof(definition.ExecutionKind),
+                    nameof(definition.AuthHeaders));
                 var localBinding = ToolExecutionBindingHelper.ParseLocalHandlerBinding(definition.ExecutionBinding, nameof(definition.ExecutionBinding));
                 if (_toolHandlerRegistry.TryGetHandler(localBinding.HandlerName, out var localHandler) && localHandler is not null)
                 {
@@ -56,6 +73,13 @@ public class ToolResolver : IToolResolver
 
             if (executionKind == ToolExecutionBindingHelper.InlineResult)
             {
+                ToolAuthPolicyHelper.ValidateExecutionCompatibility(
+                    normalizedAuthPolicy,
+                    executionKind,
+                    null,
+                    nameof(definition.AuthPolicy),
+                    nameof(definition.ExecutionKind),
+                    nameof(definition.AuthHeaders));
                 var inlineBinding = ToolExecutionBindingHelper.ParseInlineResultBinding(definition.ExecutionBinding, nameof(definition.ExecutionBinding));
                 return new ToolResolution(
                     ToolExecutionKind.InlineResult,

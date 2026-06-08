@@ -462,13 +462,13 @@ public class ToolDefinitionCommandHandlerTests
                 null,
                 "https://example.com/tools/weather",
                 "POST",
-                null,
+                "{ \"Authorization\" : \"Bearer token\" }",
                 null,
                 "ReadOnly",
                 5000,
                 null,
                 """
-                { "scheme": "bearer" }
+                { "scheme": "Bearer" }
                 """,
                 null,
                 false,
@@ -484,6 +484,114 @@ public class ToolDefinitionCommandHandlerTests
         Assert.NotNull(repository.AddedToolDefinition);
         Assert.Equal("{\"scheme\":\"bearer\"}", repository.AddedToolDefinition!.AuthPolicy);
         Assert.Equal("{\"mode\":\"manual\"}", repository.AddedToolDefinition.CompensationPolicy);
+    }
+
+    [Fact]
+    public async Task CreateToolDefinition_ShouldThrow_WhenWebhookBearerAuthPolicyMissingBearerHeader()
+    {
+        var repository = new FakeToolDefinitionRepository
+        {
+            ExistsByToolNameAsyncResult = false
+        };
+        var handler = new CreateToolDefinitionCommandHandler(repository);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new CreateToolDefinitionCommand(
+                "weather",
+                "Weather",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "https://example.com/tools/weather",
+                "POST",
+                "{\"X-Api-Key\":\"token\"}",
+                null,
+                "ReadOnly",
+                5000,
+                null,
+                "bearer",
+                null,
+                false,
+                "Strong",
+                null,
+                true),
+            CancellationToken.None));
+
+        Assert.Equal("AuthHeaders must include Authorization Bearer header when AuthPolicy.scheme is 'bearer'.", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateToolDefinition_ShouldThrow_WhenWebhookNoAuthPolicyIncludesAuthorizationHeader()
+    {
+        var repository = new FakeToolDefinitionRepository
+        {
+            ExistsByToolNameAsyncResult = false
+        };
+        var handler = new CreateToolDefinitionCommandHandler(repository);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new CreateToolDefinitionCommand(
+                "weather",
+                "Weather",
+                null,
+                null,
+                null,
+                null,
+                null,
+                "https://example.com/tools/weather",
+                "POST",
+                "{\"Authorization\":\"Bearer token\"}",
+                null,
+                "ReadOnly",
+                5000,
+                null,
+                "none",
+                null,
+                false,
+                "Strong",
+                null,
+                true),
+            CancellationToken.None));
+
+        Assert.Equal("AuthHeaders must be omitted when AuthPolicy.scheme is 'none'.", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateToolDefinition_ShouldThrow_WhenLocalHandlerAuthPolicyRequiresWebhook()
+    {
+        var repository = new FakeToolDefinitionRepository
+        {
+            ExistsByToolNameAsyncResult = false
+        };
+        var handler = new CreateToolDefinitionCommandHandler(repository);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new CreateToolDefinitionCommand(
+                "echo_context",
+                "Echo Context",
+                null,
+                null,
+                null,
+                ToolExecutionBindingHelper.LocalHandler,
+                ToolExecutionBindingHelper.CreateLocalHandlerBinding("echo_context"),
+                null,
+                null,
+                null,
+                null,
+                "read_only",
+                5000,
+                null,
+                "oauth",
+                null,
+                false,
+                "none",
+                null,
+                true),
+            CancellationToken.None));
+
+        Assert.Equal("AuthPolicy.scheme 'oauth' is only supported for 'webhook' execution kind.", exception.Message);
     }
 
     [Fact]
@@ -861,6 +969,43 @@ public class ToolDefinitionCommandHandlerTests
         Assert.Equal("POST", repository.UpdatedToolDefinition.HttpMethod);
         Assert.Null(repository.UpdatedToolDefinition.AuthHeaders);
         Assert.Equal("echo-secret-v2", repository.UpdatedToolDefinition.CallbackSecret);
+    }
+
+    [Fact]
+    public async Task UpdateToolDefinition_ShouldThrow_WhenLocalHandlerAuthPolicyRequiresWebhook()
+    {
+        var existing = CreateToolDefinition();
+        var repository = new FakeToolDefinitionRepository
+        {
+            GetByIdAsyncResult = existing
+        };
+        var handler = new UpdateToolDefinitionCommandHandler(repository);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(
+            new UpdateToolDefinitionCommand(
+                existing.Id,
+                "Echo Context",
+                null,
+                null,
+                null,
+                ToolExecutionBindingHelper.LocalHandler,
+                ToolExecutionBindingHelper.CreateLocalHandlerBinding("echo_context"),
+                null,
+                null,
+                null,
+                null,
+                "read_only",
+                5000,
+                null,
+                "bearer",
+                null,
+                false,
+                "none",
+                null,
+                true),
+            CancellationToken.None));
+
+        Assert.Equal("AuthPolicy.scheme 'bearer' is only supported for 'webhook' execution kind.", exception.Message);
     }
 
     [Fact]

@@ -16,7 +16,11 @@ public static class ToolPolicySettingsHelper
         string idempotencyPolicyFieldName,
         string compensationPolicyFieldName,
         string consistencyModeFieldName,
-        string sideEffectLevelFieldName)
+        string sideEffectLevelFieldName,
+        string? executionKind = null,
+        string? authHeaders = null,
+        string executionKindFieldName = "ExecutionKind",
+        string authHeadersFieldName = "AuthHeaders")
     {
         var normalizedSideEffectLevel = ToolDefinitionPolicyValidator.NormalizeSideEffectLevel(
             sideEffectLevel,
@@ -27,10 +31,9 @@ public static class ToolPolicySettingsHelper
         var normalizedRetryPolicy = ToolRetryPolicyHelper.NormalizeOptionalPolicy(
             retryPolicy,
             retryPolicyFieldName);
-        var normalizedAuthPolicy = ToolStructuredPolicyHelper.NormalizeOptionalObjectOrLegacyString(
+        var normalizedAuthPolicy = ToolAuthPolicyHelper.NormalizeOptionalPolicy(
             authPolicy,
-            authPolicyFieldName,
-            "scheme");
+            authPolicyFieldName);
         var normalizedParameterPolicy = ToolParameterPolicyHelper.NormalizeOptionalPolicy(
             parameterPolicy,
             parameterPolicyFieldName);
@@ -46,6 +49,13 @@ public static class ToolPolicySettingsHelper
             normalizedSideEffectLevel,
             normalizedCompensationPolicy,
             compensationPolicyFieldName);
+        ToolAuthPolicyHelper.ValidateExecutionCompatibility(
+            normalizedAuthPolicy,
+            executionKind,
+            authHeaders,
+            authPolicyFieldName,
+            executionKindFieldName,
+            authHeadersFieldName);
 
         return new PersistedToolPolicySettings(
             normalizedRetryPolicy,

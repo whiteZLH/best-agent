@@ -216,7 +216,11 @@ public class RuntimeContextComposerTests
             1,
             Arg.Any<CancellationToken>());
         _agentMetrics.Received(1).RecordRetrieval("completed", true, 1, 4, 1, Arg.Any<TimeSpan>());
-        var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.RetrievalActivityName);
+        var activity = Assert.Single(
+            collector.Activities,
+            value => value.OperationName == AgentTracing.RetrievalActivityName
+                && string.Equals(value.GetTagItem("bestagent.run_id") as string, "run-001", StringComparison.Ordinal)
+                && (value.GetTagItem("bestagent.retrieval_query") as string)?.Contains("policy_lookup", StringComparison.Ordinal) == true);
         Assert.Equal("run-001", activity.GetTagItem("bestagent.run_id"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.retrieval_status"));
         Assert.Equal(1, activity.GetTagItem("bestagent.retrieval_selected_count"));

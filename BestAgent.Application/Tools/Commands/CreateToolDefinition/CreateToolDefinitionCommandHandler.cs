@@ -67,7 +67,11 @@ public class CreateToolDefinitionCommandHandler : IRequestHandler<CreateToolDefi
             nameof(request.IdempotencyPolicy),
             nameof(request.CompensationPolicy),
             nameof(request.ConsistencyMode),
-            nameof(request.SideEffectLevel));
+            nameof(request.SideEffectLevel),
+            executionSettings.ExecutionKind,
+            executionSettings.AuthHeaders,
+            nameof(request.ExecutionKind),
+            nameof(request.AuthHeaders));
 
         var now = DateTime.UtcNow;
         var entity = new ToolDefinition
