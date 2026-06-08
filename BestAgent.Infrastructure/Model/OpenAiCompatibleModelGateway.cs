@@ -62,7 +62,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
             var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
-            var responseFormat = BuildResponseFormat(request.OutputMode, request.OutputSchema);
+            var responseFormat = BuildResponseFormat(
+                request.OutputMode,
+                request.OutputSchema,
+                request.OutputName,
+                request.OutputStrict);
             var tools = BuildTools(request.Tools);
             var toolChoice = BuildToolChoice(request.ToolChoice, request.Tools);
 
@@ -332,7 +336,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return timeoutSeconds;
     }
 
-    private static object? BuildResponseFormat(string? outputMode, string? outputSchema)
+    private static object? BuildResponseFormat(
+        string? outputMode,
+        string? outputSchema,
+        string? outputName,
+        bool? outputStrict)
     {
         var normalizedOutputMode = NormalizeOutputMode(outputMode, outputSchema);
         return normalizedOutputMode switch
@@ -347,8 +355,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 type = GenerateTextOutputModes.JsonSchema,
                 json_schema = new
                 {
-                    name = "bestagent_output",
-                    strict = true,
+                    name = NormalizeOutputName(outputName),
+                    strict = outputStrict ?? true,
                     schema = ParseOutputSchema(outputSchema)
                 }
             },
@@ -373,6 +381,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             GenerateTextOutputModes.JsonSchema => GenerateTextOutputModes.JsonSchema,
             _ => throw new InvalidOperationException($"Model output mode '{outputMode}' is not supported.")
         };
+    }
+
+    private static string NormalizeOutputName(string? outputName)
+    {
+        return string.IsNullOrWhiteSpace(outputName)
+            ? "bestagent_output"
+            : outputName.Trim();
     }
 
     private static JsonElement ParseOutputSchema(string? outputSchema)
