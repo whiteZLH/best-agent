@@ -63,6 +63,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
             var responseFormat = BuildResponseFormat(request.OutputMode, request.OutputSchema);
+            var tools = BuildTools(request.Tools);
 
             var payload = new
             {
@@ -73,13 +74,15 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 top_p = topP,
                 presence_penalty = presencePenalty,
                 frequency_penalty = frequencyPenalty,
-                response_format = responseFormat
+                response_format = responseFormat,
+                tools
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
+                tools?.Length ?? 0,
                 temperature,
                 maxOutputTokens,
                 topP,
@@ -347,6 +350,56 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         catch (JsonException ex)
         {
             throw new InvalidOperationException("Model output schema must be valid JSON.", ex);
+        }
+    }
+
+    private static object[]? BuildTools(IReadOnlyList<GenerateTextToolDefinition>? tools)
+    {
+        if (tools is null || tools.Count == 0)
+        {
+            return null;
+        }
+
+        return tools
+            .Where(tool => !string.IsNullOrWhiteSpace(tool.Name))
+            .Select(tool => new
+            {
+                type = "function",
+                function = new
+                {
+                    name = tool.Name.Trim(),
+                    description = string.IsNullOrWhiteSpace(tool.Description) ? null : tool.Description.Trim(),
+                    parameters = ParseToolParameters(tool)
+                }
+            })
+            .Cast<object>()
+            .ToArray();
+    }
+
+    private static JsonElement ParseToolParameters(GenerateTextToolDefinition tool)
+    {
+        if (string.IsNullOrWhiteSpace(tool.InputSchema))
+        {
+            return JsonSerializer.SerializeToElement(new
+            {
+                type = "object",
+                properties = new { }
+            });
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(tool.InputSchema);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException($"Tool input schema for '{tool.Name}' must be a JSON object.");
+            }
+
+            return document.RootElement.Clone();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Tool input schema for '{tool.Name}' must be valid JSON.", ex);
         }
     }
 

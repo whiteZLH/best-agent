@@ -11,4 +11,5 @@ public record GenerateTextRequest(
     decimal? FrequencyPenalty = null,
     int? TimeoutSeconds = null,
     string? OutputMode = null,
-    string? OutputSchema = null);
+    string? OutputSchema = null,
+    IReadOnlyList<GenerateTextToolDefinition>? Tools = null);

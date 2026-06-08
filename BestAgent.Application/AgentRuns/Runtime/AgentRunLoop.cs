@@ -93,6 +93,7 @@ public static class AgentRunLoop
                     resolvedDefinition,
                     cancellationToken);
             var modelInput = runtimeContext.ModelInput;
+            var modelTools = await LoadModelToolsAsync(resolvedDefinition, toolDefinitionRepository, cancellationToken);
             var startedAt = DateTime.UtcNow;
             var modelResponse = await modelGateway.GenerateTextAsync(
                 new GenerateTextRequest(
@@ -102,7 +103,8 @@ public static class AgentRunLoop
                     OutputMode: string.IsNullOrWhiteSpace(version.OutputSchema)
                         ? null
                         : GenerateTextOutputModes.JsonSchema,
-                    OutputSchema: version.OutputSchema),
+                    OutputSchema: version.OutputSchema,
+                    Tools: modelTools),
                 cancellationToken);
             var endedAt = DateTime.UtcNow;
             totalCostDelta += NormalizeCost(modelResponse.Cost);
@@ -874,6 +876,38 @@ public static class AgentRunLoop
     private static string BuildManualCompensationComment(string toolName)
     {
         return $"Tool '{toolName}' failed and requires manual compensation.";
+    }
+
+    private static async Task<IReadOnlyList<GenerateTextToolDefinition>> LoadModelToolsAsync(
+        ResolvedAgentDefinition resolvedDefinition,
+        IToolDefinitionRepository toolDefinitionRepository,
+        CancellationToken cancellationToken)
+    {
+        var allowedTools = AgentDefinitionToolListSerializer.Parse(resolvedDefinition.Version.AllowedTools);
+        if (allowedTools.Count == 0)
+        {
+            return Array.Empty<GenerateTextToolDefinition>();
+        }
+
+        var tools = new List<GenerateTextToolDefinition>();
+        foreach (var toolName in allowedTools
+                     .Where(value => !string.IsNullOrWhiteSpace(value))
+                     .Select(value => value.Trim())
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var definition = await toolDefinitionRepository.GetByToolNameAsync(toolName, cancellationToken);
+            if (definition is null || !definition.Enabled)
+            {
+                continue;
+            }
+
+            tools.Add(new GenerateTextToolDefinition(
+                definition.ToolName,
+                definition.Description,
+                definition.InputSchema));
+        }
+
+        return tools;
     }
 
     private static string SerializePendingToolMetadata(string toolName)

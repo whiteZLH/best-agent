@@ -33,6 +33,17 @@ public class CreateAgentRunCommandHandlerIntegrationTests
 
         agentDefinitionRepo.GetEnabledByCodeAsync("writer", Arg.Any<CancellationToken>())
             .Returns(resolvedDefinition);
+        toolDefinitionRepository.GetByToolNameAsync("weather", Arg.Any<CancellationToken>())
+            .Returns(new ToolDefinition
+            {
+                Id = "tool-1",
+                ToolName = "weather",
+                DisplayName = "Weather",
+                Description = "Get the weather for a city",
+                InputSchema = "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}",
+                Enabled = true,
+                SideEffectLevel = "read_only"
+            });
 
         var services = new ServiceCollection();
         services.AddApplication();
@@ -103,6 +114,11 @@ public class CreateAgentRunCommandHandlerIntegrationTests
         Assert.Equal("Say hi", request.Input);
         Assert.Contains("You are a writer.", request.SystemPrompt);
         Assert.Contains("Return JSON only.", request.SystemPrompt);
+        Assert.NotNull(request.Tools);
+        var tool = Assert.Single(request.Tools!);
+        Assert.Equal("weather", tool.Name);
+        Assert.Equal("Get the weather for a city", tool.Description);
+        Assert.Equal("{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}", tool.InputSchema);
 
         cts.Cancel();
         await worker.StopAsync(CancellationToken.None);
