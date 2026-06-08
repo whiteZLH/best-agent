@@ -66,6 +66,7 @@
 - `AgentRun.MaxCost` / `AgentDefinitionVersion.MaxCost` 当前也已开始最小进入主链路：OpenAI 兼容模型网关会读取 `usage` 并按配置的 `OpenAI:PromptTokenPricePerMillion` / `CompletionTokenPricePerMillion` 计算最小模型成本，Runtime 会累计到 `AgentRun.TotalCost`，并在后续模型调用前或单次模型调用后对 `max_cost` 做最小超限拦截
 - 模型调用审计当前也已开始补上最小 usage 读侧：`model_call` step 会把 `model`、`promptTokens`、`completionTokens`、`totalTokens` 与 `cost` 写入 `DecisionPayload`，`GetAgentRunSteps` / `GET /agent-runs/{runId}/steps` 现可返回 typed `ModelCall` 视图；若命中检索，当前也会补上最小 retrieval query / candidateCount / selectedSources / citations 审计
 - run outbox 事件读侧当前也已开始补上最小 typed payload 视图：`GetAgentRunEvents` / `GET /agent-runs/{runId}/events` 除保留脱敏后的原始 `Payload` 外，也会返回统一 `Data` 结构，并可进一步把事件中的 `model_call` / `model_failure` / `tool_error` 解析为 typed 读侧；SSE `stream` 当前也已开始同步回显最小 typed `ModelCall`
+- `GetAgentRunSteps` 的 typed `Approval` 读侧当前也已开始同时返回通用 `RequestedAction/RequestPayload` 与兼容 `ToolName/ToolInput` 别名，以覆盖 planner `request_approval` 与工具审批两条链路
 - `GET /agent-runs/{runId}/stream` 当前也已开始从轻量 `eventType + data` 收敛到最小统一事件 envelope：SSE `data` 会包含 `eventId/runId/seqNo/eventType/runStatus/occurredAt/data`，并在存在 `seqNo` 时写出 SSE `id`
 - `GET /agent-runs/{runId}/stream` 当前也已开始最小支持 `Last-Event-ID` 断线续传：建连时会先注册进程内缓冲订阅，再按 `afterSeqNo = Last-Event-ID` 回放 outbox 事件，最后按 `seqNo` 去重切换到实时 SSE；若回放已包含终态事件，则流会直接结束
 - `AgentDefinitionVersion.OutputSchema` 当前也已开始进入主链路：定义创建与版本创建接口可持久化最小 JSON Schema 对象，Worker 会在 run 完成前对最终答复执行最小结构化校验

@@ -105,6 +105,8 @@ public class GetAgentRunStepsQueryHandlerTests
         var toolResult = result[0];
         Assert.Equal("{\"city\":\"Shanghai\",\"apiKey\":\"***\",\"nested\":{\"accessToken\":\"***\"}}", toolResult.Input);
         Assert.Equal("{\"forecast\":\"sunny\",\"credential\":\"***\"}", toolResult.Output);
+        Assert.Equal("weather", toolResult.Approval!.RequestedAction);
+        Assert.Equal("{\"credential\":\"***\",\"options\":{\"secret\":\"***\"}}", toolResult.Approval.RequestPayload);
         Assert.Equal("{\"credential\":\"***\",\"options\":{\"secret\":\"***\"}}", toolResult.Approval!.ToolInput);
         Assert.Equal("invocation-1", toolResult.ToolInvocation!.InvocationId);
 
@@ -328,5 +330,59 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal("tool backend crashed", toolFailure.Message);
         Assert.Equal("manual", Assert.IsType<ToolFailureCompensationInfo>(toolFailure.Compensation).Mode);
         Assert.Null(result[1].ModelFailure);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldReturnGenericApprovalFields_ForPlannerApprovalRequestStep()
+    {
+        var stepRepository = Substitute.For<IAgentStepRepository>();
+        var approvalRepository = Substitute.For<IAgentApprovalRepository>();
+        var invocationRepository = Substitute.For<IToolInvocationRepository>();
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddSingleton(stepRepository);
+        services.AddSingleton(approvalRepository);
+        services.AddSingleton(invocationRepository);
+        await using var serviceProvider = services.BuildServiceProvider();
+        var mediator = serviceProvider.GetRequiredService<IMediator>();
+        var now = new DateTime(2026, 6, 8, 0, 0, 0, DateTimeKind.Utc);
+        var approvalStep = AgentRunLoop.CreateStep(
+            "run-1",
+            3,
+            "approval_request",
+            "Pending",
+            "{\"amount\":120,\"currency\":\"USD\"}",
+            null,
+            null,
+            now,
+            now) with
+        {
+            DecisionPayload = ApprovalPayloadSerializer.Serialize(
+                ApprovalPayloadSerializer.CreatePending(
+                    "issue refund",
+                    "{\"amount\":120,\"currency\":\"USD\"}",
+                    "external_write",
+                    "Refund exceeds auto-approval threshold."))
+        };
+
+        stepRepository.ListByRunIdAsync("run-1", Arg.Any<CancellationToken>())
+            .Returns([approvalStep]);
+        approvalRepository.ListByRunIdAsync("run-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<AgentApproval>());
+        invocationRepository.ListByRunIdAsync("run-1", Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<ToolInvocation>());
+
+        var result = await mediator.Send(new GetAgentRunStepsQuery("run-1"));
+
+        var item = Assert.Single(result);
+        Assert.Equal("approval_request", item.StepType);
+        Assert.NotNull(item.Approval);
+        Assert.Equal("issue refund", item.Approval!.RequestedAction);
+        Assert.Equal("{\"amount\":120,\"currency\":\"USD\"}", item.Approval.RequestPayload);
+        Assert.Equal("issue refund", item.Approval.ToolName);
+        Assert.Equal("{\"amount\":120,\"currency\":\"USD\"}", item.Approval.ToolInput);
+        Assert.Equal("external_write", item.Approval.SideEffectLevel);
+        Assert.Equal(ApprovalDecisions.Pending, item.Approval.Decision);
+        Assert.Equal("Refund exceeds auto-approval threshold.", item.Approval.Comment);
     }
 }
