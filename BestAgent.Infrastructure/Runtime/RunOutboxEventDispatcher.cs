@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Observability;
 using BestAgent.Domain.AgentRuns;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,15 +13,18 @@ public class RunOutboxEventDispatcher : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<RunOutboxEventDispatcher> _logger;
     private readonly RunOutboxDispatcherOptions _options;
+    private readonly IAgentMetrics _agentMetrics;
 
     public RunOutboxEventDispatcher(
         IServiceScopeFactory scopeFactory,
         ILogger<RunOutboxEventDispatcher> logger,
-        RunOutboxDispatcherOptions? options = null)
+        RunOutboxDispatcherOptions? options = null,
+        IAgentMetrics? agentMetrics = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _options = NormalizeOptions(options);
+        _agentMetrics = agentMetrics ?? NullAgentMetrics.Instance;
     }
 
     public async Task<int> DispatchPendingAsync(CancellationToken cancellationToken)
@@ -33,11 +38,20 @@ public class RunOutboxEventDispatcher : BackgroundService
         foreach (var outboxEvent in pendingEvents)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            using var activity = AgentTracing.Source.StartActivity(AgentTracing.OutboxDispatchActivityName, ActivityKind.Internal);
+            activity?.SetTag("bestagent.event_id", outboxEvent.EventId);
+            activity?.SetTag("bestagent.run_id", outboxEvent.RunId);
+            activity?.SetTag("bestagent.seq_no", outboxEvent.SeqNo);
+            activity?.SetTag("bestagent.event_type", outboxEvent.EventType);
+            activity?.SetTag("bestagent.retry_count", outboxEvent.RetryCount);
+            activity?.SetTag("bestagent.batch_size", _options.BatchSize);
 
             try
             {
                 await publisher.PublishAsync(outboxEvent, cancellationToken);
                 await repository.MarkPublishedAsync(outboxEvent.EventId, DateTime.UtcNow, cancellationToken);
+                activity?.SetTag("bestagent.status", "published");
+                _agentMetrics.RecordOutboxDispatch(outboxEvent.EventType, "published", outboxEvent.RetryCount > 0);
                 dispatched++;
             }
             catch (Exception ex)
@@ -50,10 +64,14 @@ public class RunOutboxEventDispatcher : BackgroundService
                 if (outboxEvent.RetryCount + 1 >= _options.MaxRetryCount)
                 {
                     await repository.MarkDeadAsync(outboxEvent.EventId, cancellationToken);
+                    activity?.SetTag("bestagent.status", "dead");
+                    _agentMetrics.RecordOutboxDispatch(outboxEvent.EventType, "dead", true);
                 }
                 else
                 {
                     await repository.MarkRetryPendingAsync(outboxEvent.EventId, cancellationToken);
+                    activity?.SetTag("bestagent.status", "retry_pending");
+                    _agentMetrics.RecordOutboxDispatch(outboxEvent.EventType, "retry_pending", outboxEvent.RetryCount > 0);
                 }
             }
         }

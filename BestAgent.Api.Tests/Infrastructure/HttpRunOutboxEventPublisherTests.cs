@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
+using BestAgent.Api.Tests.Observability;
+using BestAgent.Application.Observability;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Infrastructure.Runtime;
 using NSubstitute;
@@ -11,22 +13,38 @@ namespace BestAgent.Api.Tests.Infrastructure;
 public class HttpRunOutboxEventPublisherTests
 {
     private readonly IHttpClientFactory _httpClientFactory = Substitute.For<IHttpClientFactory>();
+    private readonly IAgentMetrics _agentMetrics = Substitute.For<IAgentMetrics>();
 
     [Fact]
-    public async Task PublishAsync_ShouldNoOp_WhenEndpointIsNotConfigured()
+    public async Task PublishAsync_ShouldRecordSkippedAttempt_WhenEndpointIsNotConfigured()
     {
+        using var activities = new ActivityTestCollector(AgentTracing.SourceName);
         var publisher = new HttpRunOutboxEventPublisher(
             _httpClientFactory,
-            new RunOutboxPublisherOptions());
+            new RunOutboxPublisherOptions(),
+            _agentMetrics);
 
         await publisher.PublishAsync(CreateOutboxEvent(), CancellationToken.None);
 
         _httpClientFactory.DidNotReceive().CreateClient(Arg.Any<string>());
+        _agentMetrics.Received(1).RecordOutboxPublish(
+            "done",
+            "skipped",
+            true,
+            Arg.Any<TimeSpan>());
+        var activity = Assert.Single(
+            activities.Activities,
+            value => value.OperationName == AgentTracing.OutboxPublishActivityName);
+        Assert.Equal(AgentTracing.OutboxPublishActivityName, activity.OperationName);
+        Assert.Equal("event-1", activity.GetTagItem("bestagent.event_id"));
+        Assert.Equal("skipped", activity.GetTagItem("bestagent.status"));
+        Assert.Equal(false, activity.GetTagItem("bestagent.outbox_endpoint_configured"));
     }
 
     [Fact]
-    public async Task PublishAsync_ShouldPostExpectedPayloadAndAuthorizationHeader()
+    public async Task PublishAsync_ShouldPostExpectedPayloadAndRecordTraceMetrics()
     {
+        using var activities = new ActivityTestCollector(AgentTracing.SourceName);
         HttpMethod? capturedMethod = null;
         string? capturedUri = null;
         string[]? capturedAuthorizationValues = null;
@@ -50,7 +68,8 @@ public class HttpRunOutboxEventPublisherTests
             {
                 EndpointUrl = "https://example.com/outbox/events",
                 AuthorizationHeader = "Bearer outbox-token"
-            });
+            },
+            _agentMetrics);
 
         await publisher.PublishAsync(CreateOutboxEvent(), CancellationToken.None);
 
@@ -67,6 +86,50 @@ public class HttpRunOutboxEventPublisherTests
         Assert.Equal("Completed", payload.GetProperty("runStatus").GetString());
         Assert.Equal("{\"stepNo\":0}", payload.GetProperty("payload").GetString());
         Assert.Equal(2, payload.GetProperty("retryCount").GetInt32());
+        _agentMetrics.Received(1).RecordOutboxPublish(
+            "done",
+            "completed",
+            true,
+            Arg.Any<TimeSpan>());
+        var activity = Assert.Single(
+            activities.Activities,
+            value => value.OperationName == AgentTracing.OutboxPublishActivityName);
+        Assert.Equal(AgentTracing.OutboxPublishActivityName, activity.OperationName);
+        Assert.Equal("event-1", activity.GetTagItem("bestagent.event_id"));
+        Assert.Equal("run-1", activity.GetTagItem("bestagent.run_id"));
+        Assert.Equal(1L, activity.GetTagItem("bestagent.seq_no"));
+        Assert.Equal("done", activity.GetTagItem("bestagent.event_type"));
+        Assert.Equal(2, activity.GetTagItem("bestagent.retry_count"));
+        Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
+        Assert.Equal((int)HttpStatusCode.Accepted, activity.GetTagItem("bestagent.http_status_code"));
+    }
+
+    [Fact]
+    public async Task PublishAsync_ShouldRecordFailedAttempt_WhenHttpCallFails()
+    {
+        using var activities = new ActivityTestCollector(AgentTracing.SourceName);
+        using var client = CreateClient(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.InternalServerError)));
+        _httpClientFactory.CreateClient("RunOutboxPublisher").Returns(client);
+        var publisher = new HttpRunOutboxEventPublisher(
+            _httpClientFactory,
+            new RunOutboxPublisherOptions
+            {
+                EndpointUrl = "https://example.com/outbox/events"
+            },
+            _agentMetrics);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => publisher.PublishAsync(CreateOutboxEvent(), CancellationToken.None));
+
+        _agentMetrics.Received(1).RecordOutboxPublish(
+            "done",
+            "failed",
+            true,
+            Arg.Any<TimeSpan>());
+        var activity = Assert.Single(
+            activities.Activities,
+            value => value.OperationName == AgentTracing.OutboxPublishActivityName);
+        Assert.Equal(AgentTracing.OutboxPublishActivityName, activity.OperationName);
+        Assert.Equal("failed", activity.GetTagItem("bestagent.status"));
     }
 
     private static RunOutboxEvent CreateOutboxEvent()

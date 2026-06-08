@@ -11,6 +11,8 @@ public static class AgentTracing
     public const string RetrievalActivityName = "bestagent.retrieval";
     public const string ApprovalActivityName = "bestagent.approval";
     public const string HandoffActivityName = "bestagent.handoff";
+    public const string OutboxPublishActivityName = "bestagent.outbox.publish";
+    public const string OutboxDispatchActivityName = "bestagent.outbox.dispatch";
     public const string RunStreamActivityName = "bestagent.run.stream";
 
     public static readonly ActivitySource Source = new(SourceName);

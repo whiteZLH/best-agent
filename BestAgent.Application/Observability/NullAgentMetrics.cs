@@ -53,6 +53,14 @@ public sealed class NullAgentMetrics : IAgentMetrics
     {
     }
 
+    public void RecordOutboxPublish(string eventType, string status, bool retry, TimeSpan duration)
+    {
+    }
+
+    public void RecordOutboxDispatch(string eventType, string outcome, bool retry)
+    {
+    }
+
     public void RecordRunStreamOpened(bool replayRequested)
     {
     }

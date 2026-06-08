@@ -23,6 +23,9 @@ public sealed class AgentMetrics : IAgentMetrics
     private readonly Counter<long> _approvalWaitStartedCounter;
     private readonly Histogram<double> _approvalWaitDurationMs;
     private readonly Counter<long> _approvalTimeoutCounter;
+    private readonly Counter<long> _outboxPublishCounter;
+    private readonly Histogram<double> _outboxPublishDurationMs;
+    private readonly Counter<long> _outboxDispatchCounter;
     private readonly Counter<long> _runStreamOpenedCounter;
     private readonly Counter<long> _runStreamEventCounter;
     private readonly Histogram<double> _runStreamDurationMs;
@@ -46,6 +49,9 @@ public sealed class AgentMetrics : IAgentMetrics
         _approvalWaitStartedCounter = _meter.CreateCounter<long>("bestagent.approval.waits");
         _approvalWaitDurationMs = _meter.CreateHistogram<double>("bestagent.approval.wait.duration.ms", unit: "ms");
         _approvalTimeoutCounter = _meter.CreateCounter<long>("bestagent.approval.timeouts");
+        _outboxPublishCounter = _meter.CreateCounter<long>("bestagent.outbox.publish.attempts");
+        _outboxPublishDurationMs = _meter.CreateHistogram<double>("bestagent.outbox.publish.duration.ms", unit: "ms");
+        _outboxDispatchCounter = _meter.CreateCounter<long>("bestagent.outbox.dispatch.outcomes");
         _runStreamOpenedCounter = _meter.CreateCounter<long>("bestagent.run.stream.opened");
         _runStreamEventCounter = _meter.CreateCounter<long>("bestagent.run.stream.events");
         _runStreamDurationMs = _meter.CreateHistogram<double>("bestagent.run.stream.duration.ms", unit: "ms");
@@ -202,6 +208,29 @@ public sealed class AgentMetrics : IAgentMetrics
                 { "step_type", Normalize(stepType) },
                 { "outcome", "timedout" }
             });
+    }
+
+    public void RecordOutboxPublish(string eventType, string status, bool retry, TimeSpan duration)
+    {
+        var tags = new TagList
+        {
+            { "event_type", Normalize(eventType) },
+            { "status", NormalizeStatus(status) },
+            { "retry", retry ? "true" : "false" }
+        };
+
+        _outboxPublishCounter.Add(1, tags);
+        _outboxPublishDurationMs.Record(ClampDuration(duration), tags);
+    }
+
+    public void RecordOutboxDispatch(string eventType, string outcome, bool retry)
+    {
+        _outboxDispatchCounter.Add(1, new TagList
+        {
+            { "event_type", Normalize(eventType) },
+            { "outcome", NormalizeStatus(outcome) },
+            { "retry", retry ? "true" : "false" }
+        });
     }
 
     public void RecordRunStreamOpened(bool replayRequested)

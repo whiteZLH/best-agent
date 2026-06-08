@@ -31,6 +31,10 @@ public interface IAgentMetrics
 
     void RecordApprovalTimedOut(string agentCode, string stepType, TimeSpan duration);
 
+    void RecordOutboxPublish(string eventType, string status, bool retry, TimeSpan duration);
+
+    void RecordOutboxDispatch(string eventType, string outcome, bool retry);
+
     void RecordRunStreamOpened(bool replayRequested);
 
     void RecordRunStreamEvent(string eventType, bool replay);

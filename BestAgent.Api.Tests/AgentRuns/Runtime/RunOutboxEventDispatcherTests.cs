@@ -1,4 +1,6 @@
+using BestAgent.Api.Tests.Observability;
 using BestAgent.Application.AgentRuns.Runtime;
+using BestAgent.Application.Observability;
 using BestAgent.Domain.AgentRuns;
 using BestAgent.Infrastructure.Runtime;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,8 +15,10 @@ public class RunOutboxEventDispatcherTests
     [Fact]
     public async Task DispatchPendingAsync_ShouldPublishPendingEvents_AndMarkPublished()
     {
+        using var activities = new ActivityTestCollector(AgentTracing.SourceName);
         var repository = Substitute.For<IRunOutboxEventRepository>();
         var publisher = Substitute.For<IRunOutboxEventPublisher>();
+        var agentMetrics = Substitute.For<IAgentMetrics>();
         var outboxEvent = CreateOutboxEvent("event-1");
 
         repository.ListPendingAsync(100, Arg.Any<CancellationToken>())
@@ -22,7 +26,8 @@ public class RunOutboxEventDispatcherTests
         using var services = CreateServiceProvider(repository, publisher);
         var dispatcher = new RunOutboxEventDispatcher(
             services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<RunOutboxEventDispatcher>.Instance);
+            NullLogger<RunOutboxEventDispatcher>.Instance,
+            agentMetrics: agentMetrics);
 
         var dispatched = await dispatcher.DispatchPendingAsync(CancellationToken.None);
 
@@ -34,13 +39,21 @@ public class RunOutboxEventDispatcherTests
             Arg.Any<CancellationToken>());
         await repository.DidNotReceive().MarkRetryPendingAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await repository.DidNotReceive().MarkDeadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        agentMetrics.Received(1).RecordOutboxDispatch("done", "published", false);
+        var activity = Assert.Single(
+            activities.Activities,
+            value => string.Equals(value.OperationName, AgentTracing.OutboxDispatchActivityName, StringComparison.Ordinal));
+        Assert.Equal("event-1", activity.GetTagItem("bestagent.event_id"));
+        Assert.Equal("published", activity.GetTagItem("bestagent.status"));
     }
 
     [Fact]
     public async Task DispatchPendingAsync_ShouldKeepEventPendingForRetry_WhenPublisherThrowsBeforeRetryLimit()
     {
+        using var activities = new ActivityTestCollector(AgentTracing.SourceName);
         var repository = Substitute.For<IRunOutboxEventRepository>();
         var publisher = Substitute.For<IRunOutboxEventPublisher>();
+        var agentMetrics = Substitute.For<IAgentMetrics>();
         var outboxEvent = CreateOutboxEvent("event-1");
 
         repository.ListPendingAsync(100, Arg.Any<CancellationToken>())
@@ -50,7 +63,8 @@ public class RunOutboxEventDispatcherTests
         using var services = CreateServiceProvider(repository, publisher);
         var dispatcher = new RunOutboxEventDispatcher(
             services.GetRequiredService<IServiceScopeFactory>(),
-            NullLogger<RunOutboxEventDispatcher>.Instance);
+            NullLogger<RunOutboxEventDispatcher>.Instance,
+            agentMetrics: agentMetrics);
 
         var dispatched = await dispatcher.DispatchPendingAsync(CancellationToken.None);
 
@@ -61,13 +75,20 @@ public class RunOutboxEventDispatcherTests
             Arg.Any<string>(),
             Arg.Any<DateTime>(),
             Arg.Any<CancellationToken>());
+        agentMetrics.Received(1).RecordOutboxDispatch("done", "retry_pending", false);
+        var activity = Assert.Single(
+            activities.Activities,
+            value => string.Equals(value.OperationName, AgentTracing.OutboxDispatchActivityName, StringComparison.Ordinal));
+        Assert.Equal("retry_pending", activity.GetTagItem("bestagent.status"));
     }
 
     [Fact]
     public async Task DispatchPendingAsync_ShouldMarkDead_WhenPublisherThrowsAtRetryLimit()
     {
+        using var activities = new ActivityTestCollector(AgentTracing.SourceName);
         var repository = Substitute.For<IRunOutboxEventRepository>();
         var publisher = Substitute.For<IRunOutboxEventPublisher>();
+        var agentMetrics = Substitute.For<IAgentMetrics>();
         var outboxEvent = CreateOutboxEvent("event-1") with
         {
             RetryCount = 2
@@ -84,7 +105,8 @@ public class RunOutboxEventDispatcherTests
             new RunOutboxDispatcherOptions
             {
                 MaxRetryCount = 3
-            });
+            },
+            agentMetrics);
 
         var dispatched = await dispatcher.DispatchPendingAsync(CancellationToken.None);
 
@@ -95,6 +117,11 @@ public class RunOutboxEventDispatcherTests
             Arg.Any<string>(),
             Arg.Any<DateTime>(),
             Arg.Any<CancellationToken>());
+        agentMetrics.Received(1).RecordOutboxDispatch("done", "dead", true);
+        var activity = Assert.Single(
+            activities.Activities,
+            value => string.Equals(value.OperationName, AgentTracing.OutboxDispatchActivityName, StringComparison.Ordinal));
+        Assert.Equal("dead", activity.GetTagItem("bestagent.status"));
     }
 
     private static ServiceProvider CreateServiceProvider(
