@@ -46,7 +46,10 @@ public static class DependencyInjection
                 : 100,
             TimeoutComment = string.IsNullOrWhiteSpace(configuration["Approval:TimeoutComment"])
                 ? "Approval timed out."
-                : configuration["Approval:TimeoutComment"]!.Trim()
+                : configuration["Approval:TimeoutComment"]!.Trim(),
+            TimeoutAction = string.IsNullOrWhiteSpace(configuration["Approval:TimeoutAction"])
+                ? ApprovalTimeoutOptions.RejectAction
+                : configuration["Approval:TimeoutAction"]!.Trim()
         };
 
         services.AddDbContext<BestAgentDbContext>(options => options.UseNpgsql(connectionString));

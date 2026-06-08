@@ -208,6 +208,107 @@ public class ApprovalTimeoutDispatcherTests
             evt.Data.Status == "TimedOut"));
     }
 
+    [Fact]
+    public async Task DispatchExpiredAsync_ShouldEscalateToWaitingHuman_WhenTimeoutActionRequestsHuman()
+    {
+        var now = new DateTime(2026, 6, 7, 12, 0, 0, DateTimeKind.Utc);
+        var approvalRepository = Substitute.For<IAgentApprovalRepository>();
+        var runRepository = Substitute.For<IAgentRunRepository>();
+        var stepRepository = Substitute.For<IAgentStepRepository>();
+        var outboxRepository = Substitute.For<IRunOutboxEventRepository>();
+        var eventBus = Substitute.For<IAgentRunEventBus>();
+        var agentMetrics = Substitute.For<IAgentMetrics>();
+        var approval = CreatePendingApproval(now);
+        var run = CreateWaitingApprovalRun();
+        var step = CreatePendingApprovalStep(run.RunId, approval.StepId, now);
+
+        approvalRepository.ListExpiredPendingAsync(now, 10, Arg.Any<CancellationToken>())
+            .Returns([approval]);
+        runRepository.GetByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(run);
+        stepRepository.GetLastByRunIdAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(step);
+        outboxRepository.GetNextSeqNoAsync(run.RunId, Arg.Any<CancellationToken>()).Returns(1L, 2L);
+
+        using var services = CreateServiceProvider(
+            approvalRepository,
+            runRepository,
+            stepRepository,
+            outboxRepository,
+            eventBus);
+        var dispatcher = new ApprovalTimeoutDispatcher(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<ApprovalTimeoutDispatcher>.Instance,
+            new ApprovalTimeoutOptions
+            {
+                TimeoutMinutes = 30,
+                BatchSize = 10,
+                TimeoutComment = "Approval timed out.",
+                TimeoutAction = "request_human"
+            },
+            agentMetrics);
+
+        var processed = await dispatcher.DispatchExpiredAsync(now, CancellationToken.None);
+
+        Assert.Equal(1, processed);
+        await approvalRepository.Received(1).UpdateAsync(
+            Arg.Is<AgentApproval>(value =>
+                value.ApprovalId == approval.ApprovalId &&
+                value.Decision == ApprovalDecisions.Rejected &&
+                value.Comment == "Approval timed out."),
+            Arg.Any<CancellationToken>());
+        await stepRepository.Received(1).UpdateAsync(
+            Arg.Is<AgentStep>(value =>
+                value.StepId == step.StepId &&
+                value.Status == "Failed" &&
+                value.ErrorPayload == "Approval timed out."),
+            Arg.Any<CancellationToken>());
+        await stepRepository.Received(1).AddAsync(
+            Arg.Is<AgentStep>(value =>
+                value.RunId == run.RunId &&
+                value.StepNo == 5 &&
+                value.StepType == "human_wait" &&
+                value.Status == "Pending" &&
+                value.DecisionPayload != null),
+            Arg.Any<CancellationToken>());
+        await runRepository.Received(1).UpdateAsync(
+            Arg.Is<AgentRun>(value =>
+                value.RunId == run.RunId &&
+                value.Status == "WaitingHuman" &&
+                value.CurrentStepNo == 5 &&
+                !string.IsNullOrWhiteSpace(value.CurrentWaitToken)),
+            Arg.Any<CancellationToken>());
+        await outboxRepository.Received(2).AddAsync(
+            Arg.Is<RunOutboxEvent>(evt =>
+                evt.RunId == run.RunId &&
+                (evt.EventType == "approval_timed_out" || evt.EventType == "waiting_human") &&
+                evt.RunStatus == "WaitingHuman"),
+            Arg.Any<CancellationToken>());
+        eventBus.Received(1).Publish(Arg.Is<AgentRunEvent>(evt =>
+            evt.EventType == "approval_timed_out" &&
+            evt.RunStatus == "WaitingHuman" &&
+            evt.Data.StepType == "tool_call" &&
+            evt.Data.Status == "TimedOut"));
+        eventBus.Received(1).Publish(Arg.Is<AgentRunEvent>(evt =>
+            evt.EventType == "waiting_human" &&
+            evt.RunStatus == "WaitingHuman" &&
+            evt.Data.StepType == "human_wait" &&
+            evt.Data.Status == "Pending"));
+        eventBus.DidNotReceive().Publish(Arg.Is<AgentRunEvent>(evt => evt.EventType == "error"));
+        var addedHumanStep = stepRepository.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IAgentStepRepository.AddAsync))
+            .Select(call => call.GetArguments()[0])
+            .OfType<AgentStep>()
+            .Single(stepValue => stepValue.StepType == "human_wait");
+        var payload = HumanApprovalPayloadSerializer.Parse(addedHumanStep.DecisionPayload);
+        Assert.Equal("approval_wait", payload.SourceType);
+        Assert.Equal(step.StepId, payload.SourceStepId);
+        Assert.Equal("weather", payload.SourceToolName);
+        Assert.Equal("{\"city\":\"Shanghai\"}", payload.SourceToolInput);
+        Assert.Equal("TimedOut", payload.SourceToolStatus);
+        Assert.False(payload.ContinueAsToolResult);
+        agentMetrics.Received(1).RecordApprovalTimedOut("writer", "tool_call", Arg.Any<TimeSpan>());
+        agentMetrics.DidNotReceive().RecordRunCompleted(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>());
+    }
+
     private static ServiceProvider CreateServiceProvider(
         IAgentApprovalRepository approvalRepository,
         IAgentRunRepository runRepository,

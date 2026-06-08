@@ -117,43 +117,108 @@ public class ApprovalTimeoutDispatcher : BackgroundService
                 };
                 await stepRepository.UpdateAsync(pendingStep, cancellationToken);
 
-                run = run with
+                if (ShouldRequestHumanOnTimeout())
                 {
-                    Status = "TimedOut",
-                    CurrentWaitToken = string.Empty,
-                    InterruptReason = timeoutReason,
-                    EndedAt = utcNow,
-                    StatusVersion = run.StatusVersion + 1,
-                    LastModifyTime = utcNow
-                };
-                await runRepository.UpdateAsync(run, cancellationToken);
-                var waitDuration = utcNow >= approval.CreateTime
-                    ? utcNow - approval.CreateTime
-                    : TimeSpan.Zero;
-                _agentMetrics.RecordApprovalTimedOut(run.AgentCode, pendingStep.StepType, waitDuration);
-                _agentMetrics.RecordRunCompleted(run.AgentCode, run.Status, run.TotalCost);
-                activity?.SetTag("bestagent.step_type", pendingStep.StepType);
-                activity?.SetTag("bestagent.status", "timedout");
-                activity?.SetStatus(ActivityStatusCode.Ok);
+                    var waitToken = Guid.NewGuid().ToString("N");
+                    var humanPayload = HumanApprovalPayloadSerializer.CreatePending(
+                        timeoutReason,
+                        sourceType: "approval_wait",
+                        sourceStepId: pendingStep.StepId,
+                        sourceToolName: approval.RequestedAction,
+                        sourceToolInput: approval.RequestPayload,
+                        sourceToolStatus: "TimedOut",
+                        continueAsToolResult: false);
+                    var humanStep = AgentRunLoop.CreateStep(
+                        run.RunId,
+                        run.CurrentStepNo + 1,
+                        "human_wait",
+                        "Pending",
+                        timeoutReason,
+                        null,
+                        null,
+                        utcNow,
+                        utcNow) with
+                    {
+                        DecisionPayload = HumanApprovalPayloadSerializer.Serialize(humanPayload)
+                    };
+                    await stepRepository.AddAsync(humanStep, cancellationToken);
 
-                await PublishEventAsync(
-                    outboxRepository,
-                    eventBus,
-                    approval.RunId,
-                    "approval_timed_out",
-                    "TimedOut",
-                    new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
-                    utcNow,
-                    cancellationToken);
-                await PublishEventAsync(
-                    outboxRepository,
-                    eventBus,
-                    approval.RunId,
-                    "error",
-                    "TimedOut",
-                    new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
-                    utcNow,
-                    cancellationToken);
+                    run = run with
+                    {
+                        Status = "WaitingHuman",
+                        CurrentWaitToken = waitToken,
+                        CurrentStepNo = humanStep.StepNo,
+                        StatusVersion = run.StatusVersion + 1,
+                        LastModifyTime = utcNow
+                    };
+                    await runRepository.UpdateAsync(run, cancellationToken);
+                    var waitDuration = utcNow >= approval.CreateTime
+                        ? utcNow - approval.CreateTime
+                        : TimeSpan.Zero;
+                    _agentMetrics.RecordApprovalTimedOut(run.AgentCode, pendingStep.StepType, waitDuration);
+                    activity?.SetTag("bestagent.step_type", pendingStep.StepType);
+                    activity?.SetTag("bestagent.status", "waiting_human");
+                    activity?.SetStatus(ActivityStatusCode.Ok);
+
+                    await PublishEventAsync(
+                        outboxRepository,
+                        eventBus,
+                        approval.RunId,
+                        "approval_timed_out",
+                        "WaitingHuman",
+                        new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
+                        utcNow,
+                        cancellationToken);
+                    await PublishEventAsync(
+                        outboxRepository,
+                        eventBus,
+                        approval.RunId,
+                        "waiting_human",
+                        "WaitingHuman",
+                        new AgentRunEventData(humanStep.StepNo, humanStep.StepType, "Pending", timeoutReason),
+                        utcNow,
+                        cancellationToken);
+                }
+                else
+                {
+                    run = run with
+                    {
+                        Status = "TimedOut",
+                        CurrentWaitToken = string.Empty,
+                        InterruptReason = timeoutReason,
+                        EndedAt = utcNow,
+                        StatusVersion = run.StatusVersion + 1,
+                        LastModifyTime = utcNow
+                    };
+                    await runRepository.UpdateAsync(run, cancellationToken);
+                    var waitDuration = utcNow >= approval.CreateTime
+                        ? utcNow - approval.CreateTime
+                        : TimeSpan.Zero;
+                    _agentMetrics.RecordApprovalTimedOut(run.AgentCode, pendingStep.StepType, waitDuration);
+                    _agentMetrics.RecordRunCompleted(run.AgentCode, run.Status, run.TotalCost);
+                    activity?.SetTag("bestagent.step_type", pendingStep.StepType);
+                    activity?.SetTag("bestagent.status", "timedout");
+                    activity?.SetStatus(ActivityStatusCode.Ok);
+
+                    await PublishEventAsync(
+                        outboxRepository,
+                        eventBus,
+                        approval.RunId,
+                        "approval_timed_out",
+                        "TimedOut",
+                        new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
+                        utcNow,
+                        cancellationToken);
+                    await PublishEventAsync(
+                        outboxRepository,
+                        eventBus,
+                        approval.RunId,
+                        "error",
+                        "TimedOut",
+                        new AgentRunEventData(pendingStep.StepNo, pendingStep.StepType, "TimedOut", Error: timeoutReason),
+                        utcNow,
+                        cancellationToken);
+                }
 
                 processed++;
             }
@@ -187,6 +252,25 @@ public class ApprovalTimeoutDispatcher : BackgroundService
 
         var normalized = value.Trim();
         return normalized[..Math.Min(normalized.Length, 256)];
+    }
+
+    private bool ShouldRequestHumanOnTimeout()
+    {
+        var normalized = NormalizeTimeoutAction(_options.TimeoutAction);
+        return string.Equals(normalized, ApprovalTimeoutOptions.RequestHumanAction, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeTimeoutAction(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return ApprovalTimeoutOptions.RejectAction;
+        }
+
+        var normalized = value.Trim().Replace('-', '_');
+        return string.Equals(normalized, ApprovalTimeoutOptions.RequestHumanAction, StringComparison.OrdinalIgnoreCase)
+            ? ApprovalTimeoutOptions.RequestHumanAction
+            : ApprovalTimeoutOptions.RejectAction;
     }
 
     private static async Task PublishEventAsync(

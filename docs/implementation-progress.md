@@ -54,7 +54,7 @@
 - 规划层结构化降级出口当前也已开始进入主链路：模型可直接返回 `request_human` 进入现有 `WaitingHuman` / `human_wait` 闭环，也可返回 `fail` 生成结构化 `model_failure` 审计载荷并进入失败终态
 - 规划层当前也已开始支持最小显式检索/审批决策：模型可返回 `retrieve`，Runtime 会记录 `retrieval` step、构造显式 retrieval follow-up，并在下一轮模型调用前复用现有 `RuntimeContextComposer` 执行真实知识检索；模型也可返回 `request_approval` 复用现有 `WaitingApproval` / approve / reject 闭环，审批通过后会把审批结果喂回下一轮规划继续执行
 - 最小审批流闭环（`WaitingApproval` + `approve/reject`，当前已同时覆盖高风险 `tool_call` 与 `approval_required handoff`）
-- 最小审批超时闭环（`expires_at` + 后台扫描 + 默认拒绝并进入 `TimedOut` 终态）
+- 最小审批超时闭环（`expires_at` + 后台扫描；默认拒绝进入 `TimedOut`，也支持按配置转入 `WaitingHuman`）
 - 最小人工接管闭环（`WaitingHuman` + `request-human` / `complete-human`）
 - 人工接管最小身份闸门：`request-human` / `complete-human` 当前要求显式人工操作者身份
 - 审批专用持久化与 run 级审批查询接口
