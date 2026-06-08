@@ -20,7 +20,8 @@
 - `POST /agent-runs` 支持请求体 `IdempotencyKey` 与 HTTP `Idempotency-Key`，同一幂等键重复调用返回同一 Run
 - `POST /agent-runs` 当前也已开始支持最小 `options` 请求模型：`options.maxRounds` 可按请求级收紧当前 run 的有效 `MaxTurns`；`options.stream` 已进入 API 契约层，现阶段仍主要作为兼容占位
 - 工具 complete 与审批 complete 外部回调支持 HTTP `Idempotency-Key`，同 key 同 payload 可重放复用结果，不重复入队
-- OpenAI 兼容模型网关抽象与实现；当前已开始支持 `OpenAI:TimeoutSeconds`、`OpenAI:Temperature`、`OpenAI:MaxOutputTokens`、`OpenAI:TopP`、`OpenAI:PresencePenalty`、`OpenAI:FrequencyPenalty` 与 `OpenAI:StopSequences` 全局默认生成参数配置，并允许 `GenerateTextRequest` 做请求级覆盖；同时 `GenerateTextRequest` 也已开始支持最小 `OutputMode/OutputSchema`，OpenAI 兼容请求可下发 `response_format`，其中 `json_schema` 当前也已开始支持请求级 `OutputName` / `OutputStrict`
+- OpenAI 兼容模型网关抽象与实现；当前已开始支持 `OpenAI:TimeoutSeconds`、`OpenAI:Temperature`、`OpenAI:MaxOutputTokens`、`OpenAI:TopP`、`OpenAI:PresencePenalty`、`OpenAI:FrequencyPenalty`、`OpenAI:StopSequences` 与 `OpenAI:ParallelToolCalls` 全局默认生成参数配置，并允许 `GenerateTextRequest` 做请求级覆盖；同时 `GenerateTextRequest` 也已开始支持最小 `OutputMode/OutputSchema`，OpenAI 兼容请求可下发 `response_format`，其中 `json_schema` 当前也已开始支持请求级 `OutputName` / `OutputStrict`
+- 由于当前 Runtime 仍只稳定支持单个原生工具调用，`AgentRunLoop` 在存在工具定义时也已开始默认向 OpenAI 兼容请求显式下发 `parallel_tool_calls = false`，优先把模型约束在单工具调用模式
 - OpenAI 兼容模型网关当前也已开始把 OpenAI 兼容响应中的 `finish_reason` 规范化为平台侧最小枚举（如 `completed` / `tool_call` / `max_output_tokens` / `content_filtered`），并写入 `GenerateTextResult` 与 `model_call` 审计 payload
 - `GenerateTextRequest` 当前也已开始支持最小 `Tools` 输入模型；`AgentRunLoop` 会按版本级 `AllowedTools` 解析 enabled `ToolDefinition`，并向 OpenAI 兼容请求下发最小 `tools.function.parameters`
 - `GenerateTextRequest` 当前也已开始支持最小 `Messages` 输入模型；显式传入消息列表时，OpenAI 兼容请求会优先按多消息形式下发

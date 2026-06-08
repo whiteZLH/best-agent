@@ -22,6 +22,8 @@ public class OpenAiOptions
 
     public IReadOnlyList<string>? StopSequences { get; init; }
 
+    public bool? ParallelToolCalls { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }

@@ -47,6 +47,9 @@ public static class DependencyInjection
             StopSequences = configuration
                 .GetSection("OpenAI:StopSequences")
                 .Get<string[]?>(),
+            ParallelToolCalls = bool.TryParse(configuration["OpenAI:ParallelToolCalls"], out var parallelToolCalls)
+                ? parallelToolCalls
+                : null,
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60

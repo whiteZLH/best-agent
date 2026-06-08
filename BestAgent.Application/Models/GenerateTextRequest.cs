@@ -17,4 +17,5 @@ public record GenerateTextRequest(
     IReadOnlyList<GenerateTextToolDefinition>? Tools = null,
     IReadOnlyList<GenerateTextMessage>? Messages = null,
     string? ToolChoice = null,
-    IReadOnlyList<string>? StopSequences = null);
+    IReadOnlyList<string>? StopSequences = null,
+    bool? ParallelToolCalls = null);

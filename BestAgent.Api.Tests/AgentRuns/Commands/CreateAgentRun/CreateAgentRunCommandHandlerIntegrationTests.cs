@@ -120,6 +120,7 @@ public class CreateAgentRunCommandHandlerIntegrationTests
         Assert.Equal("Get the weather for a city", tool.Description);
         Assert.Equal("{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}", tool.InputSchema);
         Assert.Equal("auto", request.ToolChoice);
+        Assert.False(request.ParallelToolCalls);
 
         cts.Cancel();
         await worker.StopAsync(CancellationToken.None);
