@@ -56,6 +56,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.ApiKey);
+            var timeoutSeconds = NormalizeTimeoutSeconds(request.TimeoutSeconds) ?? NormalizeTimeoutSeconds(_options.TimeoutSeconds) ?? 60;
             var temperature = NormalizeTemperature(request.Temperature ?? _options.Temperature);
             var maxOutputTokens = NormalizeMaxOutputTokens(request.MaxOutputTokens ?? _options.MaxOutputTokens);
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
@@ -73,8 +74,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 frequency_penalty = frequencyPenalty
             };
             _logger.LogDebug(
-                "Calling model {Model} with temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
+                timeoutSeconds,
                 temperature,
                 maxOutputTokens,
                 topP,
@@ -88,8 +90,10 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 Encoding.UTF8,
                 "application/json");
 
-            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+            using var response = await _httpClient.SendAsync(httpRequest, timeoutCts.Token);
+            var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
                 throw new InvalidOperationException(
@@ -145,6 +149,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 result.Cost);
 
             return result;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                $"Model gateway timed out after {NormalizeTimeoutSeconds(request.TimeoutSeconds) ?? NormalizeTimeoutSeconds(_options.TimeoutSeconds) ?? 60}s.");
         }
         catch (Exception ex)
         {
@@ -253,6 +262,16 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             > 2m => 2m,
             _ => penalty
         };
+    }
+
+    private static int? NormalizeTimeoutSeconds(int? timeoutSeconds)
+    {
+        if (timeoutSeconds is null || timeoutSeconds <= 0)
+        {
+            return null;
+        }
+
+        return timeoutSeconds;
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)

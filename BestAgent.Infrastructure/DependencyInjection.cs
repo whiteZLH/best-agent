@@ -95,12 +95,12 @@ public static class DependencyInjection
         services.AddSingleton<BestAgent.Application.Observability.IAgentMetrics, AgentMetrics>();
         services.AddSingleton(sp =>
         {
-            var options = sp.GetRequiredService<OpenAiOptions>();
             var httpClient = new HttpClient
             {
-                Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds > 0 ? options.TimeoutSeconds : 60)
+                Timeout = Timeout.InfiniteTimeSpan
             };
 
+            var options = sp.GetRequiredService<OpenAiOptions>();
             if (!string.IsNullOrWhiteSpace(options.BaseUrl))
             {
                 httpClient.BaseAddress = new Uri(EnsureTrailingSlash(options.BaseUrl));

@@ -315,6 +315,51 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldHonorRequestTimeoutOverConfiguredDefault()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(1500), cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                TimeoutSeconds = 5
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello", TimeoutSeconds: 1),
+                CancellationToken.None));
+
+        Assert.Equal("Model gateway timed out after 1s.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldEmitFailedModelCallActivity_WhenGatewayFails()
     {
         using var collector = new ActivityTestCollector(AgentTracing.SourceName);
@@ -348,11 +393,18 @@ public class OpenAiCompatibleModelGatewayTests
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
-        private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;
         private readonly Func<HttpRequestMessage, Task>? _beforeResponseAsync;
 
         public StubHttpMessageHandler(
             Func<HttpRequestMessage, HttpResponseMessage> handler,
+            Func<HttpRequestMessage, Task>? beforeResponseAsync = null)
+            : this((request, _) => Task.FromResult(handler(request)), beforeResponseAsync)
+        {
+        }
+
+        public StubHttpMessageHandler(
+            Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler,
             Func<HttpRequestMessage, Task>? beforeResponseAsync = null)
         {
             _handler = handler;
@@ -366,7 +418,7 @@ public class OpenAiCompatibleModelGatewayTests
                 await _beforeResponseAsync(request);
             }
 
-            return _handler(request);
+            return await _handler(request, cancellationToken);
         }
     }
 

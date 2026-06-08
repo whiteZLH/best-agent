@@ -8,4 +8,5 @@ public record GenerateTextRequest(
     int? MaxOutputTokens = null,
     decimal? TopP = null,
     decimal? PresencePenalty = null,
-    decimal? FrequencyPenalty = null);
+    decimal? FrequencyPenalty = null,
+    int? TimeoutSeconds = null);

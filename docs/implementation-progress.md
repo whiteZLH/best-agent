@@ -20,7 +20,7 @@
 - `POST /agent-runs` 支持请求体 `IdempotencyKey` 与 HTTP `Idempotency-Key`，同一幂等键重复调用返回同一 Run
 - `POST /agent-runs` 当前也已开始支持最小 `options` 请求模型：`options.maxRounds` 可按请求级收紧当前 run 的有效 `MaxTurns`；`options.stream` 已进入 API 契约层，现阶段仍主要作为兼容占位
 - 工具 complete 与审批 complete 外部回调支持 HTTP `Idempotency-Key`，同 key 同 payload 可重放复用结果，不重复入队
-- OpenAI 兼容模型网关抽象与实现；当前已开始支持 `OpenAI:Temperature`、`OpenAI:MaxOutputTokens`、`OpenAI:TopP`、`OpenAI:PresencePenalty` 与 `OpenAI:FrequencyPenalty` 全局默认生成参数配置，并允许 `GenerateTextRequest` 做请求级覆盖
+- OpenAI 兼容模型网关抽象与实现；当前已开始支持 `OpenAI:TimeoutSeconds`、`OpenAI:Temperature`、`OpenAI:MaxOutputTokens`、`OpenAI:TopP`、`OpenAI:PresencePenalty` 与 `OpenAI:FrequencyPenalty` 全局默认生成参数配置，并允许 `GenerateTextRequest` 做请求级覆盖
 - `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook、本地 handler 与 `inline_result` 固定结果执行）
 - 已补上独立 `ToolResolver`，将工具绑定解析从 `ToolExecutor` 中拆出
 - 工具运行时输入 schema 校验 MVP：执行前按 `ToolDefinition.InputSchema` 校验 `type`、`required`、`properties`、`enum` 以及 `additionalProperties` 的布尔/对象形态
