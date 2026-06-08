@@ -11,6 +11,7 @@ using BestAgent.Domain.AgentRuns;
 using BestAgent.Domain.Knowledge;
 using BestAgent.Domain.Tools;
 using BestAgent.Infrastructure;
+using BestAgent.Infrastructure.Model;
 using BestAgent.Infrastructure.Observability;
 using BestAgent.Infrastructure.Persistence.Seeding;
 using BestAgent.Infrastructure.Runtime;
@@ -107,6 +108,31 @@ public class ProgramCompositionTests
         Assert.Contains(hostedServices, service => service.GetType() == typeof(AgentRunWorker));
         Assert.Contains(hostedServices, service => service.GetType() == typeof(ApprovalTimeoutDispatcher));
         Assert.Contains(hostedServices, service => service.GetType() == typeof(RunOutboxEventDispatcher));
+    }
+
+    [Fact]
+    public void AddInfrastructure_ShouldBindOpenAiTokenPriceOptions()
+    {
+        var services = new ServiceCollection();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Postgres"] = "Host=localhost;Port=5432;Database=best_agent;Username=postgres;Password=postgres",
+                ["OpenAI:BaseUrl"] = "https://example.com/v1/",
+                ["OpenAI:ApiKey"] = "test-key",
+                ["OpenAI:Model"] = "gpt-4o",
+                ["OpenAI:PromptTokenPricePerMillion"] = "1.25",
+                ["OpenAI:CompletionTokenPricePerMillion"] = "5.5"
+            })
+            .Build();
+
+        services.AddInfrastructure(configuration);
+
+        using var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<OpenAiOptions>();
+
+        Assert.Equal(1.25m, options.PromptTokenPricePerMillion);
+        Assert.Equal(5.5m, options.CompletionTokenPricePerMillion);
     }
 
     [Fact]

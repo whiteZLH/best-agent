@@ -57,6 +57,12 @@ public static class DependencyInjection
             ReasoningEffort = string.IsNullOrWhiteSpace(configuration["OpenAI:ReasoningEffort"])
                 ? null
                 : configuration["OpenAI:ReasoningEffort"]!.Trim(),
+            PromptTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:PromptTokenPricePerMillion"], out var promptTokenPricePerMillion)
+                ? promptTokenPricePerMillion
+                : 0m,
+            CompletionTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:CompletionTokenPricePerMillion"], out var completionTokenPricePerMillion)
+                ? completionTokenPricePerMillion
+                : 0m,
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60
