@@ -69,6 +69,10 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal(JsonValueKind.Null, maxTokensElement.ValueKind);
         Assert.True(capturedPayload.Value.TryGetProperty("top_p", out var topPElement));
         Assert.Equal(JsonValueKind.Null, topPElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("presence_penalty", out var presencePenaltyElement));
+        Assert.Equal(JsonValueKind.Null, presencePenaltyElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("frequency_penalty", out var frequencyPenaltyElement));
+        Assert.Equal(JsonValueKind.Null, frequencyPenaltyElement.ValueKind);
         var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ModelCallActivityName);
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
@@ -214,6 +218,100 @@ public class OpenAiCompatibleModelGatewayTests
 
         Assert.True(capturedPayload.HasValue);
         Assert.Equal(0.9m, capturedPayload.Value.GetProperty("top_p").GetDecimal());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldPreferRequestPresencePenaltyOverConfiguredDefault()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                PresencePenalty = 0.2m
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello", PresencePenalty: 1.1m),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal(1.1m, capturedPayload.Value.GetProperty("presence_penalty").GetDecimal());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldPreferRequestFrequencyPenaltyOverConfiguredDefault()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                FrequencyPenalty = 0.3m
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello", FrequencyPenalty: -1.4m),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal(-1.4m, capturedPayload.Value.GetProperty("frequency_penalty").GetDecimal());
     }
 
     [Fact]

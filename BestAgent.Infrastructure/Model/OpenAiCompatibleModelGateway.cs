@@ -59,6 +59,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var temperature = NormalizeTemperature(request.Temperature ?? _options.Temperature);
             var maxOutputTokens = NormalizeMaxOutputTokens(request.MaxOutputTokens ?? _options.MaxOutputTokens);
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
+            var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
+            var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
 
             var payload = new
             {
@@ -66,14 +68,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 messages = BuildMessages(request),
                 temperature,
                 max_tokens = maxOutputTokens,
-                top_p = topP
+                top_p = topP,
+                presence_penalty = presencePenalty,
+                frequency_penalty = frequencyPenalty
             };
             _logger.LogDebug(
-                "Calling model {Model} with temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 temperature,
                 maxOutputTokens,
                 topP,
+                presencePenalty,
+                frequencyPenalty,
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
 
@@ -232,6 +238,21 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return topP > 1m ? 1m : topP;
+    }
+
+    private static decimal? NormalizePenalty(decimal? penalty)
+    {
+        if (penalty is null)
+        {
+            return null;
+        }
+
+        return penalty.Value switch
+        {
+            < -2m => -2m,
+            > 2m => 2m,
+            _ => penalty
+        };
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)

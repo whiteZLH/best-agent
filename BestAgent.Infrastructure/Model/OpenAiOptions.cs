@@ -14,6 +14,10 @@ public class OpenAiOptions
 
     public decimal? TopP { get; init; }
 
+    public decimal? PresencePenalty { get; init; }
+
+    public decimal? FrequencyPenalty { get; init; }
+
     public int TimeoutSeconds { get; init; } = 60;
 
     public decimal PromptTokenPricePerMillion { get; init; }

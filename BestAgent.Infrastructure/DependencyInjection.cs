@@ -38,6 +38,12 @@ public static class DependencyInjection
             TopP = decimal.TryParse(configuration["OpenAI:TopP"], out var topP)
                 ? topP
                 : null,
+            PresencePenalty = decimal.TryParse(configuration["OpenAI:PresencePenalty"], out var presencePenalty)
+                ? presencePenalty
+                : null,
+            FrequencyPenalty = decimal.TryParse(configuration["OpenAI:FrequencyPenalty"], out var frequencyPenalty)
+                ? frequencyPenalty
+                : null,
             TimeoutSeconds = int.TryParse(configuration["OpenAI:TimeoutSeconds"], out var timeoutSeconds)
                 ? timeoutSeconds
                 : 60

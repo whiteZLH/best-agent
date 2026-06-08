@@ -6,4 +6,6 @@ public record GenerateTextRequest(
     string Input,
     decimal? Temperature = null,
     int? MaxOutputTokens = null,
-    decimal? TopP = null);
+    decimal? TopP = null,
+    decimal? PresencePenalty = null,
+    decimal? FrequencyPenalty = null);
