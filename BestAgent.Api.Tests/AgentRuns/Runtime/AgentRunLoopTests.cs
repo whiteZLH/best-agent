@@ -193,7 +193,8 @@ public class AgentRunLoopTests
                 && request.ParallelToolCalls == false
                 && request.Tools[0].Name == "weather"
                 && request.Tools[0].Description == "Get the weather for a city"
-                && request.Tools[0].InputSchema == "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}"),
+                && request.Tools[0].InputSchema == "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}"
+                && request.Tools[0].Strict == true),
             Arg.Any<CancellationToken>());
     }
 

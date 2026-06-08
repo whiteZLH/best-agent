@@ -23,7 +23,7 @@
 - OpenAI 兼容模型网关抽象与实现；当前已开始支持 `OpenAI:TimeoutSeconds`、`OpenAI:Temperature`、`OpenAI:MaxOutputTokens`、`OpenAI:TopP`、`OpenAI:PresencePenalty`、`OpenAI:FrequencyPenalty`、`OpenAI:LogitBias`、`OpenAI:Seed`、`OpenAI:StopSequences` 与 `OpenAI:ParallelToolCalls` 全局默认生成参数配置，并允许 `GenerateTextRequest` 做请求级覆盖；同时 `GenerateTextRequest` 也已开始支持最小 `OutputMode/OutputSchema`，OpenAI 兼容请求可下发 `response_format`，其中 `json_schema` 当前也已开始支持请求级 `OutputName` / `OutputStrict`
 - 由于当前 Runtime 仍只稳定支持单个原生工具调用，`AgentRunLoop` 在存在工具定义时也已开始默认向 OpenAI 兼容请求显式下发 `parallel_tool_calls = false`，优先把模型约束在单工具调用模式
 - OpenAI 兼容模型网关当前也已开始把 OpenAI 兼容响应中的 `finish_reason` 规范化为平台侧最小枚举（如 `completed` / `tool_call` / `max_output_tokens` / `content_filtered`），并写入 `GenerateTextResult` 与 `model_call` 审计 payload
-- `GenerateTextRequest` 当前也已开始支持最小 `Tools` 输入模型；`AgentRunLoop` 会按版本级 `AllowedTools` 解析 enabled `ToolDefinition`，并向 OpenAI 兼容请求下发最小 `tools.function.parameters`
+- `GenerateTextRequest` 当前也已开始支持最小 `Tools` 输入模型；`AgentRunLoop` 会按版本级 `AllowedTools` 解析 enabled `ToolDefinition`，并向 OpenAI 兼容请求下发最小 `tools.function.parameters`，同时当前也会对工具定义显式补上 `function.strict`
 - `GenerateTextRequest` 当前也已开始支持最小 `Messages` 输入模型；显式传入消息列表时，OpenAI 兼容请求会优先按多消息形式下发
 - OpenAI 兼容模型网关当前也已开始兼容响应中 `message.content` 的字符串、数组文本片段与最小对象文本形态，不再只依赖单个字符串 `content`
 - OpenAI 兼容模型网关当前也已开始支持消费原生单个 `tool_calls` 响应，并归一回现有 `{"action":"tool_call",...}` JSON 决策输出

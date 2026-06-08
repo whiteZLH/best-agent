@@ -499,7 +499,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 {
                     name = tool.Name.Trim(),
                     description = string.IsNullOrWhiteSpace(tool.Description) ? null : tool.Description.Trim(),
-                    parameters = ParseToolParameters(tool)
+                    parameters = ParseToolParameters(tool),
+                    strict = tool.Strict ?? true
                 }
             })
             .Cast<object>()

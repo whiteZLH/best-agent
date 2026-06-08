@@ -906,7 +906,8 @@ public static class AgentRunLoop
             tools.Add(new GenerateTextToolDefinition(
                 definition.ToolName,
                 definition.Description,
-                definition.InputSchema));
+                definition.InputSchema,
+                true));
         }
 
         return tools;

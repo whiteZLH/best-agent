@@ -862,7 +862,8 @@ public class OpenAiCompatibleModelGatewayTests
                     new GenerateTextToolDefinition(
                         "weather",
                         "Get the weather for a city",
-                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}",
+                        true)
                 ]),
             CancellationToken.None);
 
@@ -873,9 +874,68 @@ public class OpenAiCompatibleModelGatewayTests
         var function = tool.GetProperty("function");
         Assert.Equal("weather", function.GetProperty("name").GetString());
         Assert.Equal("Get the weather for a city", function.GetProperty("description").GetString());
+        Assert.True(function.GetProperty("strict").GetBoolean());
         var parameters = function.GetProperty("parameters");
         Assert.Equal("object", parameters.GetProperty("type").GetString());
         Assert.Equal("string", parameters.GetProperty("properties").GetProperty("city").GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldAllowNonStrictToolDefinitions()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}",
+                        false)
+                ]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var function = capturedPayload.Value.GetProperty("tools")[0].GetProperty("function");
+        Assert.False(function.GetProperty("strict").GetBoolean());
     }
 
     [Fact]
