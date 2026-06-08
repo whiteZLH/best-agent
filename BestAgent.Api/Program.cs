@@ -64,6 +64,7 @@ builder.Services.AddAutoMapper(
 
 var app = builder.Build();
 
+app.UseMiddleware<BestAgentRequestLoggingMiddleware>();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.UseAuthentication();
