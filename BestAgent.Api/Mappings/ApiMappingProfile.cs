@@ -101,12 +101,14 @@ public class ApiMappingProfile : Profile
         CreateMap<ApprovalInfo, ApprovalInfoResponse>();
         CreateMap<HumanWaitInfo, HumanWaitInfoResponse>();
         CreateMap<ToolInvocationInfo, ToolInvocationInfoResponse>();
+        CreateMap<ModelCallToolCallInfo, ModelCallToolCallInfoResponse>();
         CreateMap<ModelCallRetrievalInfo, ModelCallRetrievalInfoResponse>();
         CreateMap<ModelCallInfo, ModelCallInfoResponse>();
         CreateMap<RetrievalInfo, RetrievalInfoResponse>();
         CreateMap<ModelFailureInfo, ModelFailureInfoResponse>();
         CreateMap<ToolFailureCompensationInfo, ToolFailureCompensationInfoResponse>();
         CreateMap<ToolFailureInfo, ToolFailureInfoResponse>();
+        CreateMap<EventModelCallToolCallInfo, EventModelCallToolCallInfoResponse>();
         CreateMap<EventModelCallRetrievalInfo, EventModelCallRetrievalInfoResponse>();
         CreateMap<EventModelCallInfo, EventModelCallInfoResponse>();
         CreateMap<EventRetrievalInfo, EventRetrievalInfoResponse>();

@@ -102,7 +102,14 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
                     payload.Retrieval.RequestedSources,
                     payload.Retrieval.SelectedSources,
                     payload.Retrieval.Citations),
-            payload.ReasoningSummary);
+            payload.ReasoningSummary,
+            payload.ToolCalls?
+                .Select(toolCall => new ModelCallToolCallInfo(
+                    toolCall.Id,
+                    toolCall.Type,
+                    toolCall.Name,
+                    toolCall.Arguments))
+                .ToArray());
     }
 
     private static ModelFailureInfo? MapModelFailure(string? errorPayload)

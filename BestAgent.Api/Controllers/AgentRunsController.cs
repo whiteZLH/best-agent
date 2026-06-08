@@ -516,7 +516,14 @@ public class AgentRunsController : ControllerBase
                             resolvedData.ModelCall.Retrieval.SelectedSources,
                             resolvedData.ModelCall.Retrieval.Citations),
                     resolvedData.ModelCall.FinishReason,
-                    resolvedData.ModelCall.ReasoningSummary),
+                    resolvedData.ModelCall.ReasoningSummary,
+                    resolvedData.ModelCall.ToolCalls?
+                        .Select(toolCall => new EventModelCallToolCallInfoResponse(
+                            toolCall.Id,
+                            toolCall.Type,
+                            toolCall.Name,
+                            toolCall.Arguments))
+                        .ToArray()),
             resolvedData.Retrieval is null
                 ? null
                 : new EventRetrievalInfoResponse(

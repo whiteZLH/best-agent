@@ -7,4 +7,5 @@ public record GenerateTextResult(
     int TotalTokens = 0,
     decimal Cost = 0m,
     string? FinishReason = null,
-    string? ReasoningSummary = null);
+    string? ReasoningSummary = null,
+    IReadOnlyList<GenerateTextToolCall>? ToolCalls = null);

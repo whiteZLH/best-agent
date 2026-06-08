@@ -72,7 +72,14 @@ public record EventDataInfo(
                             modelCall.Retrieval.RequestedSources,
                             modelCall.Retrieval.SelectedSources,
                             modelCall.Retrieval.Citations),
-                    modelCall.ReasoningSummary)
+                    modelCall.ReasoningSummary,
+                    modelCall.ToolCalls?
+                        .Select(toolCall => new EventModelCallToolCallInfo(
+                            toolCall.Id,
+                            toolCall.Type,
+                            toolCall.Name,
+                            toolCall.Arguments))
+                        .ToArray())
                 : null,
             RetrievalPayloadSerializer.TryParse(data.DecisionPayload, out var retrieval)
                 ? new EventRetrievalInfo(retrieval!.QueryText)
@@ -195,7 +202,14 @@ public record EventModelCallInfo(
     decimal Cost,
     string? FinishReason,
     EventModelCallRetrievalInfo? Retrieval,
-    string? ReasoningSummary = null);
+    string? ReasoningSummary = null,
+    IReadOnlyList<EventModelCallToolCallInfo>? ToolCalls = null);
+
+public record EventModelCallToolCallInfo(
+    string Id,
+    string Type,
+    string Name,
+    string? Arguments = null);
 
 public record EventModelCallRetrievalInfo(
     string QueryText,

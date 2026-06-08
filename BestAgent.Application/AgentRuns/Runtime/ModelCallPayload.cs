@@ -12,7 +12,14 @@ public sealed record ModelCallPayload(
     decimal Cost,
     string? FinishReason = null,
     ModelCallRetrievalPayload? Retrieval = null,
-    string? ReasoningSummary = null);
+    string? ReasoningSummary = null,
+    IReadOnlyList<ModelCallToolCallPayload>? ToolCalls = null);
+
+public sealed record ModelCallToolCallPayload(
+    string Id,
+    string Type,
+    string Name,
+    string? Arguments = null);
 
 public sealed record ModelCallRetrievalPayload(
     string QueryText,
@@ -45,7 +52,18 @@ public static class ModelCallPayloadSerializer
                     retrieval.RequestedSources.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                     retrieval.SelectedSources.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
                     retrieval.Citations.Distinct(StringComparer.Ordinal).ToArray()),
-            string.IsNullOrWhiteSpace(result.ReasoningSummary) ? null : result.ReasoningSummary.Trim()));
+            string.IsNullOrWhiteSpace(result.ReasoningSummary) ? null : result.ReasoningSummary.Trim(),
+            result.ToolCalls?
+                .Where(toolCall =>
+                    !string.IsNullOrWhiteSpace(toolCall.Id)
+                    && !string.IsNullOrWhiteSpace(toolCall.Type)
+                    && !string.IsNullOrWhiteSpace(toolCall.Name))
+                .Select(toolCall => new ModelCallToolCallPayload(
+                    toolCall.Id.Trim(),
+                    toolCall.Type.Trim(),
+                    toolCall.Name.Trim(),
+                    string.IsNullOrWhiteSpace(toolCall.Arguments) ? null : toolCall.Arguments.Trim()))
+                .ToArray()));
     }
 
     public static bool TryParse(string? payload, out ModelCallPayload? modelCallPayload)

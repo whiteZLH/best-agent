@@ -721,6 +721,11 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
         Assert.Equal("weather", document.RootElement.GetProperty("toolName").GetString());
         Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("call_123", toolCall.Id);
+        Assert.Equal("function", toolCall.Type);
+        Assert.Equal("weather", toolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
     }
 
     [Fact]

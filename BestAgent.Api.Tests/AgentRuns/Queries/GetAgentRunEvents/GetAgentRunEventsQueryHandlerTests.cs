@@ -156,7 +156,15 @@ public class GetAgentRunEventsQueryHandlerTests
                 TotalTokens: 165,
                 Cost: 0.0042m,
                 FinishReason: "stop",
-                ReasoningSummary: "Need refund policy confirmation."),
+                ReasoningSummary: "Need refund policy confirmation.",
+                ToolCalls:
+                [
+                    new BestAgent.Application.Models.GenerateTextToolCall(
+                        "call_123",
+                        "function",
+                        "weather",
+                        "{\"city\":\"Shanghai\"}")
+                ]),
             new RuntimeRetrievalAudit(
                 "refund manager approval",
                 true,
@@ -194,6 +202,11 @@ public class GetAgentRunEventsQueryHandlerTests
         Assert.Equal(120, data.ModelCall.PromptTokens);
         Assert.Equal("stop", data.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", data.ModelCall.ReasoningSummary);
+        var toolCall = Assert.Single(data.ModelCall.ToolCalls!);
+        Assert.Equal("call_123", toolCall.Id);
+        Assert.Equal("function", toolCall.Type);
+        Assert.Equal("weather", toolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
         Assert.Equal("refund manager approval", data.ModelCall.Retrieval!.QueryText);
         Assert.True(data.ModelCall.Retrieval.WasRewritten);
         Assert.Equal("faq/doc-1#1", Assert.Single(data.ModelCall.Retrieval.SelectedSources));

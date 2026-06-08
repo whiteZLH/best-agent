@@ -8,7 +8,14 @@ public record ModelCallInfo(
     decimal Cost,
     string? FinishReason = null,
     ModelCallRetrievalInfo? Retrieval = null,
-    string? ReasoningSummary = null);
+    string? ReasoningSummary = null,
+    IReadOnlyList<ModelCallToolCallInfo>? ToolCalls = null);
+
+public record ModelCallToolCallInfo(
+    string Id,
+    string Type,
+    string Name,
+    string? Arguments = null);
 
 public record ModelCallRetrievalInfo(
     string QueryText,

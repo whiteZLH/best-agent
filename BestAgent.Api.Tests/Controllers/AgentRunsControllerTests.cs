@@ -610,7 +610,14 @@ public class AgentRunsControllerTests
                             ["faq"],
                             ["faq/doc-1#1"],
                             ["score=3; source=faq/doc-1#1; chunk=1"]),
-                        "Need refund policy confirmation."),
+                        "Need refund policy confirmation.",
+                        [
+                            new ModelCallToolCallInfo(
+                                "call_123",
+                                "function",
+                                "weather",
+                                "{\"city\":\"Shanghai\"}")
+                        ]),
                     new RetrievalInfo("hotel refund manager approval policy"),
                     new ModelFailureInfo("upstream_unavailable", "Planner could not continue."),
                     new ToolFailureInfo("weather", "execution", "tool backend crashed", new ToolFailureCompensationInfo("manual")),
@@ -683,6 +690,11 @@ public class AgentRunsControllerTests
         Assert.Equal(0.0042m, step.ModelCall.Cost);
         Assert.Equal("stop", step.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", step.ModelCall.ReasoningSummary);
+        var stepToolCall = Assert.Single(step.ModelCall.ToolCalls!);
+        Assert.Equal("call_123", stepToolCall.Id);
+        Assert.Equal("function", stepToolCall.Type);
+        Assert.Equal("weather", stepToolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", stepToolCall.Arguments);
         Assert.Equal("hotel refund manager approval policy", step.Retrieval!.QueryText);
         Assert.Equal("refund manager approval", step.ModelCall.Retrieval!.QueryText);
         Assert.True(step.ModelCall.Retrieval.WasRewritten);
@@ -932,7 +944,14 @@ public class AgentRunsControllerTests
                                 ["faq"],
                                 ["faq/doc-1#1"],
                                 ["score=3; source=faq/doc-1#1; chunk=1"]),
-                            "Need refund policy confirmation."),
+                            "Need refund policy confirmation.",
+                            [
+                                new EventModelCallToolCallInfo(
+                                    "call_123",
+                                    "function",
+                                    "weather",
+                                    "{\"city\":\"Shanghai\"}")
+                            ]),
                         new EventRetrievalInfo("hotel refund manager approval policy"),
                         null,
                         null,
@@ -977,6 +996,11 @@ public class AgentRunsControllerTests
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
         Assert.Equal("stop", evt.Data.ModelCall.FinishReason);
         Assert.Equal("Need refund policy confirmation.", evt.Data.ModelCall.ReasoningSummary);
+        var eventToolCall = Assert.Single(evt.Data.ModelCall.ToolCalls!);
+        Assert.Equal("call_123", eventToolCall.Id);
+        Assert.Equal("function", eventToolCall.Type);
+        Assert.Equal("weather", eventToolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", eventToolCall.Arguments);
         Assert.Equal("hotel refund manager approval policy", evt.Data.Retrieval!.QueryText);
         Assert.Equal("refund manager approval", evt.Data.ModelCall.Retrieval!.QueryText);
         Assert.Equal("invocation-1", evt.Data.ToolInvocation!.InvocationId);

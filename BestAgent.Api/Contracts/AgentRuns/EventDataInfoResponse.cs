@@ -23,7 +23,14 @@ public record EventModelCallInfoResponse(
     decimal Cost,
     EventModelCallRetrievalInfoResponse? Retrieval,
     string? FinishReason = null,
-    string? ReasoningSummary = null);
+    string? ReasoningSummary = null,
+    IReadOnlyList<EventModelCallToolCallInfoResponse>? ToolCalls = null);
+
+public record EventModelCallToolCallInfoResponse(
+    string Id,
+    string Type,
+    string Name,
+    string? Arguments = null);
 
 public record EventModelCallRetrievalInfoResponse(
     string QueryText,
