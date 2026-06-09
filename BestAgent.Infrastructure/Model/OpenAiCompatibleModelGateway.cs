@@ -84,6 +84,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 request.OutputMode,
                 request.OutputSchema,
                 request.OutputName,
+                request.OutputDescription,
                 request.OutputStrict);
             var tools = BuildTools(request.Tools);
             var toolChoice = BuildToolChoice(request.ToolChoice, request.Tools);
@@ -816,6 +817,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         string? outputMode,
         string? outputSchema,
         string? outputName,
+        string? outputDescription,
         bool? outputStrict)
     {
         var normalizedOutputMode = NormalizeOutputMode(outputMode, outputSchema);
@@ -832,6 +834,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 json_schema = new
                 {
                     name = NormalizeOutputName(outputName),
+                    description = NormalizeOutputDescription(outputDescription),
                     strict = outputStrict ?? true,
                     schema = ParseOutputSchema(outputSchema)
                 }
@@ -864,6 +867,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return string.IsNullOrWhiteSpace(outputName)
             ? "bestagent_output"
             : outputName.Trim();
+    }
+
+    private static string? NormalizeOutputDescription(string? outputDescription)
+    {
+        return string.IsNullOrWhiteSpace(outputDescription)
+            ? null
+            : outputDescription.Trim();
     }
 
     private static JsonElement ParseOutputSchema(string? outputSchema)
