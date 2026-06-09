@@ -306,7 +306,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     private static object BuildMessagePayload(GenerateTextMessage message)
     {
         var role = NormalizeMessageRole(message.Role);
-        var content = BuildMessageContent(message);
+        var toolCalls = BuildMessageToolCalls(message, role);
+        var content = BuildMessageContent(message, toolCalls);
         var name = string.IsNullOrWhiteSpace(message.Name)
             ? null
             : message.Name.Trim();
@@ -329,17 +330,21 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             role,
             content,
             name,
-            tool_call_id = toolCallId
+            tool_call_id = toolCallId,
+            tool_calls = toolCalls
         };
     }
 
     private static bool HasMessageContent(GenerateTextMessage message)
     {
         return !string.IsNullOrWhiteSpace(message.Content)
-               || message.ContentParts is { Count: > 0 };
+               || message.ContentParts is { Count: > 0 }
+               || message.ToolCalls is { Count: > 0 };
     }
 
-    private static object BuildMessageContent(GenerateTextMessage message)
+    private static object? BuildMessageContent(
+        GenerateTextMessage message,
+        object[]? toolCalls)
     {
         if (message.ContentParts is { Count: > 0 })
         {
@@ -354,7 +359,89 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return message.Content.Trim();
         }
 
-        throw new InvalidOperationException("Model messages must include content or content parts.");
+        if (toolCalls is { Length: > 0 })
+        {
+            return null;
+        }
+
+        throw new InvalidOperationException("Model messages must include content, content parts, or tool calls.");
+    }
+
+    private static object[]? BuildMessageToolCalls(
+        GenerateTextMessage message,
+        string role)
+    {
+        if (message.ToolCalls is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        if (role != "assistant")
+        {
+            throw new InvalidOperationException("Only assistant messages can include tool_calls.");
+        }
+
+        return message.ToolCalls
+            .Select(BuildMessageToolCallPayload)
+            .Cast<object>()
+            .ToArray();
+    }
+
+    private static object BuildMessageToolCallPayload(GenerateTextToolCall toolCall)
+    {
+        if (string.IsNullOrWhiteSpace(toolCall.Id))
+        {
+            throw new InvalidOperationException("Model assistant tool calls must include an id.");
+        }
+
+        if (string.IsNullOrWhiteSpace(toolCall.Name))
+        {
+            throw new InvalidOperationException("Model assistant tool calls must include a function name.");
+        }
+
+        var type = string.IsNullOrWhiteSpace(toolCall.Type)
+            ? "function"
+            : toolCall.Type.Trim().ToLowerInvariant();
+        if (type != "function")
+        {
+            throw new InvalidOperationException($"Model assistant tool call type '{toolCall.Type}' is not supported.");
+        }
+
+        var arguments = NormalizeMessageToolCallArguments(toolCall.Arguments);
+
+        return new
+        {
+            id = toolCall.Id.Trim(),
+            type,
+            function = new
+            {
+                name = toolCall.Name.Trim(),
+                arguments
+            }
+        };
+    }
+
+    private static string NormalizeMessageToolCallArguments(string? arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+        {
+            return "{}";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(arguments);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("Model assistant tool call arguments must be a JSON object.");
+            }
+
+            return arguments.Trim();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Model assistant tool call arguments must be valid JSON.", ex);
+        }
     }
 
     private static object BuildMessageContentPart(GenerateTextMessageContentPart part)

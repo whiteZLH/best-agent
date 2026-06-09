@@ -5,4 +5,5 @@ public record GenerateTextMessage(
     string? Content = null,
     string? Name = null,
     string? ToolCallId = null,
-    IReadOnlyList<GenerateTextMessageContentPart>? ContentParts = null);
+    IReadOnlyList<GenerateTextMessageContentPart>? ContentParts = null,
+    IReadOnlyList<GenerateTextToolCall>? ToolCalls = null);

@@ -608,6 +608,71 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldSendAssistantToolCalls_WhenProvided()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "Ignored system prompt",
+                "Ignored input",
+                Messages:
+                [
+                    new GenerateTextMessage(
+                        "assistant",
+                        ToolCalls:
+                        [
+                            new GenerateTextToolCall("call_123", "function", "weather", "{\"city\":\"Shanghai\"}")
+                        ])
+                ]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var message = Assert.Single(capturedPayload.Value.GetProperty("messages").EnumerateArray());
+        Assert.Equal("assistant", message.GetProperty("role").GetString());
+        Assert.Equal(JsonValueKind.Null, message.GetProperty("content").ValueKind);
+        var toolCall = Assert.Single(message.GetProperty("tool_calls").EnumerateArray());
+        Assert.Equal("call_123", toolCall.GetProperty("id").GetString());
+        Assert.Equal("function", toolCall.GetProperty("type").GetString());
+        Assert.Equal("weather", toolCall.GetProperty("function").GetProperty("name").GetString());
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.GetProperty("function").GetProperty("arguments").GetString());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldSendToolCallId_ForToolMessages()
     {
         JsonElement? capturedPayload = null;
@@ -711,6 +776,59 @@ public class OpenAiCompatibleModelGatewayTests
                 CancellationToken.None));
 
         Assert.Equal("Model messages must include at least one valid message.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectToolCallsOnNonAssistantMessages()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage(
+                            "user",
+                            ToolCalls:
+                            [
+                                new GenerateTextToolCall("call_123", "function", "weather", "{\"city\":\"Shanghai\"}")
+                            ])
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Only assistant messages can include tool_calls.", exception.Message);
     }
 
     [Fact]
@@ -866,6 +984,59 @@ public class OpenAiCompatibleModelGatewayTests
                 CancellationToken.None));
 
         Assert.Equal("Model image detail 'full' is not supported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectAssistantToolCallsWithInvalidArguments()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage(
+                            "assistant",
+                            ToolCalls:
+                            [
+                                new GenerateTextToolCall("call_123", "function", "weather", "[1,2,3]")
+                            ])
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model assistant tool call arguments must be a JSON object.", exception.Message);
     }
 
     [Fact]
