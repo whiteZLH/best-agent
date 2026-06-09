@@ -274,8 +274,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static object[] BuildMessages(GenerateTextRequest request)
     {
-        if (request.Messages is { Count: > 0 })
+        if (request.Messages is not null)
         {
+            if (request.Messages.Count == 0)
+            {
+                throw new InvalidOperationException("Model messages must include at least one message.");
+            }
+
             var messages = request.Messages
                 .Select(BuildMessagePayload)
                 .Cast<object>()
@@ -300,7 +305,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static int CountMessages(GenerateTextRequest request)
     {
-        if (request.Messages is { Count: > 0 })
+        if (request.Messages is not null)
         {
             return request.Messages.Count;
         }
