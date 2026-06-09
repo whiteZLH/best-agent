@@ -101,6 +101,10 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal(JsonValueKind.Null, serviceTierElement.ValueKind);
         Assert.True(capturedPayload.Value.TryGetProperty("store", out var storeElement));
         Assert.Equal(JsonValueKind.Null, storeElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("logprobs", out var logProbsElement));
+        Assert.Equal(JsonValueKind.Null, logProbsElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("top_logprobs", out var topLogProbsElement));
+        Assert.Equal(JsonValueKind.Null, topLogProbsElement.ValueKind);
         var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ModelCallActivityName);
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
@@ -1727,6 +1731,250 @@ public class OpenAiCompatibleModelGatewayTests
 
         Assert.True(capturedPayload.HasValue);
         Assert.True(capturedPayload.Value.GetProperty("store").GetBoolean());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldPreferRequestLogProbsOverConfiguredDefault()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                LogProbs = false
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                LogProbs: true),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.True(capturedPayload.Value.GetProperty("logprobs").GetBoolean());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldUseConfiguredLogProbs_WhenRequestDoesNotOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                LogProbs = true
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.True(capturedPayload.Value.GetProperty("logprobs").GetBoolean());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldPreferRequestTopLogProbsOverConfiguredDefault()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                LogProbs = true,
+                TopLogProbs = 3
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                LogProbs: true,
+                TopLogProbs: 7),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal(7, capturedPayload.Value.GetProperty("top_logprobs").GetInt32());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldUseConfiguredTopLogProbs_WhenRequestDoesNotOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                LogProbs = true,
+                TopLogProbs = 5
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal(5, capturedPayload.Value.GetProperty("top_logprobs").GetInt32());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectTopLogProbsWhenLogProbsAreDisabled()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    TopLogProbs: 4),
+                CancellationToken.None));
+
+        Assert.Equal("Model top_logprobs requires logprobs to be enabled.", exception.Message);
     }
 
     [Fact]

@@ -81,6 +81,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var metadata = NormalizeMetadata(request.Metadata);
             var serviceTier = NormalizeServiceTier(request.ServiceTier ?? _options.ServiceTier);
             var store = request.Store ?? _options.Store;
+            var logProbs = request.LogProbs ?? _options.LogProbs;
+            var topLogProbs = NormalizeTopLogProbs(request.TopLogProbs ?? _options.TopLogProbs, logProbs);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -109,12 +111,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 metadata,
                 service_tier = serviceTier,
                 store,
+                logprobs = logProbs,
+                top_logprobs = topLogProbs,
                 response_format = responseFormat,
                 tools,
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max completion tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, service tier {ServiceTier}, store {Store}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max completion tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, service tier {ServiceTier}, store {Store}, logprobs {LogProbs}, top_logprobs {TopLogProbs}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -134,6 +138,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 verbosity,
                 serviceTier,
                 store,
+                logProbs,
+                topLogProbs,
                 metadata?.Count ?? 0,
                 !string.IsNullOrWhiteSpace(userId),
                 request.SystemPrompt?.Length ?? 0,
@@ -750,6 +756,26 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             GenerateTextVerbosityLevels.Medium => GenerateTextVerbosityLevels.Medium,
             GenerateTextVerbosityLevels.High => GenerateTextVerbosityLevels.High,
             _ => throw new InvalidOperationException($"Model verbosity '{verbosity}' is not supported.")
+        };
+    }
+
+    private static int? NormalizeTopLogProbs(int? topLogProbs, bool? logProbs)
+    {
+        if (topLogProbs is null)
+        {
+            return null;
+        }
+
+        if (logProbs != true)
+        {
+            throw new InvalidOperationException("Model top_logprobs requires logprobs to be enabled.");
+        }
+
+        return topLogProbs.Value switch
+        {
+            < 0 => 0,
+            > 20 => 20,
+            _ => topLogProbs
         };
     }
 

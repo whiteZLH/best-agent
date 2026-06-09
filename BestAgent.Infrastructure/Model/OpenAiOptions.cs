@@ -36,6 +36,10 @@ public class OpenAiOptions
 
     public bool? Store { get; init; }
 
+    public bool? LogProbs { get; init; }
+
+    public int? TopLogProbs { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }

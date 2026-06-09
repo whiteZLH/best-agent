@@ -66,6 +66,12 @@ public static class DependencyInjection
             Store = bool.TryParse(configuration["OpenAI:Store"], out var store)
                 ? store
                 : null,
+            LogProbs = bool.TryParse(configuration["OpenAI:LogProbs"], out var logProbs)
+                ? logProbs
+                : null,
+            TopLogProbs = int.TryParse(configuration["OpenAI:TopLogProbs"], out var topLogProbs)
+                ? topLogProbs
+                : null,
             PromptTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:PromptTokenPricePerMillion"], out var promptTokenPricePerMillion)
                 ? promptTokenPricePerMillion
                 : 0m,
