@@ -821,6 +821,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         bool? outputStrict)
     {
         var normalizedOutputMode = NormalizeOutputMode(outputMode, outputSchema);
+        ValidateResponseFormatConfiguration(
+            normalizedOutputMode,
+            outputSchema,
+            outputName,
+            outputDescription,
+            outputStrict);
+
         return normalizedOutputMode switch
         {
             null => null,
@@ -845,6 +852,39 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             },
             _ => throw new InvalidOperationException($"Model output mode '{outputMode}' is not supported.")
         };
+    }
+
+    private static void ValidateResponseFormatConfiguration(
+        string? normalizedOutputMode,
+        string? outputSchema,
+        string? outputName,
+        string? outputDescription,
+        bool? outputStrict)
+    {
+        if (string.Equals(normalizedOutputMode, GenerateTextOutputModes.JsonSchema, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(outputSchema))
+        {
+            throw new InvalidOperationException("Model output schema can only be used when output mode is json_schema.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(outputName))
+        {
+            throw new InvalidOperationException("Model output name can only be used when output mode is json_schema.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(outputDescription))
+        {
+            throw new InvalidOperationException("Model output description can only be used when output mode is json_schema.");
+        }
+
+        if (outputStrict.HasValue)
+        {
+            throw new InvalidOperationException("Model output strict flag can only be used when output mode is json_schema.");
+        }
     }
 
     private static string? NormalizeOutputMode(string? outputMode, string? outputSchema)
