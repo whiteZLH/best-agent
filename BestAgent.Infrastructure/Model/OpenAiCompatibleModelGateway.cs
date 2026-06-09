@@ -1207,14 +1207,24 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static int TryGetUsageInt(JsonElement root, params string[] propertyNames)
     {
-        if (!root.TryGetProperty("usage", out var usage))
+        if (root.TryGetProperty("usage", out var usage)
+            && usage.ValueKind == JsonValueKind.Object)
         {
-            return 0;
+            var usageValue = TryGetPositiveInt(usage, propertyNames);
+            if (usageValue > 0)
+            {
+                return usageValue;
+            }
         }
 
+        return TryGetPositiveInt(root, propertyNames);
+    }
+
+    private static int TryGetPositiveInt(JsonElement parent, params string[] propertyNames)
+    {
         foreach (var propertyName in propertyNames)
         {
-            if (!usage.TryGetProperty(propertyName, out var value))
+            if (!parent.TryGetProperty(propertyName, out var value))
             {
                 continue;
             }
