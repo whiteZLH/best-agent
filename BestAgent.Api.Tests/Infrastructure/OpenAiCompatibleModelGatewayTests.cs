@@ -2679,6 +2679,53 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldRejectBlankJsonSchemaNameWhenExplicitlyProvided()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+        const string outputSchema = "{\"type\":\"object\",\"required\":[\"answer\"],\"properties\":{\"answer\":{\"type\":\"string\"}},\"additionalProperties\":false}";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    OutputSchema: outputSchema,
+                    OutputName: "   "),
+                CancellationToken.None));
+
+        Assert.Equal("Model output name must not be blank when provided.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldSendJsonSchemaDescription_WhenProvided()
     {
         JsonElement? capturedPayload = null;
@@ -2729,6 +2776,53 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.True(capturedPayload.HasValue);
         var jsonSchema = capturedPayload.Value.GetProperty("response_format").GetProperty("json_schema");
         Assert.Equal("Structured support answer", jsonSchema.GetProperty("description").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectBlankJsonSchemaDescriptionWhenExplicitlyProvided()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+        const string outputSchema = "{\"type\":\"object\",\"required\":[\"answer\"],\"properties\":{\"answer\":{\"type\":\"string\"}},\"additionalProperties\":false}";
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    OutputSchema: outputSchema,
+                    OutputDescription: "   "),
+                CancellationToken.None));
+
+        Assert.Equal("Model output description must not be blank when provided.", exception.Message);
     }
 
     [Fact]

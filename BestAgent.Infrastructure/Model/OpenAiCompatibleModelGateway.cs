@@ -935,16 +935,32 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static string NormalizeOutputName(string? outputName)
     {
-        return string.IsNullOrWhiteSpace(outputName)
-            ? "bestagent_output"
-            : outputName.Trim();
+        if (outputName is null)
+        {
+            return "bestagent_output";
+        }
+
+        if (string.IsNullOrWhiteSpace(outputName))
+        {
+            throw new InvalidOperationException("Model output name must not be blank when provided.");
+        }
+
+        return outputName.Trim();
     }
 
     private static string? NormalizeOutputDescription(string? outputDescription)
     {
-        return string.IsNullOrWhiteSpace(outputDescription)
-            ? null
-            : outputDescription.Trim();
+        if (outputDescription is null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(outputDescription))
+        {
+            throw new InvalidOperationException("Model output description must not be blank when provided.");
+        }
+
+        return outputDescription.Trim();
     }
 
     private static JsonElement ParseOutputSchema(string? outputSchema)
