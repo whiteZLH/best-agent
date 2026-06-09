@@ -967,9 +967,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static object[]? BuildTools(IReadOnlyList<GenerateTextToolDefinition>? tools)
     {
-        if (tools is null || tools.Count == 0)
+        if (tools is null)
         {
             return null;
+        }
+
+        if (tools.Count == 0)
+        {
+            throw new InvalidOperationException("Model tools must include at least one named tool.");
         }
 
         var namedTools = GetNamedTools(tools);
