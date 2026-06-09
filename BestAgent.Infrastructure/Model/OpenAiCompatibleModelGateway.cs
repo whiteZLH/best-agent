@@ -1415,10 +1415,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             throw new InvalidOperationException("Model gateway returned a native tool call without a function name.");
         }
 
-        var toolArguments = function.TryGetProperty("arguments", out var argumentsElement)
-            && argumentsElement.ValueKind == JsonValueKind.String
-            ? argumentsElement.GetString()
-            : null;
+        var toolArguments = TryGetNativeToolCallArguments(toolName, function);
         ValidateNativeToolCall(toolName, toolArguments, declaredTools);
 
         return new GenerateTextToolCall(
@@ -1426,6 +1423,24 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             callType,
             toolName.Trim(),
             string.IsNullOrWhiteSpace(toolArguments) ? null : toolArguments.Trim());
+    }
+
+    private static string? TryGetNativeToolCallArguments(string toolName, JsonElement function)
+    {
+        if (!function.TryGetProperty("arguments", out var argumentsElement))
+        {
+            return null;
+        }
+
+        return argumentsElement.ValueKind switch
+        {
+            JsonValueKind.String => argumentsElement.GetString(),
+            JsonValueKind.Object => JsonSerializer.Serialize(argumentsElement, JsonOptions),
+            JsonValueKind.Null => null,
+            JsonValueKind.Undefined => null,
+            _ => throw new InvalidOperationException(
+                $"Model gateway returned native tool call arguments for '{toolName.Trim()}' that are not a JSON object.")
+        };
     }
 
     private static void ValidateNativeToolCall(
