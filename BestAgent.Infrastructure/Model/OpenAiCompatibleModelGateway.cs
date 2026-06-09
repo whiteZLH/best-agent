@@ -74,7 +74,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var logitBias = NormalizeLogitBias(request.LogitBias ?? _options.LogitBias);
             var seed = NormalizeSeed(request.Seed ?? _options.Seed);
             var stopSequences = NormalizeStopSequences(request.StopSequences ?? _options.StopSequences);
-            var parallelToolCalls = NormalizeParallelToolCalls(request.ParallelToolCalls ?? _options.ParallelToolCalls, request.Tools);
+            var hasNamedTools = HasNamedTools(request.Tools);
+            var parallelToolCalls = NormalizeParallelToolCalls(
+                request.ParallelToolCalls
+                ?? _options.ParallelToolCalls
+                ?? (hasNamedTools ? false : null),
+                request.Tools);
             var reasoningEffort = NormalizeReasoningEffort(request.ReasoningEffort ?? _options.ReasoningEffort);
             var userId = NormalizeUserId(request.UserId);
             var verbosity = NormalizeVerbosity(request.Verbosity ?? _options.Verbosity);
@@ -90,7 +95,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 request.OutputDescription,
                 request.OutputStrict);
             var tools = BuildTools(request.Tools);
-            var toolChoiceValue = request.ToolChoice ?? _options.ToolChoice;
+            var toolChoiceValue = request.ToolChoice
+                ?? _options.ToolChoice
+                ?? (hasNamedTools ? "auto" : null);
             var toolChoice = BuildToolChoice(toolChoiceValue, request.Tools);
 
             var payload = new
