@@ -705,7 +705,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         bool? parallelToolCalls,
         IReadOnlyList<GenerateTextToolDefinition>? tools)
     {
-        return tools is { Count: > 0 }
+        return HasNamedTools(tools)
             ? parallelToolCalls
             : null;
     }
@@ -906,8 +906,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return null;
         }
 
-        return tools
-            .Where(tool => !string.IsNullOrWhiteSpace(tool.Name))
+        var namedTools = GetNamedTools(tools);
+        if (namedTools.Count == 0)
+        {
+            throw new InvalidOperationException("Model tools must include at least one named tool.");
+        }
+
+        return namedTools
             .Select(tool => new
             {
                 type = "function",
@@ -984,6 +989,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         var normalized = toolChoice.Trim();
         if (string.Equals(normalized, "auto", StringComparison.OrdinalIgnoreCase))
         {
+            if (!HasNamedTools(tools))
+            {
+                throw new InvalidOperationException("Model tool choice 'auto' requires at least one declared tool.");
+            }
+
             return "auto";
         }
 
@@ -994,15 +1004,21 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
         if (string.Equals(normalized, "required", StringComparison.OrdinalIgnoreCase))
         {
+            if (!HasNamedTools(tools))
+            {
+                throw new InvalidOperationException("Model tool choice 'required' requires at least one declared tool.");
+            }
+
             return "required";
         }
 
-        if (tools is null || tools.Count == 0)
+        var namedTools = GetNamedTools(tools);
+        if (namedTools.Count == 0)
         {
             throw new InvalidOperationException("Model tool choice requires at least one declared tool.");
         }
 
-        var matchedTool = tools.FirstOrDefault(tool =>
+        var matchedTool = namedTools.FirstOrDefault(tool =>
             string.Equals(tool.Name, normalized, StringComparison.OrdinalIgnoreCase));
         if (matchedTool is null || string.IsNullOrWhiteSpace(matchedTool.Name))
         {
@@ -1010,6 +1026,23 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return matchedTool.Name.Trim();
+    }
+
+    private static bool HasNamedTools(IReadOnlyList<GenerateTextToolDefinition>? tools)
+    {
+        return tools is { Count: > 0 } && tools.Any(tool => !string.IsNullOrWhiteSpace(tool.Name));
+    }
+
+    private static IReadOnlyList<GenerateTextToolDefinition> GetNamedTools(IReadOnlyList<GenerateTextToolDefinition>? tools)
+    {
+        if (tools is null || tools.Count == 0)
+        {
+            return [];
+        }
+
+        return tools
+            .Where(tool => !string.IsNullOrWhiteSpace(tool.Name))
+            .ToArray();
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)
