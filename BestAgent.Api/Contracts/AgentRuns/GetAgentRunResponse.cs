@@ -24,6 +24,7 @@ public record GetAgentRunResponse(
     string? WaitStepType = null,
     string? CurrentInvocationId = null,
     string? CurrentApprovalId = null,
+    string? StreamUrl = null,
     ToolInvocationInfoResponse? CurrentToolInvocation = null,
     ApprovalInfoResponse? CurrentApproval = null,
     HumanWaitInfoResponse? CurrentHumanWait = null,

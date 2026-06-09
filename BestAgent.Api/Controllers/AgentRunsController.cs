@@ -110,7 +110,12 @@ public class AgentRunsController : ControllerBase
             return NotFound();
         }
 
-        return Ok(_mapper.Map<GetAgentRunResponse>(result));
+        var response = _mapper.Map<GetAgentRunResponse>(result) with
+        {
+            StreamUrl = $"/agent-runs/{runId}/stream"
+        };
+
+        return Ok(response);
     }
 
     [HttpGet("{runId}/children")]

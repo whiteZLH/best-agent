@@ -344,6 +344,7 @@ public class AgentRunsControllerTests
         Assert.Equal("tool_call", response.WaitStepType);
         Assert.Equal("invocation-1", response.CurrentInvocationId);
         Assert.Null(response.CurrentApprovalId);
+        Assert.Equal("/agent-runs/run-001/stream", response.StreamUrl);
         Assert.Equal("weather", response.CurrentToolInvocation!.ToolName);
         Assert.Equal("wait-1", response.CurrentToolInvocation.CallbackToken);
         Assert.Null(response.CurrentApproval);
