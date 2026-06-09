@@ -91,6 +91,8 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal(JsonValueKind.Null, reasoningEffortElement.ValueKind);
         Assert.True(capturedPayload.Value.TryGetProperty("verbosity", out var verbosityElement));
         Assert.Equal(JsonValueKind.Null, verbosityElement.ValueKind);
+        Assert.True(capturedPayload.Value.TryGetProperty("metadata", out var metadataElement));
+        Assert.Equal(JsonValueKind.Null, metadataElement.ValueKind);
         var activity = Assert.Single(collector.Activities, value => value.OperationName == AgentTracing.ModelCallActivityName);
         Assert.Equal("gpt-4o-mini", activity.GetTagItem("bestagent.model"));
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
@@ -288,6 +290,63 @@ public class OpenAiCompatibleModelGatewayTests
 
         Assert.True(capturedPayload.HasValue);
         Assert.Equal("user-123", capturedPayload.Value.GetProperty("user").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldSendNormalizedMetadata_WhenProvided()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Metadata: new Dictionary<string, string>
+                {
+                    [" bestagent.run_id "] = " run-123 ",
+                    [" "] = "ignored",
+                    ["blank-value"] = " "
+                }),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var metadata = capturedPayload.Value.GetProperty("metadata");
+        Assert.Equal("run-123", metadata.GetProperty("bestagent.run_id").GetString());
+        Assert.Single(metadata.EnumerateObject());
     }
 
     [Fact]

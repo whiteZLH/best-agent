@@ -23,4 +23,5 @@ public record GenerateTextRequest(
     bool? ParallelToolCalls = null,
     string? ReasoningEffort = null,
     string? UserId = null,
-    string? Verbosity = null);
+    string? Verbosity = null,
+    IReadOnlyDictionary<string, string>? Metadata = null);

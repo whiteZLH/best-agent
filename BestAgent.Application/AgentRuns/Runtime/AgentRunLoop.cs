@@ -107,7 +107,8 @@ public static class AgentRunLoop
                     Tools: modelTools,
                     ToolChoice: modelTools.Count > 0 ? "auto" : null,
                     ParallelToolCalls: modelTools.Count > 0 ? false : null,
-                    UserId: string.IsNullOrWhiteSpace(run.UserId) ? null : run.UserId),
+                    UserId: string.IsNullOrWhiteSpace(run.UserId) ? null : run.UserId,
+                    Metadata: BuildModelMetadata(run)),
                 cancellationToken);
             var endedAt = DateTime.UtcNow;
             totalCostDelta += NormalizeCost(modelResponse.Cost);
@@ -1086,6 +1087,37 @@ public static class AgentRunLoop
 
     private static decimal NormalizeCost(decimal cost)
         => cost < 0m ? 0m : cost;
+
+    private static IReadOnlyDictionary<string, string>? BuildModelMetadata(AgentRun run)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["bestagent.run_id"] = run.RunId,
+            ["bestagent.agent_code"] = run.AgentCode,
+            ["bestagent.version_id"] = run.AgentDefinitionVersionId
+        };
+
+        AddMetadataIfPresent(metadata, "bestagent.tenant_id", run.TenantId);
+        AddMetadataIfPresent(metadata, "bestagent.user_id", run.UserId);
+        AddMetadataIfPresent(metadata, "bestagent.session_id", run.SessionId);
+        AddMetadataIfPresent(metadata, "bestagent.root_run_id", run.RootRunId);
+        AddMetadataIfPresent(metadata, "bestagent.parent_run_id", run.ParentRunId);
+
+        return metadata.Count == 0 ? null : metadata;
+    }
+
+    private static void AddMetadataIfPresent(
+        IDictionary<string, string> metadata,
+        string key,
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        metadata[key] = value.Trim();
+    }
 
     private static bool TryUseHandoffFirstRoutingStrategy(string? routingPolicy)
     {

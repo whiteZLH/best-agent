@@ -69,6 +69,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var reasoningEffort = NormalizeReasoningEffort(request.ReasoningEffort ?? _options.ReasoningEffort);
             var userId = NormalizeUserId(request.UserId);
             var verbosity = NormalizeVerbosity(request.Verbosity ?? _options.Verbosity);
+            var metadata = NormalizeMetadata(request.Metadata);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -93,12 +94,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 reasoning_effort = reasoningEffort,
                 user = userId,
                 verbosity,
+                metadata,
                 response_format = responseFormat,
                 tools,
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -116,6 +118,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 parallelToolCalls,
                 reasoningEffort,
                 verbosity,
+                metadata?.Count ?? 0,
                 !string.IsNullOrWhiteSpace(userId),
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
@@ -455,6 +458,50 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             GenerateTextVerbosityLevels.High => GenerateTextVerbosityLevels.High,
             _ => throw new InvalidOperationException($"Model verbosity '{verbosity}' is not supported.")
         };
+    }
+
+    private static IReadOnlyDictionary<string, string>? NormalizeMetadata(IReadOnlyDictionary<string, string>? metadata)
+    {
+        if (metadata is null || metadata.Count == 0)
+        {
+            return null;
+        }
+
+        var normalized = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var pair in metadata)
+        {
+            if (normalized.Count >= 16)
+            {
+                break;
+            }
+
+            if (string.IsNullOrWhiteSpace(pair.Key)
+                || string.IsNullOrWhiteSpace(pair.Value))
+            {
+                continue;
+            }
+
+            var key = pair.Key.Trim();
+            var value = pair.Value.Trim();
+            if (key.Length == 0 || value.Length == 0)
+            {
+                continue;
+            }
+
+            if (key.Length > 64)
+            {
+                key = key[..64];
+            }
+
+            if (value.Length > 512)
+            {
+                value = value[..512];
+            }
+
+            normalized[key] = value;
+        }
+
+        return normalized.Count == 0 ? null : normalized;
     }
 
     private static object? BuildResponseFormat(

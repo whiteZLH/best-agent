@@ -201,9 +201,10 @@ public class AgentRunLoopTests
     [Fact]
     public async Task ExecuteAsync_ShouldForwardRunUserIdToModelGateway()
     {
-        var context = CreateLoopContext() with
+        var baseContext = CreateLoopContext();
+        var context = baseContext with
         {
-            Run = CreateLoopContext().Run with
+            Run = baseContext.Run with
             {
                 UserId = "user-123"
             }
@@ -229,6 +230,55 @@ public class AgentRunLoopTests
         Assert.Equal("hello", completed.Output);
         await _modelGateway.Received(1).GenerateTextAsync(
             Arg.Is<GenerateTextRequest>(request => request.UserId == "user-123"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ShouldForwardRunMetadataToModelGateway()
+    {
+        var baseContext = CreateLoopContext();
+        var context = baseContext with
+        {
+            Run = baseContext.Run with
+            {
+                AgentDefinitionVersionId = "ver-1",
+                TenantId = "tenant-1",
+                UserId = "user-123",
+                SessionId = "session-456",
+                RootRunId = "root-001",
+                ParentRunId = "parent-001"
+            }
+        };
+        var resolvedDefinition = CreateResolvedDefinition();
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("final-answer"));
+        _stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("hello"));
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None);
+
+        var completed = Assert.IsType<AgentLoopCompleted>(result);
+        Assert.Equal("hello", completed.Output);
+        await _modelGateway.Received(1).GenerateTextAsync(
+            Arg.Is<GenerateTextRequest>(request =>
+                request.Metadata != null
+                && request.Metadata["bestagent.run_id"] == "run-001"
+                && request.Metadata["bestagent.agent_code"] == "writer"
+                && request.Metadata["bestagent.version_id"] == "ver-1"
+                && request.Metadata["bestagent.tenant_id"] == "tenant-1"
+                && request.Metadata["bestagent.user_id"] == "user-123"
+                && request.Metadata["bestagent.session_id"] == "session-456"
+                && request.Metadata["bestagent.root_run_id"] == "root-001"
+                && request.Metadata["bestagent.parent_run_id"] == "parent-001"),
             Arg.Any<CancellationToken>());
     }
 
