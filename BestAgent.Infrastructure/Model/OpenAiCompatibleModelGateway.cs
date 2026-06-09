@@ -182,8 +182,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 throw new InvalidOperationException("Model gateway returned an empty response.");
             }
 
-            var promptTokens = TryGetUsageInt(document.RootElement, "prompt_tokens");
-            var completionTokens = TryGetUsageInt(document.RootElement, "completion_tokens");
+            var promptTokens = TryGetUsageInt(document.RootElement, "prompt_tokens", "input_tokens");
+            var completionTokens = TryGetUsageInt(document.RootElement, "completion_tokens", "output_tokens");
             var totalTokens = TryGetUsageInt(document.RootElement, "total_tokens");
             if (totalTokens <= 0)
             {
@@ -1205,20 +1205,33 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return value;
     }
 
-    private static int TryGetUsageInt(JsonElement root, string propertyName)
+    private static int TryGetUsageInt(JsonElement root, params string[] propertyNames)
     {
-        if (!root.TryGetProperty("usage", out var usage)
-            || !usage.TryGetProperty(propertyName, out var value))
+        if (!root.TryGetProperty("usage", out var usage))
         {
             return 0;
         }
 
-        return value.ValueKind switch
+        foreach (var propertyName in propertyNames)
         {
-            JsonValueKind.Number when value.TryGetInt32(out var number) => number,
-            JsonValueKind.String when int.TryParse(value.GetString(), out var number) => number,
-            _ => 0
-        };
+            if (!usage.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            var parsed = value.ValueKind switch
+            {
+                JsonValueKind.Number when value.TryGetInt32(out var number) => number,
+                JsonValueKind.String when int.TryParse(value.GetString(), out var number) => number,
+                _ => 0
+            };
+            if (parsed > 0)
+            {
+                return parsed;
+            }
+        }
+
+        return 0;
     }
 
     private static string? TryGetResponseId(JsonElement root)
