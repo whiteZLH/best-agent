@@ -72,6 +72,9 @@ public static class DependencyInjection
             TopLogProbs = int.TryParse(configuration["OpenAI:TopLogProbs"], out var topLogProbs)
                 ? topLogProbs
                 : null,
+            ToolChoice = string.IsNullOrWhiteSpace(configuration["OpenAI:ToolChoice"])
+                ? null
+                : configuration["OpenAI:ToolChoice"]!.Trim(),
             PromptTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:PromptTokenPricePerMillion"], out var promptTokenPricePerMillion)
                 ? promptTokenPricePerMillion
                 : 0m,

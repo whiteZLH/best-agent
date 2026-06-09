@@ -40,6 +40,8 @@ public class OpenAiOptions
 
     public int? TopLogProbs { get; init; }
 
+    public string? ToolChoice { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }

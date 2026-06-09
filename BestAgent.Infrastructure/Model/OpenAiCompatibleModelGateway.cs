@@ -90,7 +90,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 request.OutputDescription,
                 request.OutputStrict);
             var tools = BuildTools(request.Tools);
-            var toolChoice = BuildToolChoice(request.ToolChoice, request.Tools);
+            var toolChoiceValue = request.ToolChoice ?? _options.ToolChoice;
+            var toolChoice = BuildToolChoice(toolChoiceValue, request.Tools);
 
             var payload = new
             {
@@ -123,7 +124,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
                 tools?.Length ?? 0,
-                NormalizeToolChoice(request.ToolChoice, request.Tools),
+                NormalizeToolChoice(toolChoiceValue, request.Tools),
                 CountMessages(request),
                 temperature,
                 maxOutputTokens,
