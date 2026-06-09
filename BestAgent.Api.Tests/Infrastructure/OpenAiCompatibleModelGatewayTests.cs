@@ -477,6 +477,57 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldExtractOutputTextSegments_WhenGatewayUsesCamelCaseOutputTextFields()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": [
+                              {
+                                "type": "output_text",
+                                "outputText": "hello"
+                              },
+                              {
+                                "type": "output_text",
+                                "outputText": {
+                                  "value": "world"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal("hello\nworld", result.Output);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldReadNestedReasoningSummaryTextValues()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
@@ -521,6 +572,55 @@ public class OpenAiCompatibleModelGatewayTests
             CancellationToken.None);
 
         Assert.Equal("Need structured reasoning.", result.ReasoningSummary);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldReadCamelCaseFinishReasonAndReasoningSummary()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "stop",
+                          "message": {
+                            "reasoningSummary": [
+                              {
+                                "text": {
+                                  "value": "Need camel case reasoning."
+                                }
+                              }
+                            ],
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.Completed, result.FinishReason);
+        Assert.Equal("Need camel case reasoning.", result.ReasoningSummary);
     }
 
     [Fact]
@@ -4680,6 +4780,76 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeNativeSingleToolCallResponse_WhenGatewayUsesCamelCaseToolCallAliases()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "tool_calls",
+                          "message": {
+                            "content": null,
+                            "toolCalls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "weather",
+                                  "arguments": "{\"city\":\"Shanghai\"}"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        Assert.Equal("weather", document.RootElement.GetProperty("toolName").GetString());
+        Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("call_123", toolCall.Id);
+        Assert.Equal("function", toolCall.Type);
+        Assert.Equal("weather", toolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldNormalizeNativeToolCallResponse_WhenArgumentsAreReturnedAsObject()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
@@ -4766,6 +4936,70 @@ public class OpenAiCompatibleModelGatewayTests
                           "message": {
                             "content": null,
                             "function_call": {
+                              "name": "weather",
+                              "arguments": "{\"city\":\"Shanghai\"}"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        Assert.Equal("weather", document.RootElement.GetProperty("toolName").GetString());
+        Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("legacy_function_call", toolCall.Id);
+        Assert.Equal("function", toolCall.Type);
+        Assert.Equal("weather", toolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeLegacyFunctionCallResponse_WhenGatewayUsesCamelCaseFunctionCallAlias()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "function_call",
+                          "message": {
+                            "content": null,
+                            "functionCall": {
                               "name": "weather",
                               "arguments": "{\"city\":\"Shanghai\"}"
                             }

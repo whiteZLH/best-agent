@@ -1257,7 +1257,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         var firstChoice = choices[0];
-        if (!firstChoice.TryGetProperty("finish_reason", out var finishReason))
+        if (!TryGetProperty(firstChoice, out var finishReason, "finish_reason", "finishReason"))
         {
             return InferFinishReason(firstChoice);
         }
@@ -1277,14 +1277,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return null;
         }
 
-        if (message.TryGetProperty("tool_calls", out var toolCalls)
+        if (TryGetProperty(message, out var toolCalls, "tool_calls", "toolCalls")
             && toolCalls.ValueKind == JsonValueKind.Array
             && toolCalls.GetArrayLength() > 0)
         {
             return GenerateTextFinishReasons.ToolCall;
         }
 
-        if (message.TryGetProperty("function_call", out var functionCall)
+        if (TryGetProperty(message, out var functionCall, "function_call", "functionCall")
             && functionCall.ValueKind == JsonValueKind.Object)
         {
             return GenerateTextFinishReasons.ToolCall;
@@ -1327,23 +1327,23 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         if (firstChoice.TryGetProperty("message", out var message)
             && message.ValueKind == JsonValueKind.Object)
         {
-            if (TryCollectText(message, "reasoning_summary", out var reasoningSummary))
+            if (TryCollectText(message, out var reasoningSummary, "reasoning_summary", "reasoningSummary"))
             {
                 return reasoningSummary;
             }
 
-            if (TryCollectText(message, "reasoning", out var reasoning))
+            if (TryCollectText(message, out var reasoning, "reasoning"))
             {
                 return reasoning;
             }
         }
 
-        if (TryCollectText(firstChoice, "reasoning_summary", out var choiceReasoningSummary))
+        if (TryCollectText(firstChoice, out var choiceReasoningSummary, "reasoning_summary", "reasoningSummary"))
         {
             return choiceReasoningSummary;
         }
 
-        return TryCollectText(firstChoice, "reasoning", out var choiceReasoning)
+        return TryCollectText(firstChoice, out var choiceReasoning, "reasoning")
             ? choiceReasoning
             : null;
     }
@@ -1366,7 +1366,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return null;
         }
 
-        if (message.TryGetProperty("tool_calls", out var toolCalls)
+        if (TryGetProperty(message, out var toolCalls, "tool_calls", "toolCalls")
             && toolCalls.ValueKind == JsonValueKind.Array)
         {
             var calls = new List<GenerateTextToolCall>();
@@ -1378,7 +1378,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return calls.Count == 0 ? null : calls;
         }
 
-        if (message.TryGetProperty("function_call", out var functionCall))
+        if (TryGetProperty(message, out var functionCall, "function_call", "functionCall"))
         {
             if (functionCall.ValueKind != JsonValueKind.Object)
             {
@@ -1569,17 +1569,17 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return toolCallDecision;
         }
 
-        if (TryCollectText(message, "content", out var contentText))
+        if (TryCollectText(message, out var contentText, "content"))
         {
             return contentText;
         }
 
-        if (TryCollectText(message, "refusal", out var refusalText))
+        if (TryCollectText(message, out var refusalText, "refusal"))
         {
             return refusalText;
         }
 
-        return TryCollectText(firstChoice, "refusal", out var choiceRefusalText)
+        return TryCollectText(firstChoice, out var choiceRefusalText, "refusal")
             ? choiceRefusalText
             : null;
     }
@@ -1610,10 +1610,10 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return true;
     }
 
-    private static bool TryCollectText(JsonElement parent, string propertyName, out string? text)
+    private static bool TryCollectText(JsonElement parent, out string? text, params string[] propertyNames)
     {
         text = null;
-        if (!parent.TryGetProperty(propertyName, out var value))
+        if (!TryGetProperty(parent, out var value, propertyNames))
         {
             return false;
         }
@@ -1627,6 +1627,20 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
         text = string.Join("\n", segments);
         return true;
+    }
+
+    private static bool TryGetProperty(JsonElement parent, out JsonElement value, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (parent.TryGetProperty(propertyName, out value))
+            {
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static string? TryGetTrimmedString(JsonElement parent, params string[] propertyNames)
@@ -1676,6 +1690,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                     CollectReasoningSegments(outputTextProperty, segments);
                 }
 
+                if (value.TryGetProperty("outputText", out var outputTextCamelCaseProperty))
+                {
+                    CollectReasoningSegments(outputTextCamelCaseProperty, segments);
+                }
+
                 if (value.TryGetProperty("value", out var valueProperty))
                 {
                     CollectReasoningSegments(valueProperty, segments);
@@ -1684,6 +1703,16 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 if (value.TryGetProperty("summary", out var summaryProperty))
                 {
                     CollectReasoningSegments(summaryProperty, segments);
+                }
+
+                if (value.TryGetProperty("reasoning_summary", out var reasoningSummaryProperty))
+                {
+                    CollectReasoningSegments(reasoningSummaryProperty, segments);
+                }
+
+                if (value.TryGetProperty("reasoningSummary", out var reasoningSummaryCamelCaseProperty))
+                {
+                    CollectReasoningSegments(reasoningSummaryCamelCaseProperty, segments);
                 }
 
                 if (value.TryGetProperty("content", out var contentProperty))
