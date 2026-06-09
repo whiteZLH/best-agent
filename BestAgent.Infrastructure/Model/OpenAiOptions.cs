@@ -32,6 +32,8 @@ public class OpenAiOptions
 
     public string? Verbosity { get; init; }
 
+    public string? ServiceTier { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }

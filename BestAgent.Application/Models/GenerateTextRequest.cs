@@ -24,4 +24,5 @@ public record GenerateTextRequest(
     string? ReasoningEffort = null,
     string? UserId = null,
     string? Verbosity = null,
-    IReadOnlyDictionary<string, string>? Metadata = null);
+    IReadOnlyDictionary<string, string>? Metadata = null,
+    string? ServiceTier = null);

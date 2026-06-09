@@ -70,6 +70,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var userId = NormalizeUserId(request.UserId);
             var verbosity = NormalizeVerbosity(request.Verbosity ?? _options.Verbosity);
             var metadata = NormalizeMetadata(request.Metadata);
+            var serviceTier = NormalizeServiceTier(request.ServiceTier ?? _options.ServiceTier);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -95,12 +96,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 user = userId,
                 verbosity,
                 metadata,
+                service_tier = serviceTier,
                 response_format = responseFormat,
                 tools,
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, service tier {ServiceTier}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -118,6 +120,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 parallelToolCalls,
                 reasoningEffort,
                 verbosity,
+                serviceTier,
                 metadata?.Count ?? 0,
                 !string.IsNullOrWhiteSpace(userId),
                 request.SystemPrompt?.Length ?? 0,
@@ -502,6 +505,23 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return normalized.Count == 0 ? null : normalized;
+    }
+
+    private static string? NormalizeServiceTier(string? serviceTier)
+    {
+        if (string.IsNullOrWhiteSpace(serviceTier))
+        {
+            return null;
+        }
+
+        return serviceTier.Trim().ToLowerInvariant() switch
+        {
+            GenerateTextServiceTiers.Auto => GenerateTextServiceTiers.Auto,
+            GenerateTextServiceTiers.Default => GenerateTextServiceTiers.Default,
+            GenerateTextServiceTiers.Flex => GenerateTextServiceTiers.Flex,
+            GenerateTextServiceTiers.Priority => GenerateTextServiceTiers.Priority,
+            _ => throw new InvalidOperationException($"Model service tier '{serviceTier}' is not supported.")
+        };
     }
 
     private static object? BuildResponseFormat(

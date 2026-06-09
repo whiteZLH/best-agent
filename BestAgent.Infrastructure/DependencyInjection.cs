@@ -60,6 +60,9 @@ public static class DependencyInjection
             Verbosity = string.IsNullOrWhiteSpace(configuration["OpenAI:Verbosity"])
                 ? null
                 : configuration["OpenAI:Verbosity"]!.Trim(),
+            ServiceTier = string.IsNullOrWhiteSpace(configuration["OpenAI:ServiceTier"])
+                ? null
+                : configuration["OpenAI:ServiceTier"]!.Trim(),
             PromptTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:PromptTokenPricePerMillion"], out var promptTokenPricePerMillion)
                 ? promptTokenPricePerMillion
                 : 0m,
