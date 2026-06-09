@@ -142,7 +142,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             }
 
             using var document = JsonDocument.Parse(body);
+            var responseId = TryGetResponseId(document.RootElement);
             var finishReason = TryGetFinishReason(document.RootElement);
+            var responseServiceTier = TryGetResponseServiceTier(document.RootElement);
             var reasoningSummary = TryGetReasoningSummary(document.RootElement);
             var toolCalls = TryGetToolCalls(document.RootElement, request.Tools);
             var output = ExtractOutput(document.RootElement, toolCalls);
@@ -168,7 +170,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 CalculateCost(promptTokens, completionTokens),
                 finishReason,
                 reasoningSummary,
-                toolCalls);
+                toolCalls,
+                responseId,
+                responseServiceTier);
 
             _agentMetrics.RecordModelCall(
                 model,
@@ -187,6 +191,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             {
                 activity?.SetTag("bestagent.finish_reason", result.FinishReason);
             }
+            if (!string.IsNullOrWhiteSpace(result.ServiceTier))
+            {
+                activity?.SetTag("bestagent.service_tier", result.ServiceTier);
+            }
+            if (!string.IsNullOrWhiteSpace(result.ResponseId))
+            {
+                activity?.SetTag("bestagent.response_id", result.ResponseId);
+            }
             if (!string.IsNullOrWhiteSpace(result.ReasoningSummary))
             {
                 activity?.SetTag("bestagent.reasoning_summary", Trim(result.ReasoningSummary, 512));
@@ -197,12 +209,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             }
             activity?.SetStatus(ActivityStatusCode.Ok);
             _logger.LogInformation(
-                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens, cost {Cost}, finish reason {FinishReason}, reasoning summary length {ReasoningSummaryLength}, native tool call count {ToolCallCount}",
+                "Model call completed for {Model} in {DurationMs}ms with {TotalTokens} total tokens, cost {Cost}, finish reason {FinishReason}, service tier {ServiceTier}, response id {ResponseId}, reasoning summary length {ReasoningSummaryLength}, native tool call count {ToolCallCount}",
                 model,
                 (DateTime.UtcNow - startedAt).TotalMilliseconds,
                 result.TotalTokens,
                 result.Cost,
                 result.FinishReason,
+                result.ServiceTier,
+                result.ResponseId,
                 result.ReasoningSummary?.Length ?? 0,
                 result.ToolCalls?.Count ?? 0);
 
@@ -728,6 +742,24 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             JsonValueKind.String when int.TryParse(value.GetString(), out var number) => number,
             _ => 0
         };
+    }
+
+    private static string? TryGetResponseId(JsonElement root)
+    {
+        return root.TryGetProperty("id", out var id)
+               && id.ValueKind == JsonValueKind.String
+               && !string.IsNullOrWhiteSpace(id.GetString())
+            ? id.GetString()!.Trim()
+            : null;
+    }
+
+    private static string? TryGetResponseServiceTier(JsonElement root)
+    {
+        return root.TryGetProperty("service_tier", out var serviceTier)
+               && serviceTier.ValueKind == JsonValueKind.String
+               && !string.IsNullOrWhiteSpace(serviceTier.GetString())
+            ? serviceTier.GetString()!.Trim().ToLowerInvariant()
+            : null;
     }
 
     private static string? TryGetFinishReason(JsonElement root)

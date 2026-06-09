@@ -157,6 +157,8 @@ public class GetAgentRunEventsQueryHandlerTests
                 TotalTokens: 165,
                 Cost: 0.0042m,
                 FinishReason: GenerateTextFinishReasons.Completed,
+                ResponseId: "chatcmpl_123",
+                ServiceTier: "flex",
                 ReasoningSummary: "Need refund policy confirmation.",
                 ToolCalls:
                 [
@@ -200,8 +202,10 @@ public class GetAgentRunEventsQueryHandlerTests
         var data = Assert.IsType<EventDataInfo>(evt.Data);
         Assert.NotNull(data.ModelCall);
         Assert.Equal("gpt-4o-mini", data.ModelCall!.Model);
+        Assert.Equal("chatcmpl_123", data.ModelCall.ResponseId);
         Assert.Equal(120, data.ModelCall.PromptTokens);
         Assert.Equal(GenerateTextFinishReasons.Completed, data.ModelCall.FinishReason);
+        Assert.Equal("flex", data.ModelCall.ServiceTier);
         Assert.Equal("Need refund policy confirmation.", data.ModelCall.ReasoningSummary);
         var toolCall = Assert.Single(data.ModelCall.ToolCalls!);
         Assert.Equal("call_123", toolCall.Id);

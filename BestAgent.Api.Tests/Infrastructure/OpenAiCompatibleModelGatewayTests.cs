@@ -23,6 +23,8 @@ public class OpenAiCompatibleModelGatewayTests
                 Content = new StringContent(
                     """
                     {
+                      "id": "chatcmpl_123",
+                      "service_tier": "flex",
                       "choices": [
                         {
                           "finish_reason": "stop",
@@ -71,6 +73,8 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("{\"action\":\"respond\",\"response\":\"hello\"}", result.Output);
         Assert.Equal(GenerateTextFinishReasons.Completed, result.FinishReason);
         Assert.Equal("Need to answer directly.", result.ReasoningSummary);
+        Assert.Equal("chatcmpl_123", result.ResponseId);
+        Assert.Equal("flex", result.ServiceTier);
         Assert.True(capturedPayload.HasValue);
         Assert.Equal(0.2m, capturedPayload.Value.GetProperty("temperature").GetDecimal());
         Assert.True(capturedPayload.Value.TryGetProperty("max_tokens", out var maxTokensElement));
@@ -100,6 +104,8 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("completed", activity.GetTagItem("bestagent.status"));
         Assert.Equal(18, activity.GetTagItem("bestagent.total_tokens"));
         Assert.Equal(GenerateTextFinishReasons.Completed, activity.GetTagItem("bestagent.finish_reason"));
+        Assert.Equal("flex", activity.GetTagItem("bestagent.service_tier"));
+        Assert.Equal("chatcmpl_123", activity.GetTagItem("bestagent.response_id"));
         Assert.Equal("Need to answer directly.", activity.GetTagItem("bestagent.reasoning_summary"));
     }
 

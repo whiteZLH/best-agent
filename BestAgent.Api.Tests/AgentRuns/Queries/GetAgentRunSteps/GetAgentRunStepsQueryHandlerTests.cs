@@ -236,6 +236,8 @@ public class GetAgentRunStepsQueryHandlerTests
                     TotalTokens: 165,
                     Cost: 0.0042m,
                     FinishReason: GenerateTextFinishReasons.Completed,
+                    ResponseId: "chatcmpl_123",
+                    ServiceTier: "flex",
                     ReasoningSummary: "Need refund policy confirmation.",
                     ToolCalls:
                     [
@@ -268,11 +270,13 @@ public class GetAgentRunStepsQueryHandlerTests
         Assert.Equal("model_call", item.StepType);
         Assert.NotNull(item.ModelCall);
         Assert.Equal("gpt-4o-mini", item.ModelCall!.Model);
+        Assert.Equal("chatcmpl_123", item.ModelCall.ResponseId);
         Assert.Equal(120, item.ModelCall.PromptTokens);
         Assert.Equal(45, item.ModelCall.CompletionTokens);
         Assert.Equal(165, item.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, item.ModelCall.Cost);
         Assert.Equal(GenerateTextFinishReasons.Completed, item.ModelCall.FinishReason);
+        Assert.Equal("flex", item.ModelCall.ServiceTier);
         Assert.Equal("Need refund policy confirmation.", item.ModelCall.ReasoningSummary);
         var toolCall = Assert.Single(item.ModelCall.ToolCalls!);
         Assert.Equal("call_123", toolCall.Id);

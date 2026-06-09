@@ -57,11 +57,13 @@ public record EventDataInfo(
             ModelCallPayloadSerializer.TryParse(data.ModelCall, out var modelCall)
                 ? new EventModelCallInfo(
                     modelCall!.Model,
+                    modelCall.ResponseId,
                     modelCall.PromptTokens,
                     modelCall.CompletionTokens,
                     modelCall.TotalTokens,
                     modelCall.Cost,
                     modelCall.FinishReason,
+                    modelCall.ServiceTier,
                     modelCall.Retrieval is null
                         ? null
                         : new EventModelCallRetrievalInfo(
@@ -196,11 +198,13 @@ public record EventDataInfo(
 
 public record EventModelCallInfo(
     string Model,
+    string? ResponseId,
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
     string? FinishReason,
+    string? ServiceTier,
     EventModelCallRetrievalInfo? Retrieval,
     string? ReasoningSummary = null,
     IReadOnlyList<EventModelCallToolCallInfo>? ToolCalls = null);

@@ -2,11 +2,13 @@ namespace BestAgent.Application.AgentRuns.Queries.GetAgentRunSteps;
 
 public record ModelCallInfo(
     string Model,
+    string? ResponseId,
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
     string? FinishReason = null,
+    string? ServiceTier = null,
     ModelCallRetrievalInfo? Retrieval = null,
     string? ReasoningSummary = null,
     IReadOnlyList<ModelCallToolCallInfo>? ToolCalls = null);

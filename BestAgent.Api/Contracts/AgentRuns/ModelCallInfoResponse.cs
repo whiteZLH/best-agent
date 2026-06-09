@@ -2,12 +2,14 @@ namespace BestAgent.Api.Contracts.AgentRuns;
 
 public record ModelCallInfoResponse(
     string Model,
+    string? ResponseId,
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
     ModelCallRetrievalInfoResponse? Retrieval = null,
     string? FinishReason = null,
+    string? ServiceTier = null,
     string? ReasoningSummary = null,
     IReadOnlyList<ModelCallToolCallInfoResponse>? ToolCalls = null);
 

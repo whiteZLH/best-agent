@@ -598,11 +598,13 @@ public class AgentRunsControllerTests
                     new ToolInvocationInfo("invocation-1", "weather", "async", "Pending", "wait-1", now, null, 0),
                     new ModelCallInfo(
                         "gpt-4o-mini",
+                        "chatcmpl_123",
                         120,
                         45,
                         165,
                         0.0042m,
                         GenerateTextFinishReasons.Completed,
+                        "flex",
                         new ModelCallRetrievalInfo(
                             "refund manager approval",
                             true,
@@ -685,11 +687,13 @@ public class AgentRunsControllerTests
         Assert.Equal("Pending", step.ToolInvocation.Status);
         Assert.Equal("wait-1", step.ToolInvocation.CallbackToken);
         Assert.Equal("gpt-4o-mini", step.ModelCall!.Model);
+        Assert.Equal("chatcmpl_123", step.ModelCall.ResponseId);
         Assert.Equal(120, step.ModelCall.PromptTokens);
         Assert.Equal(45, step.ModelCall.CompletionTokens);
         Assert.Equal(165, step.ModelCall.TotalTokens);
         Assert.Equal(0.0042m, step.ModelCall.Cost);
         Assert.Equal(GenerateTextFinishReasons.Completed, step.ModelCall.FinishReason);
+        Assert.Equal("flex", step.ModelCall.ServiceTier);
         Assert.Equal("Need refund policy confirmation.", step.ModelCall.ReasoningSummary);
         var stepToolCall = Assert.Single(step.ModelCall.ToolCalls!);
         Assert.Equal("call_123", stepToolCall.Id);
@@ -932,11 +936,13 @@ public class AgentRunsControllerTests
                         null,
                         new EventModelCallInfo(
                             "gpt-4o-mini",
+                            "chatcmpl_123",
                             120,
                             45,
                             165,
                             0.0042m,
                             GenerateTextFinishReasons.Completed,
+                            "flex",
                             new EventModelCallRetrievalInfo(
                                 "refund manager approval",
                                 true,
@@ -995,7 +1001,9 @@ public class AgentRunsControllerTests
         Assert.Equal("Completed", evt.Data.Status);
         Assert.Equal("{\"token\":\"***\",\"value\":\"done\"}", evt.Data.Output);
         Assert.Equal("gpt-4o-mini", evt.Data.ModelCall!.Model);
+        Assert.Equal("chatcmpl_123", evt.Data.ModelCall.ResponseId);
         Assert.Equal(GenerateTextFinishReasons.Completed, evt.Data.ModelCall.FinishReason);
+        Assert.Equal("flex", evt.Data.ModelCall.ServiceTier);
         Assert.Equal("Need refund policy confirmation.", evt.Data.ModelCall.ReasoningSummary);
         var eventToolCall = Assert.Single(evt.Data.ModelCall.ToolCalls!);
         Assert.Equal("call_123", eventToolCall.Id);

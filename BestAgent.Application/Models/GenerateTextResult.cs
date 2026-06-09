@@ -8,4 +8,6 @@ public record GenerateTextResult(
     decimal Cost = 0m,
     string? FinishReason = null,
     string? ReasoningSummary = null,
-    IReadOnlyList<GenerateTextToolCall>? ToolCalls = null);
+    IReadOnlyList<GenerateTextToolCall>? ToolCalls = null,
+    string? ResponseId = null,
+    string? ServiceTier = null);

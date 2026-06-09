@@ -501,6 +501,7 @@ public class AgentRunsController : ControllerBase
                 ? null
                 : new EventModelCallInfoResponse(
                     resolvedData.ModelCall.Model,
+                    resolvedData.ModelCall.ResponseId,
                     resolvedData.ModelCall.PromptTokens,
                     resolvedData.ModelCall.CompletionTokens,
                     resolvedData.ModelCall.TotalTokens,
@@ -516,6 +517,7 @@ public class AgentRunsController : ControllerBase
                             resolvedData.ModelCall.Retrieval.SelectedSources,
                             resolvedData.ModelCall.Retrieval.Citations),
                     resolvedData.ModelCall.FinishReason,
+                    resolvedData.ModelCall.ServiceTier,
                     resolvedData.ModelCall.ReasoningSummary,
                     resolvedData.ModelCall.ToolCalls?
                         .Select(toolCall => new EventModelCallToolCallInfoResponse(

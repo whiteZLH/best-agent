@@ -17,12 +17,14 @@ public record EventDataInfoResponse(
 
 public record EventModelCallInfoResponse(
     string Model,
+    string? ResponseId,
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
     EventModelCallRetrievalInfoResponse? Retrieval,
     string? FinishReason = null,
+    string? ServiceTier = null,
     string? ReasoningSummary = null,
     IReadOnlyList<EventModelCallToolCallInfoResponse>? ToolCalls = null);
 

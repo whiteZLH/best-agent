@@ -87,11 +87,13 @@ public class GetAgentRunStepsQueryHandler : IRequestHandler<GetAgentRunStepsQuer
 
         return new ModelCallInfo(
             payload!.Model,
+            payload.ResponseId,
             payload.PromptTokens,
             payload.CompletionTokens,
             payload.TotalTokens,
             payload.Cost,
             payload.FinishReason,
+            payload.ServiceTier,
             payload.Retrieval is null
                 ? null
                 : new ModelCallRetrievalInfo(

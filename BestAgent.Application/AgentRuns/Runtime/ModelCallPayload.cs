@@ -6,11 +6,13 @@ namespace BestAgent.Application.AgentRuns.Runtime;
 public sealed record ModelCallPayload(
     string Type,
     string Model,
+    string? ResponseId,
     int PromptTokens,
     int CompletionTokens,
     int TotalTokens,
     decimal Cost,
     string? FinishReason = null,
+    string? ServiceTier = null,
     ModelCallRetrievalPayload? Retrieval = null,
     string? ReasoningSummary = null,
     IReadOnlyList<ModelCallToolCallPayload>? ToolCalls = null);
@@ -37,11 +39,13 @@ public static class ModelCallPayloadSerializer
         return JsonSerializer.Serialize(new ModelCallPayload(
             "model_call",
             string.IsNullOrWhiteSpace(model) ? string.Empty : model.Trim(),
+            string.IsNullOrWhiteSpace(result.ResponseId) ? null : result.ResponseId.Trim(),
             Math.Max(0, result.PromptTokens),
             Math.Max(0, result.CompletionTokens),
             Math.Max(0, result.TotalTokens),
             result.Cost < 0m ? 0m : result.Cost,
             string.IsNullOrWhiteSpace(result.FinishReason) ? null : result.FinishReason.Trim(),
+            string.IsNullOrWhiteSpace(result.ServiceTier) ? null : result.ServiceTier.Trim(),
             retrieval is null
                 ? null
                 : new ModelCallRetrievalPayload(
