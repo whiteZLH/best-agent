@@ -1329,63 +1329,103 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
         var firstChoice = choices[0];
         if (!firstChoice.TryGetProperty("message", out var message)
-            || message.ValueKind != JsonValueKind.Object
-            || !message.TryGetProperty("tool_calls", out var toolCalls)
-            || toolCalls.ValueKind != JsonValueKind.Array)
+            || message.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        var calls = new List<GenerateTextToolCall>();
-        foreach (var toolCall in toolCalls.EnumerateArray())
+        if (message.TryGetProperty("tool_calls", out var toolCalls)
+            && toolCalls.ValueKind == JsonValueKind.Array)
         {
-            var type = toolCall.TryGetProperty("type", out var typeElement)
-                && typeElement.ValueKind == JsonValueKind.String
-                ? typeElement.GetString()
-                : null;
-            if (!string.Equals(type, "function", StringComparison.OrdinalIgnoreCase))
+            var calls = new List<GenerateTextToolCall>();
+            foreach (var toolCall in toolCalls.EnumerateArray())
             {
-                throw new InvalidOperationException($"Model gateway returned unsupported native tool call type '{type ?? "unknown"}'.");
+                calls.Add(ParseNativeToolCall(toolCall, declaredTools));
             }
 
-            var id = toolCall.TryGetProperty("id", out var idElement)
-                && idElement.ValueKind == JsonValueKind.String
-                ? idElement.GetString()
-                : null;
-            if (string.IsNullOrWhiteSpace(id))
-            {
-                throw new InvalidOperationException("Model gateway returned a native tool call without an id.");
-            }
-
-            if (!toolCall.TryGetProperty("function", out var function)
-                || function.ValueKind != JsonValueKind.Object)
-            {
-                throw new InvalidOperationException("Model gateway returned a native tool call without a function payload.");
-            }
-
-            var toolName = function.TryGetProperty("name", out var nameElement)
-                && nameElement.ValueKind == JsonValueKind.String
-                ? nameElement.GetString()
-                : null;
-            if (string.IsNullOrWhiteSpace(toolName))
-            {
-                throw new InvalidOperationException("Model gateway returned a native tool call without a function name.");
-            }
-
-            var toolArguments = function.TryGetProperty("arguments", out var argumentsElement)
-                && argumentsElement.ValueKind == JsonValueKind.String
-                ? argumentsElement.GetString()
-                : null;
-            ValidateNativeToolCall(toolName, toolArguments, declaredTools);
-
-            calls.Add(new GenerateTextToolCall(
-                id.Trim(),
-                type!.Trim(),
-                toolName.Trim(),
-                string.IsNullOrWhiteSpace(toolArguments) ? null : toolArguments.Trim()));
+            return calls.Count == 0 ? null : calls;
         }
 
-        return calls.Count == 0 ? null : calls;
+        if (message.TryGetProperty("function_call", out var functionCall))
+        {
+            if (functionCall.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("Model gateway returned a legacy function_call payload that is not an object.");
+            }
+
+            return
+            [
+                ParseLegacyFunctionCall(functionCall, declaredTools)
+            ];
+        }
+
+        return null;
+    }
+
+    private static GenerateTextToolCall ParseNativeToolCall(
+        JsonElement toolCall,
+        IReadOnlyList<GenerateTextToolDefinition>? declaredTools)
+    {
+        var type = toolCall.TryGetProperty("type", out var typeElement)
+            && typeElement.ValueKind == JsonValueKind.String
+            ? typeElement.GetString()
+            : null;
+        if (!string.Equals(type, "function", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Model gateway returned unsupported native tool call type '{type ?? "unknown"}'.");
+        }
+
+        var id = toolCall.TryGetProperty("id", out var idElement)
+            && idElement.ValueKind == JsonValueKind.String
+            ? idElement.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            throw new InvalidOperationException("Model gateway returned a native tool call without an id.");
+        }
+
+        if (!toolCall.TryGetProperty("function", out var function)
+            || function.ValueKind != JsonValueKind.Object)
+        {
+            throw new InvalidOperationException("Model gateway returned a native tool call without a function payload.");
+        }
+
+        return ParseFunctionToolCall(function, id.Trim(), type!.Trim(), declaredTools);
+    }
+
+    private static GenerateTextToolCall ParseLegacyFunctionCall(
+        JsonElement functionCall,
+        IReadOnlyList<GenerateTextToolDefinition>? declaredTools)
+    {
+        return ParseFunctionToolCall(functionCall, "legacy_function_call", "function", declaredTools);
+    }
+
+    private static GenerateTextToolCall ParseFunctionToolCall(
+        JsonElement function,
+        string callId,
+        string callType,
+        IReadOnlyList<GenerateTextToolDefinition>? declaredTools)
+    {
+        var toolName = function.TryGetProperty("name", out var nameElement)
+            && nameElement.ValueKind == JsonValueKind.String
+            ? nameElement.GetString()
+            : null;
+        if (string.IsNullOrWhiteSpace(toolName))
+        {
+            throw new InvalidOperationException("Model gateway returned a native tool call without a function name.");
+        }
+
+        var toolArguments = function.TryGetProperty("arguments", out var argumentsElement)
+            && argumentsElement.ValueKind == JsonValueKind.String
+            ? argumentsElement.GetString()
+            : null;
+        ValidateNativeToolCall(toolName, toolArguments, declaredTools);
+
+        return new GenerateTextToolCall(
+            callId,
+            callType,
+            toolName.Trim(),
+            string.IsNullOrWhiteSpace(toolArguments) ? null : toolArguments.Trim());
     }
 
     private static void ValidateNativeToolCall(
