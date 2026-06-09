@@ -1535,6 +1535,57 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldIgnoreBlankRequestReasoningEffortOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                ReasoningEffort = GenerateTextReasoningEfforts.High
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                ReasoningEffort: "   "),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal("high", capturedPayload.Value.GetProperty("reasoning_effort").GetString());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldPreferRequestVerbosityOverConfiguredDefault()
     {
         JsonElement? capturedPayload = null;
@@ -1633,6 +1684,57 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldIgnoreBlankRequestVerbosityOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                Verbosity = GenerateTextVerbosityLevels.High
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Verbosity: "   "),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal("high", capturedPayload.Value.GetProperty("verbosity").GetString());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldPreferRequestServiceTierOverConfiguredDefault()
     {
         JsonElement? capturedPayload = null;
@@ -1728,6 +1830,57 @@ public class OpenAiCompatibleModelGatewayTests
 
         Assert.True(capturedPayload.HasValue);
         Assert.Equal("priority", capturedPayload.Value.GetProperty("service_tier").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldIgnoreBlankRequestServiceTierOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                ServiceTier = GenerateTextServiceTiers.Flex
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                ServiceTier: "   "),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal("flex", capturedPayload.Value.GetProperty("service_tier").GetString());
     }
 
     [Fact]
@@ -3177,6 +3330,64 @@ public class OpenAiCompatibleModelGatewayTests
                         "Get the weather for a city",
                         "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}")
                 ]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        Assert.Equal("required", capturedPayload.Value.GetProperty("tool_choice").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldIgnoreBlankRequestToolChoiceOverride()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                ToolChoice = "required"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}")
+                ],
+                ToolChoice: "   "),
             CancellationToken.None);
 
         Assert.True(capturedPayload.HasValue);

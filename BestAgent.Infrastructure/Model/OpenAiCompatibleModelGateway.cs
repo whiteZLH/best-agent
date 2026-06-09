@@ -80,11 +80,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 ?? _options.ParallelToolCalls
                 ?? (hasNamedTools ? false : null),
                 request.Tools);
-            var reasoningEffort = NormalizeReasoningEffort(request.ReasoningEffort ?? _options.ReasoningEffort);
+            var reasoningEffort = NormalizeReasoningEffort(CoalesceMeaningfulString(request.ReasoningEffort, _options.ReasoningEffort));
             var userId = NormalizeUserId(request.UserId);
-            var verbosity = NormalizeVerbosity(request.Verbosity ?? _options.Verbosity);
+            var verbosity = NormalizeVerbosity(CoalesceMeaningfulString(request.Verbosity, _options.Verbosity));
             var metadata = NormalizeMetadata(request.Metadata);
-            var serviceTier = NormalizeServiceTier(request.ServiceTier ?? _options.ServiceTier);
+            var serviceTier = NormalizeServiceTier(CoalesceMeaningfulString(request.ServiceTier, _options.ServiceTier));
             var store = request.Store ?? _options.Store;
             var logProbs = request.LogProbs ?? _options.LogProbs;
             var topLogProbs = NormalizeTopLogProbs(request.TopLogProbs ?? _options.TopLogProbs, logProbs);
@@ -95,7 +95,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 request.OutputDescription,
                 request.OutputStrict);
             var tools = BuildTools(request.Tools);
-            var toolChoiceValue = request.ToolChoice
+            var toolChoiceValue = CoalesceMeaningfulString(request.ToolChoice, null)
                 ?? (hasNamedTools ? _options.ToolChoice ?? "auto" : null);
             var toolChoice = BuildToolChoice(toolChoiceValue, request.Tools);
 
@@ -674,6 +674,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return normalized.Count == 0 ? null : normalized;
+    }
+
+    private static string? CoalesceMeaningfulString(string? value, string? fallback)
+    {
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 
     private static int? NormalizeTimeoutSeconds(int? timeoutSeconds)
