@@ -1116,9 +1116,20 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return [];
         }
 
-        return tools
+        var namedTools = tools
             .Where(tool => !string.IsNullOrWhiteSpace(tool.Name))
             .ToArray();
+        var duplicateName = namedTools
+            .Select(tool => tool.Name.Trim())
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1)?
+            .Key;
+        if (!string.IsNullOrWhiteSpace(duplicateName))
+        {
+            throw new InvalidOperationException($"Model tools must not contain duplicate name '{duplicateName}'.");
+        }
+
+        return namedTools;
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)
