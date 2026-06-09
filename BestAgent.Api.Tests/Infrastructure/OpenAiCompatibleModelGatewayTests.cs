@@ -3100,6 +3100,68 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldRejectNativeToolCallArgumentsThatViolateDeclaredSchema()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finish_reason": "tool_calls",
+                          "message": {
+                            "content": null,
+                            "tool_calls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "weather",
+                                  "arguments": "{}"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    Tools:
+                    [
+                        new GenerateTextToolDefinition(
+                            "weather",
+                            "Get the weather for a city",
+                            "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Input for tool 'weather' is missing required property 'city'.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldEmitFailedModelCallActivity_WhenGatewayFails()
     {
         using var collector = new ActivityTestCollector(AgentTracing.SourceName);

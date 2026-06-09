@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using BestAgent.Application.Models;
 using BestAgent.Application.Observability;
+using BestAgent.Infrastructure.Tools;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -1280,25 +1281,57 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 $"Model gateway returned undeclared native tool call '{toolName.Trim()}'.");
         }
 
+        using var parsedArguments = ParseNativeToolCallArguments(toolName, toolArguments);
+        ValidateNativeToolCallArgumentsAgainstSchema(matchedTool, parsedArguments.RootElement);
+    }
+
+    private static JsonDocument ParseNativeToolCallArguments(string toolName, string? toolArguments)
+    {
         if (string.IsNullOrWhiteSpace(toolArguments))
         {
-            return;
+            return JsonDocument.Parse("{}");
         }
 
         try
         {
-            using var document = JsonDocument.Parse(toolArguments);
+            var document = JsonDocument.Parse(toolArguments);
             if (document.RootElement.ValueKind != JsonValueKind.Object)
             {
+                document.Dispose();
                 throw new InvalidOperationException(
                     $"Model gateway returned native tool call arguments for '{toolName.Trim()}' that are not a JSON object.");
             }
+
+            return document;
         }
         catch (JsonException ex)
         {
             throw new InvalidOperationException(
                 $"Model gateway returned invalid native tool call arguments for '{toolName.Trim()}'.",
                 ex);
+        }
+    }
+
+    private static void ValidateNativeToolCallArgumentsAgainstSchema(
+        GenerateTextToolDefinition declaredTool,
+        JsonElement arguments)
+    {
+        if (string.IsNullOrWhiteSpace(declaredTool.InputSchema))
+        {
+            return;
+        }
+
+        var toolName = declaredTool.Name.Trim();
+        var schema = JsonSchemaToolValidation.ParseSchema(toolName, declaredTool.InputSchema, "Input");
+        if (!JsonSchemaToolValidation.TryValidateElement(
+                toolName,
+                "$",
+                arguments,
+                schema,
+                out var error,
+                "Input"))
+        {
+            throw new InvalidOperationException(error);
         }
     }
 
