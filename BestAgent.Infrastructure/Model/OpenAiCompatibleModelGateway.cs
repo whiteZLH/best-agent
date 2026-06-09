@@ -823,7 +823,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         var normalizedOutputMode = NormalizeOutputMode(outputMode, outputSchema);
         return normalizedOutputMode switch
         {
-            null or GenerateTextOutputModes.Text => null,
+            null => null,
+            GenerateTextOutputModes.Text => new
+            {
+                type = GenerateTextOutputModes.Text
+            },
             GenerateTextOutputModes.JsonObject => new
             {
                 type = GenerateTextOutputModes.JsonObject
