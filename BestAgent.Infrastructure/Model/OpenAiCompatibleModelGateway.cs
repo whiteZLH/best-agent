@@ -87,7 +87,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var serviceTier = NormalizeServiceTier(CoalesceMeaningfulString(request.ServiceTier, _options.ServiceTier));
             var store = request.Store ?? _options.Store;
             var logProbs = request.LogProbs ?? _options.LogProbs;
-            var topLogProbs = NormalizeTopLogProbs(request.TopLogProbs ?? _options.TopLogProbs, logProbs);
+            var topLogProbs = ResolveTopLogProbs(request.TopLogProbs, _options.TopLogProbs, request.LogProbs, logProbs);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -793,6 +793,20 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             > 20 => 20,
             _ => topLogProbs
         };
+    }
+
+    private static int? ResolveTopLogProbs(
+        int? requestTopLogProbs,
+        int? configuredTopLogProbs,
+        bool? requestLogProbs,
+        bool? effectiveLogProbs)
+    {
+        if (requestLogProbs == false && requestTopLogProbs is null)
+        {
+            return null;
+        }
+
+        return NormalizeTopLogProbs(requestTopLogProbs ?? configuredTopLogProbs, effectiveLogProbs);
     }
 
     private static IReadOnlyDictionary<string, string>? NormalizeMetadata(IReadOnlyDictionary<string, string>? metadata)
