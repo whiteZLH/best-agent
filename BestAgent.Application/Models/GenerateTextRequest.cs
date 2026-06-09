@@ -22,4 +22,5 @@ public record GenerateTextRequest(
     IReadOnlyList<string>? StopSequences = null,
     bool? ParallelToolCalls = null,
     string? ReasoningEffort = null,
-    string? UserId = null);
+    string? UserId = null,
+    string? Verbosity = null);

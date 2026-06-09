@@ -68,6 +68,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var parallelToolCalls = NormalizeParallelToolCalls(request.ParallelToolCalls ?? _options.ParallelToolCalls, request.Tools);
             var reasoningEffort = NormalizeReasoningEffort(request.ReasoningEffort ?? _options.ReasoningEffort);
             var userId = NormalizeUserId(request.UserId);
+            var verbosity = NormalizeVerbosity(request.Verbosity ?? _options.Verbosity);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -91,12 +92,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 parallel_tool_calls = parallelToolCalls,
                 reasoning_effort = reasoningEffort,
                 user = userId,
+                verbosity,
                 response_format = responseFormat,
                 tools,
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -113,6 +115,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 stopSequences?.Length ?? 0,
                 parallelToolCalls,
                 reasoningEffort,
+                verbosity,
                 !string.IsNullOrWhiteSpace(userId),
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
@@ -436,6 +439,22 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return string.IsNullOrWhiteSpace(userId)
             ? null
             : userId.Trim();
+    }
+
+    private static string? NormalizeVerbosity(string? verbosity)
+    {
+        if (string.IsNullOrWhiteSpace(verbosity))
+        {
+            return null;
+        }
+
+        return verbosity.Trim().ToLowerInvariant() switch
+        {
+            GenerateTextVerbosityLevels.Low => GenerateTextVerbosityLevels.Low,
+            GenerateTextVerbosityLevels.Medium => GenerateTextVerbosityLevels.Medium,
+            GenerateTextVerbosityLevels.High => GenerateTextVerbosityLevels.High,
+            _ => throw new InvalidOperationException($"Model verbosity '{verbosity}' is not supported.")
+        };
     }
 
     private static object? BuildResponseFormat(

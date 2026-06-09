@@ -57,6 +57,9 @@ public static class DependencyInjection
             ReasoningEffort = string.IsNullOrWhiteSpace(configuration["OpenAI:ReasoningEffort"])
                 ? null
                 : configuration["OpenAI:ReasoningEffort"]!.Trim(),
+            Verbosity = string.IsNullOrWhiteSpace(configuration["OpenAI:Verbosity"])
+                ? null
+                : configuration["OpenAI:Verbosity"]!.Trim(),
             PromptTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:PromptTokenPricePerMillion"], out var promptTokenPricePerMillion)
                 ? promptTokenPricePerMillion
                 : 0m,

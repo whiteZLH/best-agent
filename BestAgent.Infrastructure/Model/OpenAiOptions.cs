@@ -30,6 +30,8 @@ public class OpenAiOptions
 
     public string? ReasoningEffort { get; init; }
 
+    public string? Verbosity { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }
