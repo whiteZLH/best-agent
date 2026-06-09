@@ -96,8 +96,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 request.OutputStrict);
             var tools = BuildTools(request.Tools);
             var toolChoiceValue = request.ToolChoice
-                ?? _options.ToolChoice
-                ?? (hasNamedTools ? "auto" : null);
+                ?? (hasNamedTools ? _options.ToolChoice ?? "auto" : null);
             var toolChoice = BuildToolChoice(toolChoiceValue, request.Tools);
 
             var payload = new
