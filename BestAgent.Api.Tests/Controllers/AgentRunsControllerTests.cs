@@ -86,6 +86,7 @@ public class AgentRunsControllerTests
         Assert.Equal("hello", response.Input);
         Assert.Equal("done", response.Output);
         Assert.Equal("Succeeded", response.Status);
+        Assert.Equal("/agent-runs/run-001/stream", response.StreamUrl);
     }
 
     [Fact]
@@ -118,6 +119,7 @@ public class AgentRunsControllerTests
         var response = Assert.IsType<CreateAgentRunResponse>(createdResult.Value);
         Assert.Equal("run-001", response.RunId);
         Assert.Equal("Running", response.Status);
+        Assert.Null(response.StreamUrl);
     }
 
     [Fact]

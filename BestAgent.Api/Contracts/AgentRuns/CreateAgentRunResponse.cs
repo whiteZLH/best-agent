@@ -6,4 +6,5 @@ public record CreateAgentRunResponse(
     string? Input,
     string? Output,
     string Status,
-    string? WaitToken = null);
+    string? WaitToken = null,
+    string? StreamUrl = null);

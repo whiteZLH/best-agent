@@ -86,6 +86,13 @@ public class AgentRunsController : ControllerBase
 
         var result = await _mediator.Send(command, cancellationToken);
         var response = _mapper.Map<CreateAgentRunResponse>(result);
+        if (command.Stream == true)
+        {
+            response = response with
+            {
+                StreamUrl = $"/agent-runs/{response.RunId}/stream"
+            };
+        }
 
         return Created($"/agent-runs/{response.RunId}", response);
     }
