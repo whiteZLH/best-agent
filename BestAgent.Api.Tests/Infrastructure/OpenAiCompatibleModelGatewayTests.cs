@@ -533,6 +533,81 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldSendStructuredMessageContentParts_WhenProvided()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "Ignored system prompt",
+                "Ignored input",
+                Messages:
+                [
+                    new GenerateTextMessage(
+                        "user",
+                        ContentParts:
+                        [
+                            new GenerateTextMessageTextPart("Describe this image."),
+                            new GenerateTextMessageImageUrlPart(" https://example.com/image.png ", "HIGH"),
+                            new GenerateTextMessageInputAudioPart(" base64-audio ", "WAV"),
+                            new GenerateTextMessageFilePart(FileId: " file_123 ", FileName: " note.txt ")
+                        ])
+                ]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var message = Assert.Single(capturedPayload.Value.GetProperty("messages").EnumerateArray());
+        Assert.Equal("user", message.GetProperty("role").GetString());
+        var contentParts = message.GetProperty("content").EnumerateArray().ToArray();
+        Assert.Equal(4, contentParts.Length);
+        Assert.Equal("text", contentParts[0].GetProperty("type").GetString());
+        Assert.Equal("Describe this image.", contentParts[0].GetProperty("text").GetString());
+        Assert.Equal("image_url", contentParts[1].GetProperty("type").GetString());
+        Assert.Equal("https://example.com/image.png", contentParts[1].GetProperty("image_url").GetProperty("url").GetString());
+        Assert.Equal("high", contentParts[1].GetProperty("image_url").GetProperty("detail").GetString());
+        Assert.Equal("input_audio", contentParts[2].GetProperty("type").GetString());
+        Assert.Equal("base64-audio", contentParts[2].GetProperty("input_audio").GetProperty("data").GetString());
+        Assert.Equal("wav", contentParts[2].GetProperty("input_audio").GetProperty("format").GetString());
+        Assert.Equal("file", contentParts[3].GetProperty("type").GetString());
+        Assert.Equal("file_123", contentParts[3].GetProperty("file").GetProperty("file_id").GetString());
+        Assert.Equal("note.txt", contentParts[3].GetProperty("file").GetProperty("filename").GetString());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldSendToolCallId_ForToolMessages()
     {
         JsonElement? capturedPayload = null;
@@ -591,6 +666,108 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldRejectMessagesWithoutContentOrContentParts()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage("user", " ")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model messages must include at least one valid message.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectStructuredContentPartsForToolMessages()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage(
+                            "tool",
+                            ToolCallId: "call_123",
+                            ContentParts:
+                            [
+                                new GenerateTextMessageTextPart("tool output")
+                            ])
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model tool messages must use plain string content.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldRejectUnsupportedMessageRole()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
@@ -636,6 +813,59 @@ public class OpenAiCompatibleModelGatewayTests
                 CancellationToken.None));
 
         Assert.Equal("Model message role 'critic' is not supported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectUnsupportedImageDetail()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage(
+                            "user",
+                            ContentParts:
+                            [
+                                new GenerateTextMessageImageUrlPart("https://example.com/image.png", "full")
+                            ])
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model image detail 'full' is not supported.", exception.Message);
     }
 
     [Fact]

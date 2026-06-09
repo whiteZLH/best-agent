@@ -264,7 +264,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var messages = request.Messages
                 .Where(message =>
                     !string.IsNullOrWhiteSpace(message.Role)
-                    && !string.IsNullOrWhiteSpace(message.Content))
+                    && HasMessageContent(message))
                 .Select(BuildMessagePayload)
                 .Cast<object>()
                 .ToArray();
@@ -272,6 +272,8 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             {
                 return messages;
             }
+
+            throw new InvalidOperationException("Model messages must include at least one valid message.");
         }
 
         if (string.IsNullOrWhiteSpace(request.SystemPrompt))
@@ -295,7 +297,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         {
             return request.Messages.Count(message =>
                 !string.IsNullOrWhiteSpace(message.Role)
-                && !string.IsNullOrWhiteSpace(message.Content));
+                && HasMessageContent(message));
         }
 
         return string.IsNullOrWhiteSpace(request.SystemPrompt) ? 1 : 2;
@@ -304,13 +306,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     private static object BuildMessagePayload(GenerateTextMessage message)
     {
         var role = NormalizeMessageRole(message.Role);
-        var content = message.Content.Trim();
+        var content = BuildMessageContent(message);
         var name = string.IsNullOrWhiteSpace(message.Name)
             ? null
             : message.Name.Trim();
         var toolCallId = string.IsNullOrWhiteSpace(message.ToolCallId)
             ? null
             : message.ToolCallId.Trim();
+
+        if (role == "tool" && content is not string)
+        {
+            throw new InvalidOperationException("Model tool messages must use plain string content.");
+        }
 
         if (role == "tool" && string.IsNullOrWhiteSpace(toolCallId))
         {
@@ -323,6 +330,143 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             content,
             name,
             tool_call_id = toolCallId
+        };
+    }
+
+    private static bool HasMessageContent(GenerateTextMessage message)
+    {
+        return !string.IsNullOrWhiteSpace(message.Content)
+               || message.ContentParts is { Count: > 0 };
+    }
+
+    private static object BuildMessageContent(GenerateTextMessage message)
+    {
+        if (message.ContentParts is { Count: > 0 })
+        {
+            return message.ContentParts
+                .Select(BuildMessageContentPart)
+                .Cast<object>()
+                .ToArray();
+        }
+
+        if (!string.IsNullOrWhiteSpace(message.Content))
+        {
+            return message.Content.Trim();
+        }
+
+        throw new InvalidOperationException("Model messages must include content or content parts.");
+    }
+
+    private static object BuildMessageContentPart(GenerateTextMessageContentPart part)
+    {
+        return part switch
+        {
+            GenerateTextMessageTextPart textPart => BuildTextContentPart(textPart),
+            GenerateTextMessageImageUrlPart imageUrlPart => BuildImageUrlContentPart(imageUrlPart),
+            GenerateTextMessageInputAudioPart inputAudioPart => BuildInputAudioContentPart(inputAudioPart),
+            GenerateTextMessageFilePart filePart => BuildFileContentPart(filePart),
+            _ => throw new InvalidOperationException($"Model message content part type '{part.Type}' is not supported.")
+        };
+    }
+
+    private static object BuildTextContentPart(GenerateTextMessageTextPart part)
+    {
+        if (string.IsNullOrWhiteSpace(part.Text))
+        {
+            throw new InvalidOperationException("Model text content parts must include text.");
+        }
+
+        return new
+        {
+            type = "text",
+            text = part.Text.Trim()
+        };
+    }
+
+    private static object BuildImageUrlContentPart(GenerateTextMessageImageUrlPart part)
+    {
+        if (string.IsNullOrWhiteSpace(part.Url))
+        {
+            throw new InvalidOperationException("Model image_url content parts must include a url.");
+        }
+
+        var detail = NormalizeImageDetail(part.Detail);
+        return new
+        {
+            type = "image_url",
+            image_url = new
+            {
+                url = part.Url.Trim(),
+                detail
+            }
+        };
+    }
+
+    private static string? NormalizeImageDetail(string? detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail))
+        {
+            return null;
+        }
+
+        return detail.Trim().ToLowerInvariant() switch
+        {
+            "auto" => "auto",
+            "low" => "low",
+            "high" => "high",
+            _ => throw new InvalidOperationException($"Model image detail '{detail}' is not supported.")
+        };
+    }
+
+    private static object BuildInputAudioContentPart(GenerateTextMessageInputAudioPart part)
+    {
+        if (string.IsNullOrWhiteSpace(part.Data))
+        {
+            throw new InvalidOperationException("Model input_audio content parts must include data.");
+        }
+
+        if (string.IsNullOrWhiteSpace(part.Format))
+        {
+            throw new InvalidOperationException("Model input_audio content parts must include a format.");
+        }
+
+        return new
+        {
+            type = "input_audio",
+            input_audio = new
+            {
+                data = part.Data.Trim(),
+                format = part.Format.Trim().ToLowerInvariant()
+            }
+        };
+    }
+
+    private static object BuildFileContentPart(GenerateTextMessageFilePart part)
+    {
+        var fileId = string.IsNullOrWhiteSpace(part.FileId)
+            ? null
+            : part.FileId.Trim();
+        var fileData = string.IsNullOrWhiteSpace(part.FileData)
+            ? null
+            : part.FileData.Trim();
+        var fileName = string.IsNullOrWhiteSpace(part.FileName)
+            ? null
+            : part.FileName.Trim();
+
+        if (string.IsNullOrWhiteSpace(fileId) && string.IsNullOrWhiteSpace(fileData))
+        {
+            throw new InvalidOperationException("Model file content parts must include file_id or file_data.");
+        }
+
+        return new
+        {
+            type = "file",
+            file = new
+            {
+                file_id = fileId,
+                file_data = fileData,
+                filename = fileName
+            }
         };
     }
 
