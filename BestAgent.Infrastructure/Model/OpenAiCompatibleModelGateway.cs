@@ -1191,6 +1191,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             "function_call" => GenerateTextFinishReasons.ToolCall,
             "length" => GenerateTextFinishReasons.MaxOutputTokens,
             "content_filter" => GenerateTextFinishReasons.ContentFiltered,
+            "content_filtered" => GenerateTextFinishReasons.ContentFiltered,
             var value => value
         };
     }
