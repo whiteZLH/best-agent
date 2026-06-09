@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BestAgent.Application.Models;
 using BestAgent.Application.Observability;
 using BestAgent.Infrastructure.Tools;
@@ -13,6 +14,7 @@ namespace BestAgent.Infrastructure.Model;
 public class OpenAiCompatibleModelGateway : IModelGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly Regex OpenAiCompatibleNamePattern = new("^[A-Za-z0-9_-]+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly HashSet<string> SupportedMessageRoles = new(StringComparer.Ordinal)
     {
         "developer",
@@ -980,7 +982,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             throw new InvalidOperationException("Model output name must not be blank when provided.");
         }
 
-        return outputName.Trim();
+        return NormalizeCompatibleName(outputName.Trim(), "Model output name");
     }
 
     private static string? NormalizeOutputDescription(string? outputDescription)
@@ -1045,7 +1047,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 type = "function",
                 function = new
                 {
-                    name = tool.Name.Trim(),
+                    name = NormalizeToolName(tool.Name),
                     description = string.IsNullOrWhiteSpace(tool.Description) ? null : tool.Description.Trim(),
                     parameters = ParseToolParameters(tool),
                     strict = tool.Strict ?? true
@@ -1171,7 +1173,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             .Where(tool => !string.IsNullOrWhiteSpace(tool.Name))
             .ToArray();
         var duplicateName = namedTools
-            .Select(tool => tool.Name.Trim())
+            .Select(tool => NormalizeToolName(tool.Name))
             .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(group => group.Count() > 1)?
             .Key;
@@ -1181,6 +1183,26 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return namedTools;
+    }
+
+    private static string NormalizeToolName(string toolName)
+    {
+        return NormalizeCompatibleName(toolName.Trim(), $"Model tool name '{toolName.Trim()}'");
+    }
+
+    private static string NormalizeCompatibleName(string value, string fieldName)
+    {
+        if (value.Length > 64)
+        {
+            throw new InvalidOperationException($"{fieldName} must be 64 characters or fewer.");
+        }
+
+        if (!OpenAiCompatibleNamePattern.IsMatch(value))
+        {
+            throw new InvalidOperationException($"{fieldName} must contain only letters, numbers, underscores, or dashes.");
+        }
+
+        return value;
     }
 
     private static int TryGetUsageInt(JsonElement root, string propertyName)
