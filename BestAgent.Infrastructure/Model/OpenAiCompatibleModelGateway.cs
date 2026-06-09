@@ -277,18 +277,10 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         if (request.Messages is { Count: > 0 })
         {
             var messages = request.Messages
-                .Where(message =>
-                    !string.IsNullOrWhiteSpace(message.Role)
-                    && HasMessageContent(message))
                 .Select(BuildMessagePayload)
                 .Cast<object>()
                 .ToArray();
-            if (messages.Length > 0)
-            {
-                return messages;
-            }
-
-            throw new InvalidOperationException("Model messages must include at least one valid message.");
+            return messages;
         }
 
         if (string.IsNullOrWhiteSpace(request.SystemPrompt))
@@ -310,9 +302,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     {
         if (request.Messages is { Count: > 0 })
         {
-            return request.Messages.Count(message =>
-                !string.IsNullOrWhiteSpace(message.Role)
-                && HasMessageContent(message));
+            return request.Messages.Count;
         }
 
         return string.IsNullOrWhiteSpace(request.SystemPrompt) ? 1 : 2;
@@ -348,13 +338,6 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             tool_call_id = toolCallId,
             tool_calls = toolCalls
         };
-    }
-
-    private static bool HasMessageContent(GenerateTextMessage message)
-    {
-        return !string.IsNullOrWhiteSpace(message.Content)
-               || message.ContentParts is { Count: > 0 }
-               || message.ToolCalls is { Count: > 0 };
     }
 
     private static object? BuildMessageContent(
