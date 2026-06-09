@@ -1574,8 +1574,18 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return toolCallDecision;
         }
 
-        return TryCollectText(message, "content", out var contentText)
-            ? contentText
+        if (TryCollectText(message, "content", out var contentText))
+        {
+            return contentText;
+        }
+
+        if (TryCollectText(message, "refusal", out var refusalText))
+        {
+            return refusalText;
+        }
+
+        return TryCollectText(firstChoice, "refusal", out var choiceRefusalText)
+            ? choiceRefusalText
             : null;
     }
 
