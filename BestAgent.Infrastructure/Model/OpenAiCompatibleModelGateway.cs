@@ -1268,19 +1268,27 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         var firstChoice = choices[0];
-        if (!firstChoice.TryGetProperty("message", out var message)
-            || message.ValueKind != JsonValueKind.Object)
+        if (firstChoice.TryGetProperty("message", out var message)
+            && message.ValueKind == JsonValueKind.Object)
         {
-            return null;
+            if (TryCollectText(message, "reasoning_summary", out var reasoningSummary))
+            {
+                return reasoningSummary;
+            }
+
+            if (TryCollectText(message, "reasoning", out var reasoning))
+            {
+                return reasoning;
+            }
         }
 
-        if (TryCollectText(message, "reasoning_summary", out var reasoningSummary))
+        if (TryCollectText(firstChoice, "reasoning_summary", out var choiceReasoningSummary))
         {
-            return reasoningSummary;
+            return choiceReasoningSummary;
         }
 
-        return TryCollectText(message, "reasoning", out var reasoning)
-            ? reasoning
+        return TryCollectText(firstChoice, "reasoning", out var choiceReasoning)
+            ? choiceReasoning
             : null;
     }
 

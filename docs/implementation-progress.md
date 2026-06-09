@@ -30,7 +30,7 @@
 - OpenAI 兼容模型网关当前也已开始兼容响应中 `message.content` 的字符串、数组文本片段与最小对象文本形态，不再只依赖单个字符串 `content`
 - OpenAI 兼容模型网关当前也已开始支持消费原生单个 `tool_calls` 响应，并归一回现有 `{"action":"tool_call",...}` JSON 决策输出
 - `GenerateTextRequest` 当前也已开始支持最小 `ToolChoice`；存在工具定义时，`AgentRunLoop` 会默认向 OpenAI 兼容请求下发 `tool_choice = auto`，同时直接调用 `OpenAiCompatibleModelGateway` 且显式传入 `GenerateTextRequest.Tools` 时，若未手动覆盖 `ToolChoice`，当前也会自动补上 `tool_choice = auto`
-- OpenAI 兼容模型网关当前也已开始把响应中的最小 `reasoning_summary/reasoning` 归一到 `GenerateTextResult` 与 `model_call` 审计 payload
+- OpenAI 兼容模型网关当前也已开始把响应中的最小 `reasoning_summary/reasoning` 归一到 `GenerateTextResult` 与 `model_call` 审计 payload；兼容响应若把这组字段放在 `choice` 层而不是 `message` 层，当前也会继续读取
 - OpenAI 兼容模型网关当前也已开始把响应中的原生 `tool_calls` 列表显式带入 `GenerateTextResult` 与 `model_call` 审计 payload；同时继续为现有 Runtime 兼容保留“单个 function tool call -> `{"action":"tool_call",...}`”的归一路径
 - OpenAI 兼容模型网关当前也已开始对原生 `tool_calls` 做最小结构校验：返回的工具名必须命中当前声明工具列表，`arguments` 也必须是可解析的 JSON 对象
 - `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook、本地 handler 与 `inline_result` 固定结果执行）
