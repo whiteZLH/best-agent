@@ -2579,6 +2579,51 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldRejectBlankOutputSchemaWhenExplicitlyProvided()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    OutputSchema: "   "),
+                CancellationToken.None));
+
+        Assert.Equal("Model output schema must be provided when output mode is json_schema.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldAllowCustomJsonSchemaNameAndStrictMode()
     {
         JsonElement? capturedPayload = null;

@@ -893,7 +893,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(outputSchema))
+        if (outputSchema is not null)
         {
             throw new InvalidOperationException("Model output schema can only be used when output mode is json_schema.");
         }
@@ -918,7 +918,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     {
         if (string.IsNullOrWhiteSpace(outputMode))
         {
-            return string.IsNullOrWhiteSpace(outputSchema)
+            return outputSchema is null
                 ? null
                 : GenerateTextOutputModes.JsonSchema;
         }
