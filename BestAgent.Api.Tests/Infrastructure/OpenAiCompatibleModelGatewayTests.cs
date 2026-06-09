@@ -77,7 +77,7 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("flex", result.ServiceTier);
         Assert.True(capturedPayload.HasValue);
         Assert.Equal(0.2m, capturedPayload.Value.GetProperty("temperature").GetDecimal());
-        Assert.True(capturedPayload.Value.TryGetProperty("max_tokens", out var maxTokensElement));
+        Assert.True(capturedPayload.Value.TryGetProperty("max_completion_tokens", out var maxTokensElement));
         Assert.Equal(JsonValueKind.Null, maxTokensElement.ValueKind);
         Assert.True(capturedPayload.Value.TryGetProperty("top_p", out var topPElement));
         Assert.Equal(JsonValueKind.Null, topPElement.ValueKind);
@@ -202,7 +202,7 @@ public class OpenAiCompatibleModelGatewayTests
             CancellationToken.None);
 
         Assert.True(capturedPayload.HasValue);
-        Assert.Equal(256, capturedPayload.Value.GetProperty("max_tokens").GetInt32());
+        Assert.Equal(256, capturedPayload.Value.GetProperty("max_completion_tokens").GetInt32());
     }
 
     [Fact]

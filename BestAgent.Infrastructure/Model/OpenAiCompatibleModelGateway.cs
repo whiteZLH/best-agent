@@ -94,7 +94,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 model,
                 messages = BuildMessages(request),
                 temperature,
-                max_tokens = maxOutputTokens,
+                max_completion_tokens = maxOutputTokens,
                 top_p = topP,
                 presence_penalty = presencePenalty,
                 frequency_penalty = frequencyPenalty,
@@ -113,7 +113,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, service tier {ServiceTier}, store {Store}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max completion tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, verbosity {Verbosity}, service tier {ServiceTier}, store {Store}, metadata count {MetadataCount}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
