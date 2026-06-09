@@ -1250,8 +1250,10 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         {
             "stop" => GenerateTextFinishReasons.Completed,
             "tool_calls" => GenerateTextFinishReasons.ToolCall,
+            "tool_call" => GenerateTextFinishReasons.ToolCall,
             "function_call" => GenerateTextFinishReasons.ToolCall,
             "length" => GenerateTextFinishReasons.MaxOutputTokens,
+            "max_output_tokens" => GenerateTextFinishReasons.MaxOutputTokens,
             "content_filter" => GenerateTextFinishReasons.ContentFiltered,
             "content_filtered" => GenerateTextFinishReasons.ContentFiltered,
             var value => value
