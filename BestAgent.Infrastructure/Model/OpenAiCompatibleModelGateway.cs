@@ -916,11 +916,16 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static string? NormalizeOutputMode(string? outputMode, string? outputSchema)
     {
-        if (string.IsNullOrWhiteSpace(outputMode))
+        if (outputMode is null)
         {
             return outputSchema is null
                 ? null
                 : GenerateTextOutputModes.JsonSchema;
+        }
+
+        if (string.IsNullOrWhiteSpace(outputMode))
+        {
+            throw new InvalidOperationException("Model output mode must not be blank when provided.");
         }
 
         var normalized = outputMode.Trim().ToLowerInvariant();
