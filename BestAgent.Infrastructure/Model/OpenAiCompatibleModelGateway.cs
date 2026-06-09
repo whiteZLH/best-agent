@@ -1236,20 +1236,15 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static string? TryGetResponseId(JsonElement root)
     {
-        return root.TryGetProperty("id", out var id)
-               && id.ValueKind == JsonValueKind.String
-               && !string.IsNullOrWhiteSpace(id.GetString())
-            ? id.GetString()!.Trim()
-            : null;
+        return TryGetTrimmedString(root, "id", "response_id", "request_id");
     }
 
     private static string? TryGetResponseServiceTier(JsonElement root)
     {
-        return root.TryGetProperty("service_tier", out var serviceTier)
-               && serviceTier.ValueKind == JsonValueKind.String
-               && !string.IsNullOrWhiteSpace(serviceTier.GetString())
-            ? serviceTier.GetString()!.Trim().ToLowerInvariant()
-            : null;
+        var serviceTier = TryGetTrimmedString(root, "service_tier");
+        return string.IsNullOrWhiteSpace(serviceTier)
+            ? null
+            : serviceTier.ToLowerInvariant();
     }
 
     private static string? TryGetFinishReason(JsonElement root)
@@ -1632,6 +1627,23 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
         text = string.Join("\n", segments);
         return true;
+    }
+
+    private static string? TryGetTrimmedString(JsonElement parent, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!parent.TryGetProperty(propertyName, out var value)
+                || value.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(value.GetString()))
+            {
+                continue;
+            }
+
+            return value.GetString()!.Trim();
+        }
+
+        return null;
     }
 
     private static void CollectReasoningSegments(JsonElement value, List<string> segments)
