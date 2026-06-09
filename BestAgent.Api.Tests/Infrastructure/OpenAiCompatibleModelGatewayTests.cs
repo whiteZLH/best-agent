@@ -1385,6 +1385,61 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldUseConfiguredLogitBias_WhenRequestOverrideNormalizesToEmpty()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                LogitBias = new Dictionary<int, int> { [10] = 20 }
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                LogitBias: new Dictionary<int, int>
+                {
+                    [-1] = 50
+                }),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var logitBias = capturedPayload.Value.GetProperty("logit_bias");
+        Assert.Equal(20, logitBias.GetProperty("10").GetInt32());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldPreferRequestStopSequencesOverConfiguredDefault()
     {
         JsonElement? capturedPayload = null;
@@ -1420,7 +1475,7 @@ public class OpenAiCompatibleModelGatewayTests
                 BaseUrl = "https://example.com/v1/",
                 ApiKey = "test-key",
                 Model = "gpt-4o-mini",
-                StopSequences = ["\n\n", "<END>"]
+                StopSequences = ["<END>", "STOP"]
             });
 
         await gateway.GenerateTextAsync(
@@ -1434,6 +1489,58 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.True(capturedPayload.HasValue);
         var stop = capturedPayload.Value.GetProperty("stop").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray();
         Assert.Equal(["DONE", "STOP", "TRIMMED"], stop);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldUseConfiguredStopSequences_WhenRequestOverrideNormalizesToEmpty()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini",
+                StopSequences = ["<END>", "STOP"]
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                StopSequences: [" ", "\t"]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var stop = capturedPayload.Value.GetProperty("stop").EnumerateArray().Select(item => item.GetString() ?? string.Empty).ToArray();
+        Assert.Equal(["<END>", "STOP"], stop);
     }
 
     [Fact]

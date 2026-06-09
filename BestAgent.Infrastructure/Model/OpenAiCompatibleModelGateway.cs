@@ -71,9 +71,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var topP = NormalizeTopP(request.TopP ?? _options.TopP);
             var presencePenalty = NormalizePenalty(request.PresencePenalty ?? _options.PresencePenalty);
             var frequencyPenalty = NormalizePenalty(request.FrequencyPenalty ?? _options.FrequencyPenalty);
-            var logitBias = NormalizeLogitBias(request.LogitBias ?? _options.LogitBias);
+            var logitBias = ResolveLogitBias(request.LogitBias, _options.LogitBias);
             var seed = NormalizeSeed(request.Seed ?? _options.Seed);
-            var stopSequences = NormalizeStopSequences(request.StopSequences ?? _options.StopSequences);
+            var stopSequences = ResolveStopSequences(request.StopSequences, _options.StopSequences);
             var hasNamedTools = HasNamedTools(request.Tools);
             var parallelToolCalls = NormalizeParallelToolCalls(
                 request.ParallelToolCalls
@@ -676,6 +676,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         return normalized.Count == 0 ? null : normalized;
     }
 
+    private static IReadOnlyDictionary<int, int>? ResolveLogitBias(
+        IReadOnlyDictionary<int, int>? requestLogitBias,
+        IReadOnlyDictionary<int, int>? configuredLogitBias)
+    {
+        var normalizedRequest = NormalizeLogitBias(requestLogitBias);
+        return normalizedRequest ?? NormalizeLogitBias(configuredLogitBias);
+    }
+
     private static string? CoalesceMeaningfulString(string? value, string? fallback)
     {
         return string.IsNullOrWhiteSpace(value) ? fallback : value;
@@ -706,6 +714,14 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             .ToArray();
 
         return normalized.Length == 0 ? null : normalized;
+    }
+
+    private static string[]? ResolveStopSequences(
+        IReadOnlyList<string>? requestStopSequences,
+        IReadOnlyList<string>? configuredStopSequences)
+    {
+        var normalizedRequest = NormalizeStopSequences(requestStopSequences);
+        return normalizedRequest ?? NormalizeStopSequences(configuredStopSequences);
     }
 
     private static bool? NormalizeParallelToolCalls(
