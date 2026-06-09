@@ -1659,6 +1659,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                     CollectReasoningSegments(textProperty, segments);
                 }
 
+                if (value.TryGetProperty("output_text", out var outputTextProperty))
+                {
+                    CollectReasoningSegments(outputTextProperty, segments);
+                }
+
                 if (value.TryGetProperty("value", out var valueProperty))
                 {
                     CollectReasoningSegments(valueProperty, segments);
