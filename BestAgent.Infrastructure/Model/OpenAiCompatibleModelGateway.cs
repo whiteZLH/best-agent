@@ -67,6 +67,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var stopSequences = NormalizeStopSequences(request.StopSequences ?? _options.StopSequences);
             var parallelToolCalls = NormalizeParallelToolCalls(request.ParallelToolCalls ?? _options.ParallelToolCalls, request.Tools);
             var reasoningEffort = NormalizeReasoningEffort(request.ReasoningEffort ?? _options.ReasoningEffort);
+            var userId = NormalizeUserId(request.UserId);
             var responseFormat = BuildResponseFormat(
                 request.OutputMode,
                 request.OutputSchema,
@@ -89,12 +90,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 stop = stopSequences,
                 parallel_tool_calls = parallelToolCalls,
                 reasoning_effort = reasoningEffort,
+                user = userId,
                 response_format = responseFormat,
                 tools,
                 tool_choice = toolChoice
             };
             _logger.LogDebug(
-                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, system prompt length {SystemPromptLength} and input length {InputLength}",
+                "Calling model {Model} with timeout {TimeoutSeconds}s, output mode {OutputMode}, tool count {ToolCount}, tool choice {ToolChoice}, message count {MessageCount}, temperature {Temperature}, max tokens {MaxOutputTokens}, top_p {TopP}, presence penalty {PresencePenalty}, frequency penalty {FrequencyPenalty}, logit bias count {LogitBiasCount}, seed {Seed}, stop sequence count {StopSequenceCount}, parallel tool calls {ParallelToolCalls}, reasoning effort {ReasoningEffort}, user id present {HasUserId}, system prompt length {SystemPromptLength} and input length {InputLength}",
                 model,
                 timeoutSeconds,
                 NormalizeOutputMode(request.OutputMode, request.OutputSchema),
@@ -111,6 +113,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 stopSequences?.Length ?? 0,
                 parallelToolCalls,
                 reasoningEffort,
+                !string.IsNullOrWhiteSpace(userId),
                 request.SystemPrompt?.Length ?? 0,
                 request.Input?.Length ?? 0);
 
@@ -426,6 +429,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             GenerateTextReasoningEfforts.XHigh => GenerateTextReasoningEfforts.XHigh,
             _ => throw new InvalidOperationException($"Model reasoning effort '{reasoningEffort}' is not supported.")
         };
+    }
+
+    private static string? NormalizeUserId(string? userId)
+    {
+        return string.IsNullOrWhiteSpace(userId)
+            ? null
+            : userId.Trim();
     }
 
     private static object? BuildResponseFormat(

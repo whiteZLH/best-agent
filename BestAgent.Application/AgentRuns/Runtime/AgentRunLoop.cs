@@ -106,7 +106,8 @@ public static class AgentRunLoop
                     OutputSchema: version.OutputSchema,
                     Tools: modelTools,
                     ToolChoice: modelTools.Count > 0 ? "auto" : null,
-                    ParallelToolCalls: modelTools.Count > 0 ? false : null),
+                    ParallelToolCalls: modelTools.Count > 0 ? false : null,
+                    UserId: string.IsNullOrWhiteSpace(run.UserId) ? null : run.UserId),
                 cancellationToken);
             var endedAt = DateTime.UtcNow;
             totalCostDelta += NormalizeCost(modelResponse.Cost);

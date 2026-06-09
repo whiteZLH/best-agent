@@ -21,4 +21,5 @@ public record GenerateTextRequest(
     string? ToolChoice = null,
     IReadOnlyList<string>? StopSequences = null,
     bool? ParallelToolCalls = null,
-    string? ReasoningEffort = null);
+    string? ReasoningEffort = null,
+    string? UserId = null);

@@ -199,6 +199,40 @@ public class AgentRunLoopTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_ShouldForwardRunUserIdToModelGateway()
+    {
+        var context = CreateLoopContext() with
+        {
+            Run = CreateLoopContext().Run with
+            {
+                UserId = "user-123"
+            }
+        };
+        var resolvedDefinition = CreateResolvedDefinition();
+        _modelGateway.GenerateTextAsync(Arg.Any<GenerateTextRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new GenerateTextResult("final-answer"));
+        _stepDecisionParser.Parse("final-answer")
+            .Returns(StepDecision.Respond("hello"));
+
+        var result = await AgentRunLoop.ExecuteAsync(
+            context,
+            resolvedDefinition,
+            _modelGateway,
+            _stepDecisionParser,
+            _toolExecutor,
+            _agentStepRepository,
+            _toolDefinitionRepository,
+            _toolInvocationRepository,
+            CancellationToken.None);
+
+        var completed = Assert.IsType<AgentLoopCompleted>(result);
+        Assert.Equal("hello", completed.Output);
+        await _modelGateway.Received(1).GenerateTextAsync(
+            Arg.Is<GenerateTextRequest>(request => request.UserId == "user-123"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ShouldSuspendRun_WhenToolReturnsPending()
     {
         var context = CreateLoopContext();
