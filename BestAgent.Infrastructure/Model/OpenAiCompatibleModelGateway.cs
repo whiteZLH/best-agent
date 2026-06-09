@@ -254,11 +254,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 .Where(message =>
                     !string.IsNullOrWhiteSpace(message.Role)
                     && !string.IsNullOrWhiteSpace(message.Content))
-                .Select(message => new
-                {
-                    role = message.Role.Trim(),
-                    content = message.Content.Trim()
-                })
+                .Select(BuildMessagePayload)
                 .Cast<object>()
                 .ToArray();
             if (messages.Length > 0)
@@ -292,6 +288,32 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return string.IsNullOrWhiteSpace(request.SystemPrompt) ? 1 : 2;
+    }
+
+    private static object BuildMessagePayload(GenerateTextMessage message)
+    {
+        var role = message.Role.Trim();
+        var content = message.Content.Trim();
+        var name = string.IsNullOrWhiteSpace(message.Name)
+            ? null
+            : message.Name.Trim();
+        var toolCallId = string.IsNullOrWhiteSpace(message.ToolCallId)
+            ? null
+            : message.ToolCallId.Trim();
+
+        if (string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(toolCallId))
+        {
+            throw new InvalidOperationException("Model tool messages must include a tool_call_id.");
+        }
+
+        return new
+        {
+            role,
+            content,
+            name,
+            tool_call_id = toolCallId
+        };
     }
 
     private static string Trim(string value, int maxLength)
