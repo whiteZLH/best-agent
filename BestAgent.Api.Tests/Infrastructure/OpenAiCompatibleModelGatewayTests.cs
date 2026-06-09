@@ -478,6 +478,61 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldSendDeveloperMessages_WhenProvided()
+    {
+        JsonElement? capturedPayload = null;
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            },
+            async request =>
+            {
+                capturedPayload = await ReadJsonAsync(request.Content!);
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "Ignored system prompt",
+                "Ignored input",
+                Messages:
+                [
+                    new GenerateTextMessage("DEVELOPER", "Follow the policy.")
+                ]),
+            CancellationToken.None);
+
+        Assert.True(capturedPayload.HasValue);
+        var message = Assert.Single(capturedPayload.Value.GetProperty("messages").EnumerateArray());
+        Assert.Equal("developer", message.GetProperty("role").GetString());
+        Assert.Equal("Follow the policy.", message.GetProperty("content").GetString());
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldSendToolCallId_ForToolMessages()
     {
         JsonElement? capturedPayload = null;
@@ -533,6 +588,54 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("tool", messages[1].GetProperty("role").GetString());
         Assert.Equal("{\"temperatureC\":26}", messages[1].GetProperty("content").GetString());
         Assert.Equal("call_123", messages[1].GetProperty("tool_call_id").GetString());
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectUnsupportedMessageRole()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage("critic", "Nope")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model message role 'critic' is not supported.", exception.Message);
     }
 
     [Fact]

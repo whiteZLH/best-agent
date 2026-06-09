@@ -12,6 +12,14 @@ namespace BestAgent.Infrastructure.Model;
 public class OpenAiCompatibleModelGateway : IModelGateway
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly HashSet<string> SupportedMessageRoles = new(StringComparer.Ordinal)
+    {
+        "developer",
+        "system",
+        "user",
+        "assistant",
+        "tool"
+    };
 
     private readonly HttpClient _httpClient;
     private readonly OpenAiOptions _options;
@@ -295,7 +303,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static object BuildMessagePayload(GenerateTextMessage message)
     {
-        var role = message.Role.Trim();
+        var role = NormalizeMessageRole(message.Role);
         var content = message.Content.Trim();
         var name = string.IsNullOrWhiteSpace(message.Name)
             ? null
@@ -304,8 +312,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             ? null
             : message.ToolCallId.Trim();
 
-        if (string.Equals(role, "tool", StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrWhiteSpace(toolCallId))
+        if (role == "tool" && string.IsNullOrWhiteSpace(toolCallId))
         {
             throw new InvalidOperationException("Model tool messages must include a tool_call_id.");
         }
@@ -317,6 +324,17 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             name,
             tool_call_id = toolCallId
         };
+    }
+
+    private static string NormalizeMessageRole(string role)
+    {
+        var normalized = role.Trim().ToLowerInvariant();
+        if (!SupportedMessageRoles.Contains(normalized))
+        {
+            throw new InvalidOperationException($"Model message role '{role}' is not supported.");
+        }
+
+        return normalized;
     }
 
     private static string Trim(string value, int maxLength)
