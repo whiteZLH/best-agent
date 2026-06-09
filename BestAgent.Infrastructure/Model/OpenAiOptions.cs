@@ -34,6 +34,8 @@ public class OpenAiOptions
 
     public string? ServiceTier { get; init; }
 
+    public bool? Store { get; init; }
+
     public decimal PromptTokenPricePerMillion { get; init; }
 
     public decimal CompletionTokenPricePerMillion { get; init; }

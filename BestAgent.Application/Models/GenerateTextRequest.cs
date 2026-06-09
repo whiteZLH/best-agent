@@ -25,4 +25,5 @@ public record GenerateTextRequest(
     string? UserId = null,
     string? Verbosity = null,
     IReadOnlyDictionary<string, string>? Metadata = null,
-    string? ServiceTier = null);
+    string? ServiceTier = null,
+    bool? Store = null);

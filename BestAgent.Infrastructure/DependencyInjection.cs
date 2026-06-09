@@ -63,6 +63,9 @@ public static class DependencyInjection
             ServiceTier = string.IsNullOrWhiteSpace(configuration["OpenAI:ServiceTier"])
                 ? null
                 : configuration["OpenAI:ServiceTier"]!.Trim(),
+            Store = bool.TryParse(configuration["OpenAI:Store"], out var store)
+                ? store
+                : null,
             PromptTokenPricePerMillion = decimal.TryParse(configuration["OpenAI:PromptTokenPricePerMillion"], out var promptTokenPricePerMillion)
                 ? promptTokenPricePerMillion
                 : 0m,

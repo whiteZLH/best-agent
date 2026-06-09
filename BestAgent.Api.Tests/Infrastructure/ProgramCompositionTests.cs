@@ -122,6 +122,7 @@ public class ProgramCompositionTests
                 ["OpenAI:ApiKey"] = "test-key",
                 ["OpenAI:Model"] = "gpt-4o",
                 ["OpenAI:ServiceTier"] = "flex",
+                ["OpenAI:Store"] = "true",
                 ["OpenAI:PromptTokenPricePerMillion"] = "1.25",
                 ["OpenAI:CompletionTokenPricePerMillion"] = "5.5"
             })
@@ -135,6 +136,7 @@ public class ProgramCompositionTests
         Assert.Equal(1.25m, options.PromptTokenPricePerMillion);
         Assert.Equal(5.5m, options.CompletionTokenPricePerMillion);
         Assert.Equal("flex", options.ServiceTier);
+        Assert.True(options.Store);
     }
 
     [Fact]
