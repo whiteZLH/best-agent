@@ -1264,14 +1264,38 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         var firstChoice = choices[0];
         if (!firstChoice.TryGetProperty("finish_reason", out var finishReason))
         {
-            return null;
+            return InferFinishReason(firstChoice);
         }
 
         return finishReason.ValueKind switch
         {
             JsonValueKind.String => NormalizeFinishReason(finishReason.GetString()),
-            _ => null
+            _ => InferFinishReason(firstChoice)
         };
+    }
+
+    private static string? InferFinishReason(JsonElement firstChoice)
+    {
+        if (!firstChoice.TryGetProperty("message", out var message)
+            || message.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (message.TryGetProperty("tool_calls", out var toolCalls)
+            && toolCalls.ValueKind == JsonValueKind.Array
+            && toolCalls.GetArrayLength() > 0)
+        {
+            return GenerateTextFinishReasons.ToolCall;
+        }
+
+        if (message.TryGetProperty("function_call", out var functionCall)
+            && functionCall.ValueKind == JsonValueKind.Object)
+        {
+            return GenerateTextFinishReasons.ToolCall;
+        }
+
+        return null;
     }
 
     private static string? NormalizeFinishReason(string? finishReason)
