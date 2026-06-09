@@ -182,9 +182,9 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 throw new InvalidOperationException("Model gateway returned an empty response.");
             }
 
-            var promptTokens = TryGetUsageInt(document.RootElement, "prompt_tokens", "input_tokens");
-            var completionTokens = TryGetUsageInt(document.RootElement, "completion_tokens", "output_tokens");
-            var totalTokens = TryGetUsageInt(document.RootElement, "total_tokens");
+            var promptTokens = TryGetUsageInt(document.RootElement, "prompt_tokens", "input_tokens", "promptTokens", "inputTokens");
+            var completionTokens = TryGetUsageInt(document.RootElement, "completion_tokens", "output_tokens", "completionTokens", "outputTokens");
+            var totalTokens = TryGetUsageInt(document.RootElement, "total_tokens", "totalTokens");
             if (totalTokens <= 0)
             {
                 totalTokens = promptTokens + completionTokens;
@@ -1236,12 +1236,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static string? TryGetResponseId(JsonElement root)
     {
-        return TryGetTrimmedString(root, "id", "response_id", "request_id");
+        return TryGetTrimmedString(root, "id", "response_id", "request_id", "responseId", "requestId");
     }
 
     private static string? TryGetResponseServiceTier(JsonElement root)
     {
-        var serviceTier = TryGetTrimmedString(root, "service_tier");
+        var serviceTier = TryGetTrimmedString(root, "service_tier", "serviceTier");
         return string.IsNullOrWhiteSpace(serviceTier)
             ? null
             : serviceTier.ToLowerInvariant();

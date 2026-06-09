@@ -243,6 +243,57 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldReadCamelCaseResponseMetadataAliases()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "responseId": "respCamel_123",
+                      "serviceTier": "FLEX",
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ],
+                      "usage": {
+                        "inputTokens": 9,
+                        "outputTokens": 6,
+                        "totalTokens": 15
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal("respCamel_123", result.ResponseId);
+        Assert.Equal("flex", result.ServiceTier);
+        Assert.Equal(9, result.PromptTokens);
+        Assert.Equal(6, result.CompletionTokens);
+        Assert.Equal(15, result.TotalTokens);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldReadUsageAliases_WhenGatewayReturnsInputAndOutputTokens()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
