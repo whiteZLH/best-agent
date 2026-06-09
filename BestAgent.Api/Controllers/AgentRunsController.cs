@@ -126,7 +126,10 @@ public class AgentRunsController : ControllerBase
         EnsureAuthenticatedRunAccess();
         await EnsureRunAccessAsync(runId, cancellationToken);
         var children = await _mediator.Send(new GetAgentRunChildrenQuery(runId), cancellationToken);
-        return Ok(_mapper.Map<IReadOnlyList<GetAgentRunChildResponse>>(children));
+        var response = _mapper.Map<IReadOnlyList<GetAgentRunChildResponse>>(children)
+            .Select(AttachStreamUrl)
+            .ToArray();
+        return Ok(response);
     }
 
     [HttpGet("{runId}/tree")]
@@ -142,7 +145,8 @@ public class AgentRunsController : ControllerBase
             return NotFound();
         }
 
-        return Ok(_mapper.Map<GetAgentRunTreeResponse>(tree));
+        var response = AttachStreamUrl(_mapper.Map<GetAgentRunTreeResponse>(tree));
+        return Ok(response);
     }
 
     [HttpGet("{runId}/steps")]
@@ -829,6 +833,23 @@ public class AgentRunsController : ControllerBase
     private static string? Normalize(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static GetAgentRunChildResponse AttachStreamUrl(GetAgentRunChildResponse response)
+    {
+        return response with
+        {
+            StreamUrl = $"/agent-runs/{response.RunId}/stream"
+        };
+    }
+
+    private static GetAgentRunTreeResponse AttachStreamUrl(GetAgentRunTreeResponse response)
+    {
+        return response with
+        {
+            StreamUrl = $"/agent-runs/{response.RunId}/stream",
+            Children = response.Children.Select(AttachStreamUrl).ToArray()
+        };
     }
 
     private async Task<string?> ResolveToolCallbackSecretAsync(string invocationId, CancellationToken cancellationToken)

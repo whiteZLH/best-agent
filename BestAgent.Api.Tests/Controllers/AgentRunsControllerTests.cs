@@ -769,6 +769,7 @@ public class AgentRunsControllerTests
         Assert.Equal("step-4", child.CurrentStepId);
         Assert.Equal("tool_call", child.WaitStepType);
         Assert.Equal("invocation-1", child.CurrentInvocationId);
+        Assert.Equal("/agent-runs/child-run-1/stream", child.StreamUrl);
         Assert.Equal("weather", child.CurrentToolInvocation!.ToolName);
     }
 
@@ -859,12 +860,14 @@ public class AgentRunsControllerTests
         var okResult = Assert.IsType<OkObjectResult>(actionResult.Result);
         var response = Assert.IsType<GetAgentRunTreeResponse>(okResult.Value);
         Assert.Equal("run-001", response.RunId);
+        Assert.Equal("/agent-runs/run-001/stream", response.StreamUrl);
         var child = Assert.Single(response.Children);
         Assert.Equal("child-run-1", child.RunId);
         Assert.Equal("run-001", child.ParentRunId);
         Assert.Equal("writer", child.DelegatedByAgent);
         Assert.Equal("step-child-1", child.CurrentStepId);
         Assert.Equal("handoff", child.WaitStepType);
+        Assert.Equal("/agent-runs/child-run-1/stream", child.StreamUrl);
         Assert.Equal("support_agent", child.CurrentHandoff!.TargetAgent);
     }
 
