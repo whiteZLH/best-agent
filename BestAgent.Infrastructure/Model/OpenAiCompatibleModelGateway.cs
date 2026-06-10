@@ -1667,7 +1667,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         {
             using var document = JsonDocument.Parse(body);
             var root = document.RootElement;
-            if (TryCollectText(root, out var errorMessage, "message", "detail"))
+            if (TryCollectErrorText(root, out var errorMessage, "message", "detail", "title"))
             {
                 return errorMessage;
             }
@@ -1680,8 +1680,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                     return errorElement.GetString()!.Trim();
                 }
 
-                if (errorElement.ValueKind == JsonValueKind.Object
-                    && TryCollectText(errorElement, out var nestedErrorMessage, "message", "detail", "error"))
+                if (TryCollectErrorTextFromElement(errorElement, out var nestedErrorMessage))
                 {
                     return nestedErrorMessage;
                 }
@@ -1693,6 +1692,31 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         return null;
+    }
+
+    private static bool TryCollectErrorTextFromElement(JsonElement value, out string? text)
+    {
+        var segments = new List<string>();
+        CollectErrorSegments(value, segments);
+        if (segments.Count == 0)
+        {
+            text = null;
+            return false;
+        }
+
+        text = string.Join("\n", segments);
+        return true;
+    }
+
+    private static bool TryCollectErrorText(JsonElement parent, out string? text, params string[] propertyNames)
+    {
+        text = null;
+        if (!TryGetProperty(parent, out var value, propertyNames))
+        {
+            return false;
+        }
+
+        return TryCollectErrorTextFromElement(value, out text);
     }
 
     private static string? TryGetTrimmedString(JsonElement parent, params string[] propertyNames)
@@ -1770,6 +1794,85 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 if (value.TryGetProperty("content", out var contentProperty))
                 {
                     CollectReasoningSegments(contentProperty, segments);
+                }
+
+                break;
+        }
+    }
+
+    private static void CollectErrorSegments(JsonElement value, List<string> segments)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = value.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    segments.Add(text.Trim());
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in value.EnumerateArray())
+                {
+                    CollectErrorSegments(item, segments);
+                }
+
+                break;
+            case JsonValueKind.Object:
+                if (value.TryGetProperty("message", out var messageProperty))
+                {
+                    CollectErrorSegments(messageProperty, segments);
+                }
+
+                if (value.TryGetProperty("detail", out var detailProperty))
+                {
+                    CollectErrorSegments(detailProperty, segments);
+                }
+
+                if (value.TryGetProperty("error", out var errorProperty))
+                {
+                    CollectErrorSegments(errorProperty, segments);
+                }
+
+                if (value.TryGetProperty("title", out var titleProperty))
+                {
+                    CollectErrorSegments(titleProperty, segments);
+                }
+
+                if (value.TryGetProperty("msg", out var msgProperty))
+                {
+                    CollectErrorSegments(msgProperty, segments);
+                }
+
+                if (value.TryGetProperty("description", out var descriptionProperty))
+                {
+                    CollectErrorSegments(descriptionProperty, segments);
+                }
+
+                if (value.TryGetProperty("error_description", out var errorDescriptionProperty))
+                {
+                    CollectErrorSegments(errorDescriptionProperty, segments);
+                }
+
+                if (value.TryGetProperty("errorDescription", out var errorDescriptionCamelCaseProperty))
+                {
+                    CollectErrorSegments(errorDescriptionCamelCaseProperty, segments);
+                }
+
+                if (value.TryGetProperty("content", out var contentProperty))
+                {
+                    CollectErrorSegments(contentProperty, segments);
+                }
+
+                if (value.TryGetProperty("text", out var textProperty))
+                {
+                    CollectErrorSegments(textProperty, segments);
+                }
+
+                if (value.TryGetProperty("value", out var valueProperty))
+                {
+                    CollectErrorSegments(valueProperty, segments);
                 }
 
                 break;

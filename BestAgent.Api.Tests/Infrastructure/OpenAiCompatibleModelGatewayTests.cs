@@ -5952,6 +5952,96 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Contains("Error: Upstream gateway is unavailable.", exception.Message);
     }
 
+    [Fact]
+    public async Task GenerateTextAsync_ShouldExtractGatewayValidationErrorsFromDetailArray()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "detail": [
+                        {
+                          "type": "missing",
+                          "loc": ["body", "messages", 0, "content"],
+                          "msg": "Field required"
+                        },
+                        {
+                          "type": "string_too_short",
+                          "loc": ["body", "model"],
+                          "msg": "String should have at least 1 character"
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 400", exception.Message);
+        Assert.Contains("Error: Field required", exception.Message);
+        Assert.Contains("String should have at least 1 character", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldExtractGatewayErrorTitleAndNestedDescription()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "error": {
+                        "title": "Authentication failed.",
+                        "error_description": {
+                          "value": "Token has expired."
+                        }
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 401", exception.Message);
+        Assert.Contains("Error: Authentication failed.", exception.Message);
+        Assert.Contains("Token has expired.", exception.Message);
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;
