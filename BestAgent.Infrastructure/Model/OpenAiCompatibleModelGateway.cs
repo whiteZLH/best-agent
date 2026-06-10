@@ -1284,26 +1284,20 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
     private static string? InferFinishReason(JsonElement firstChoice)
     {
+        if (TryHasNativeToolCalls(firstChoice))
+        {
+            return GenerateTextFinishReasons.ToolCall;
+        }
+
         if (!firstChoice.TryGetProperty("message", out var message)
             || message.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        if (TryGetProperty(message, out var toolCalls, "tool_calls", "toolCalls")
-            && toolCalls.ValueKind == JsonValueKind.Array
-            && toolCalls.GetArrayLength() > 0)
-        {
-            return GenerateTextFinishReasons.ToolCall;
-        }
-
-        if (TryGetProperty(message, out var functionCall, "function_call", "functionCall")
-            && functionCall.ValueKind == JsonValueKind.Object)
-        {
-            return GenerateTextFinishReasons.ToolCall;
-        }
-
-        return null;
+        return TryHasNativeToolCalls(message)
+            ? GenerateTextFinishReasons.ToolCall
+            : null;
     }
 
     private static string? NormalizeFinishReason(string? finishReason)
@@ -1376,38 +1370,69 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         var firstChoice = choices[0];
+        if (TryGetToolCallsFromContainer(firstChoice, declaredTools, out var choiceLevelToolCalls))
+        {
+            return choiceLevelToolCalls;
+        }
+
         if (!firstChoice.TryGetProperty("message", out var message)
             || message.ValueKind != JsonValueKind.Object)
         {
             return null;
         }
 
-        if (TryGetProperty(message, out var toolCalls, "tool_calls", "toolCalls")
-            && toolCalls.ValueKind == JsonValueKind.Array)
+        return TryGetToolCallsFromContainer(message, declaredTools, out var messageLevelToolCalls)
+            ? messageLevelToolCalls
+            : null;
+    }
+
+    private static bool TryGetToolCallsFromContainer(
+        JsonElement container,
+        IReadOnlyList<GenerateTextToolDefinition>? declaredTools,
+        out IReadOnlyList<GenerateTextToolCall>? toolCalls)
+    {
+        if (TryGetProperty(container, out var nativeToolCalls, "tool_calls", "toolCalls")
+            && nativeToolCalls.ValueKind == JsonValueKind.Array)
         {
             var calls = new List<GenerateTextToolCall>();
-            foreach (var toolCall in toolCalls.EnumerateArray())
+            foreach (var toolCall in nativeToolCalls.EnumerateArray())
             {
                 calls.Add(ParseNativeToolCall(toolCall, declaredTools));
             }
 
-            return calls.Count == 0 ? null : calls;
+            toolCalls = calls.Count == 0 ? null : calls;
+            return toolCalls is not null;
         }
 
-        if (TryGetProperty(message, out var functionCall, "function_call", "functionCall"))
+        if (TryGetProperty(container, out var functionCall, "function_call", "functionCall"))
         {
             if (functionCall.ValueKind != JsonValueKind.Object)
             {
                 throw new InvalidOperationException("Model gateway returned a legacy function_call payload that is not an object.");
             }
 
-            return
+            toolCalls =
             [
                 ParseLegacyFunctionCall(functionCall, declaredTools)
             ];
+            return true;
         }
 
-        return null;
+        toolCalls = null;
+        return false;
+    }
+
+    private static bool TryHasNativeToolCalls(JsonElement container)
+    {
+        if (TryGetProperty(container, out var toolCalls, "tool_calls", "toolCalls")
+            && toolCalls.ValueKind == JsonValueKind.Array
+            && toolCalls.GetArrayLength() > 0)
+        {
+            return true;
+        }
+
+        return TryGetProperty(container, out var functionCall, "function_call", "functionCall")
+            && functionCall.ValueKind == JsonValueKind.Object;
     }
 
     private static GenerateTextToolCall ParseNativeToolCall(

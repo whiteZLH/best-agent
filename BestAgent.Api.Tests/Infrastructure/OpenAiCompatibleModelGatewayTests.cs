@@ -5177,6 +5177,73 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeChoiceLevelNativeToolCallResponse_WhenMessageObjectIsMissing()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "toolCalls",
+                          "toolCalls": [
+                            {
+                              "id": "call_123",
+                              "type": "function",
+                              "function": {
+                                "name": "weather",
+                                "arguments": "{\"city\":\"Shanghai\"}"
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        Assert.Equal("weather", document.RootElement.GetProperty("toolName").GetString());
+        Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("call_123", toolCall.Id);
+        Assert.Equal("function", toolCall.Type);
+        Assert.Equal("weather", toolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldNormalizeNativeToolCallResponse_WhenArgumentsAreReturnedAsObject()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
@@ -5243,6 +5310,66 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
         var toolCall = Assert.Single(result.ToolCalls!);
         Assert.Equal("call_123", toolCall.Id);
+        Assert.Equal("function", toolCall.Type);
+        Assert.Equal("weather", toolCall.Name);
+        Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeChoiceLevelLegacyFunctionCallResponse_WhenMessageObjectIsMissing()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "functionCall": {
+                            "name": "weather",
+                            "arguments": "{\"city\":\"Shanghai\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        Assert.Equal("weather", document.RootElement.GetProperty("toolName").GetString());
+        Assert.Equal("{\"city\":\"Shanghai\"}", document.RootElement.GetProperty("toolInput").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("legacy_function_call", toolCall.Id);
         Assert.Equal("function", toolCall.Type);
         Assert.Equal("weather", toolCall.Name);
         Assert.Equal("{\"city\":\"Shanghai\"}", toolCall.Arguments);
@@ -5466,6 +5593,63 @@ public class OpenAiCompatibleModelGatewayTests
                               }
                             ]
                           }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldInferToolCallFinishReason_WhenChoiceLevelNativeToolCallsAreReturnedWithoutMessageObject()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "tool_calls": [
+                            {
+                              "id": "call_123",
+                              "type": "function",
+                              "function": {
+                                "name": "weather",
+                                "arguments": "{\"city\":\"Shanghai\"}"
+                              }
+                            }
+                          ]
                         }
                       ]
                     }
