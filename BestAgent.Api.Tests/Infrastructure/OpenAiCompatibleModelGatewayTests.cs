@@ -6907,6 +6907,44 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldExtractTopLevelGatewayErrorDescription()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "errorDescription": {
+                        "value": "Gateway policy rejected the request."
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 400", exception.Message);
+        Assert.Contains("Error: Gateway policy rejected the request.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldFallbackToDetailWhenTopLevelMessageIsEmpty()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>

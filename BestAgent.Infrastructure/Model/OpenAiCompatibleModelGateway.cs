@@ -1714,7 +1714,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         {
             using var document = JsonDocument.Parse(body);
             var root = document.RootElement;
-            if (TryCollectErrorText(root, out var errorMessage, "message", "detail", "title"))
+            if (TryCollectErrorText(root, out var errorMessage, "message", "detail", "title", "description", "error_description", "errorDescription"))
             {
                 return errorMessage;
             }
