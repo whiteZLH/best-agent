@@ -5547,6 +5547,47 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeCamelCaseMaxOutputTokensFinishReason()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "maxOutputTokens",
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.MaxOutputTokens, result.FinishReason);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldNormalizeContentFilteredFinishReason()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
@@ -5585,6 +5626,104 @@ public class OpenAiCompatibleModelGatewayTests
             CancellationToken.None);
 
         Assert.Equal(GenerateTextFinishReasons.ContentFiltered, result.FinishReason);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeCamelCaseContentFilterAndToolCallsFinishReason()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "contentFilter",
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var contentFilteredResult = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ContentFiltered, contentFilteredResult.FinishReason);
+
+        using var toolCallHttpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "toolCalls",
+                          "message": {
+                            "content": null,
+                            "toolCalls": [
+                              {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {
+                                  "name": "weather",
+                                  "arguments": "{\"city\":\"Shanghai\"}"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var toolCallGateway = new OpenAiCompatibleModelGateway(
+            toolCallHttpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var toolCallResult = await toolCallGateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, toolCallResult.FinishReason);
     }
 
     [Fact]
