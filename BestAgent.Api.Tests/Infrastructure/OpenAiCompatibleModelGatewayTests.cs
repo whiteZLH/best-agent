@@ -515,6 +515,56 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldExtractChoiceLevelText_WhenMessageContentIsMissing()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "text": [
+                            {
+                              "text": "hello"
+                            },
+                            {
+                              "text": {
+                                "value": "world"
+                              }
+                            }
+                          ],
+                          "message": {
+                            "content": null
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal("hello\nworld", result.Output);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldExtractOutputTextSegments_WhenGatewayUsesOutputTextFields()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
