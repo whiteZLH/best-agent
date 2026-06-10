@@ -1719,12 +1719,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         {
             using var document = JsonDocument.Parse(body);
             var root = document.RootElement;
-            if (TryCollectErrorText(root, out var errorMessage, "message", "detail", "title", "description", "error_description", "errorDescription"))
+            if (TryCollectErrorText(root, out var errorMessage, "message", "detail", "title", "description", "error_description", "errorDescription", "errors"))
             {
                 return errorMessage;
             }
 
-            if (TryGetProperty(root, out var errorElement, "error"))
+            if (TryGetProperty(root, out var errorElement, "error", "errors"))
             {
                 if (errorElement.ValueKind == JsonValueKind.String
                     && !string.IsNullOrWhiteSpace(errorElement.GetString()))

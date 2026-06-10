@@ -7046,6 +7046,50 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldExtractTopLevelGatewayErrorsArray()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "errors": [
+                        {
+                          "message": "First validation error."
+                        },
+                        {
+                          "description": "Second validation error."
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 400", exception.Message);
+        Assert.Contains("Error: First validation error.", exception.Message);
+        Assert.Contains("Second validation error.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldFallbackToDetailWhenTopLevelMessageIsEmpty()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
