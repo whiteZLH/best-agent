@@ -1766,6 +1766,113 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldRejectAssistantToolCallNamesWithUnsupportedCharacters()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage(
+                            "assistant",
+                            ToolCalls:
+                            [
+                                new GenerateTextToolCall("call_123", "function", "weather.lookup", "{\"city\":\"Shanghai\"}")
+                            ])
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model assistant tool call name 'weather.lookup' must contain only letters, numbers, underscores, or dashes.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldRejectAssistantToolCallNamesThatExceedMaxLength()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+        var toolName = new string('a', 65);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "Ignored system prompt",
+                    "Ignored input",
+                    Messages:
+                    [
+                        new GenerateTextMessage(
+                            "assistant",
+                            ToolCalls:
+                            [
+                                new GenerateTextToolCall("call_123", "function", toolName, "{\"city\":\"Shanghai\"}")
+                            ])
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal($"Model assistant tool call name '{toolName}' must be 64 characters or fewer.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldRejectStructuredContentPartsForToolMessages()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>

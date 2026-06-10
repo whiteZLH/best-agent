@@ -423,7 +423,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             type,
             function = new
             {
-                name = toolCall.Name.Trim(),
+                name = NormalizeCompatibleName(toolCall.Name.Trim(), $"Model assistant tool call name '{toolCall.Name.Trim()}'"),
                 arguments
             }
         };
