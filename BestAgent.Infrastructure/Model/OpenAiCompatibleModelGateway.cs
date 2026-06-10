@@ -165,8 +165,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var body = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
+                var errorMessage = TryExtractErrorMessage(body);
                 throw new InvalidOperationException(
-                    $"Model gateway returned {(int)response.StatusCode} {response.ReasonPhrase}. Body: {Trim(body, 512)}");
+                    string.IsNullOrWhiteSpace(errorMessage)
+                        ? $"Model gateway returned {(int)response.StatusCode} {response.ReasonPhrase}. Body: {Trim(body, 512)}"
+                        : $"Model gateway returned {(int)response.StatusCode} {response.ReasonPhrase}. Error: {Trim(errorMessage, 512)}");
             }
 
             using var document = JsonDocument.Parse(body);
@@ -1651,6 +1654,45 @@ public class OpenAiCompatibleModelGateway : IModelGateway
 
         value = default;
         return false;
+    }
+
+    private static string? TryExtractErrorMessage(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (TryCollectText(root, out var errorMessage, "message", "detail"))
+            {
+                return errorMessage;
+            }
+
+            if (TryGetProperty(root, out var errorElement, "error"))
+            {
+                if (errorElement.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(errorElement.GetString()))
+                {
+                    return errorElement.GetString()!.Trim();
+                }
+
+                if (errorElement.ValueKind == JsonValueKind.Object
+                    && TryCollectText(errorElement, out var nestedErrorMessage, "message", "detail", "error"))
+                {
+                    return nestedErrorMessage;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static string? TryGetTrimmedString(JsonElement parent, params string[] propertyNames)

@@ -5876,6 +5876,82 @@ public class OpenAiCompatibleModelGatewayTests
         Assert.Equal("InvalidOperationException", activity.GetTagItem("error.type"));
     }
 
+    [Fact]
+    public async Task GenerateTextAsync_ShouldExtractStructuredGatewayErrorMessage()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.TooManyRequests)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "error": {
+                        "message": "Rate limit exceeded.",
+                        "type": "rate_limit",
+                        "code": "too_many_requests"
+                      }
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 429", exception.Message);
+        Assert.Contains("Error: Rate limit exceeded.", exception.Message);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldExtractTopLevelGatewayErrorMessage()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadGateway)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "message": "Upstream gateway is unavailable."
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 502", exception.Message);
+        Assert.Contains("Error: Upstream gateway is unavailable.", exception.Message);
+    }
+
     private sealed class StubHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _handler;
