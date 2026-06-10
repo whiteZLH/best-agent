@@ -6003,6 +6003,121 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldNormalizeAdditionalCamelCaseFinishReasonValues()
+    {
+        using var contentFilteredHttpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "contentFiltered",
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var contentFilteredGateway = new OpenAiCompatibleModelGateway(
+            contentFilteredHttpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var contentFilteredResult = await contentFilteredGateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ContentFiltered, contentFilteredResult.FinishReason);
+
+        using var toolCallHttpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "toolCall",
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var toolCallGateway = new OpenAiCompatibleModelGateway(
+            toolCallHttpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var toolCallResult = await toolCallGateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, toolCallResult.FinishReason);
+
+        using var functionCallHttpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "finishReason": "functionCall",
+                          "message": {
+                            "content": "{\"action\":\"respond\",\"response\":\"hello\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var functionCallGateway = new OpenAiCompatibleModelGateway(
+            functionCallHttpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var functionCallResult = await functionCallGateway.GenerateTextAsync(
+            new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, functionCallResult.FinishReason);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldNormalizeSingularToolCallFinishReason()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>

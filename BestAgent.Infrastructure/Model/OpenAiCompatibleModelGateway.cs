@@ -1312,14 +1312,17 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             "stop" => GenerateTextFinishReasons.Completed,
             "tool_calls" => GenerateTextFinishReasons.ToolCall,
             "tool_call" => GenerateTextFinishReasons.ToolCall,
+            "toolcall" => GenerateTextFinishReasons.ToolCall,
             "toolcalls" => GenerateTextFinishReasons.ToolCall,
             "function_call" => GenerateTextFinishReasons.ToolCall,
+            "functioncall" => GenerateTextFinishReasons.ToolCall,
             "length" => GenerateTextFinishReasons.MaxOutputTokens,
             "max_output_tokens" => GenerateTextFinishReasons.MaxOutputTokens,
             "maxoutputtokens" => GenerateTextFinishReasons.MaxOutputTokens,
             "content_filter" => GenerateTextFinishReasons.ContentFiltered,
             "content_filtered" => GenerateTextFinishReasons.ContentFiltered,
             "contentfilter" => GenerateTextFinishReasons.ContentFiltered,
+            "contentfiltered" => GenerateTextFinishReasons.ContentFiltered,
             var value => value
         };
     }
