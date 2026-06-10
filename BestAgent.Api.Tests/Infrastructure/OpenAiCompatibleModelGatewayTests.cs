@@ -6238,6 +6238,47 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldFallbackToDetailWhenTopLevelMessageIsEmpty()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.BadRequest)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "message": null,
+                      "detail": [
+                        {
+                          "msg": "Request body is invalid."
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(string.Empty, "You are helpful.", "Hello"),
+                CancellationToken.None));
+
+        Assert.Contains("Model gateway returned 400", exception.Message);
+        Assert.Contains("Error: Request body is invalid.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldExtractGatewayValidationErrorsFromDetailArray()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>

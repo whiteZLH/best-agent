@@ -1725,12 +1725,21 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     private static bool TryCollectErrorText(JsonElement parent, out string? text, params string[] propertyNames)
     {
         text = null;
-        if (!TryGetProperty(parent, out var value, propertyNames))
+
+        foreach (var propertyName in propertyNames)
         {
-            return false;
+            if (!parent.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            if (TryCollectErrorTextFromElement(value, out text))
+            {
+                return true;
+            }
         }
 
-        return TryCollectErrorTextFromElement(value, out text);
+        return false;
     }
 
     private static string? TryGetTrimmedString(JsonElement parent, params string[] propertyNames)
