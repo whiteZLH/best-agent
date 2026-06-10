@@ -1628,7 +1628,7 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             }
         }
 
-        if (TryCollectText(firstChoice, out var choiceText, "text", "output_text", "outputText"))
+        if (TryCollectText(firstChoice, out var choiceText, "content", "text", "output_text", "outputText"))
         {
             return choiceText;
         }
