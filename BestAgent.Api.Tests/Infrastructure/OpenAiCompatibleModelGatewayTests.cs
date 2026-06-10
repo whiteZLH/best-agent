@@ -6621,6 +6621,60 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldRejectNativeToolCallsPayloadThatIsNotAnArray()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": null,
+                            "tool_calls": {
+                              "id": "call_123"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            gateway.GenerateTextAsync(
+                new GenerateTextRequest(
+                    string.Empty,
+                    "You are helpful.",
+                    "Hello",
+                    Tools:
+                    [
+                        new GenerateTextToolDefinition(
+                            "weather",
+                            "Get the weather for a city",
+                            "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                    ]),
+                CancellationToken.None));
+
+        Assert.Equal("Model gateway returned a native tool_calls payload that is not an array.", exception.Message);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldRejectNativeToolCallWithInvalidArguments()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>

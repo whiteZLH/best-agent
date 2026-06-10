@@ -1394,9 +1394,13 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         IReadOnlyList<GenerateTextToolDefinition>? declaredTools,
         out IReadOnlyList<GenerateTextToolCall>? toolCalls)
     {
-        if (TryGetProperty(container, out var nativeToolCalls, "tool_calls", "toolCalls")
-            && nativeToolCalls.ValueKind == JsonValueKind.Array)
+        if (TryGetProperty(container, out var nativeToolCalls, "tool_calls", "toolCalls"))
         {
+            if (nativeToolCalls.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException("Model gateway returned a native tool_calls payload that is not an array.");
+            }
+
             var calls = new List<GenerateTextToolCall>();
             foreach (var toolCall in nativeToolCalls.EnumerateArray())
             {
