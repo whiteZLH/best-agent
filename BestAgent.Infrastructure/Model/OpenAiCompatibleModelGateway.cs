@@ -1403,8 +1403,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
                 calls.Add(ParseNativeToolCall(toolCall, declaredTools));
             }
 
-            toolCalls = calls.Count == 0 ? null : calls;
-            return toolCalls is not null;
+            if (calls.Count > 0)
+            {
+                toolCalls = calls;
+                return true;
+            }
         }
 
         if (TryGetProperty(container, out var functionCall, "function_call", "functionCall"))

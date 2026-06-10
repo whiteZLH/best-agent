@@ -5677,6 +5677,123 @@ public class OpenAiCompatibleModelGatewayTests
     }
 
     [Fact]
+    public async Task GenerateTextAsync_ShouldFallbackToLegacyFunctionCall_WhenToolCallsArrayIsEmpty()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "message": {
+                            "content": null,
+                            "tool_calls": [],
+                            "function_call": {
+                              "name": "weather",
+                              "arguments": "{\"city\":\"Shanghai\"}"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("legacy_function_call", toolCall.Id);
+        Assert.Equal("weather", toolCall.Name);
+    }
+
+    [Fact]
+    public async Task GenerateTextAsync_ShouldFallbackToChoiceLevelLegacyFunctionCall_WhenChoiceToolCallsArrayIsEmpty()
+    {
+        using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "choices": [
+                        {
+                          "toolCalls": [],
+                          "functionCall": {
+                            "name": "weather",
+                            "arguments": "{\"city\":\"Shanghai\"}"
+                          }
+                        }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            }))
+        {
+            BaseAddress = new Uri("https://example.com/v1/")
+        };
+        var gateway = new OpenAiCompatibleModelGateway(
+            httpClient,
+            new OpenAiOptions
+            {
+                BaseUrl = "https://example.com/v1/",
+                ApiKey = "test-key",
+                Model = "gpt-4o-mini"
+            });
+
+        var result = await gateway.GenerateTextAsync(
+            new GenerateTextRequest(
+                string.Empty,
+                "You are helpful.",
+                "Hello",
+                Tools:
+                [
+                    new GenerateTextToolDefinition(
+                        "weather",
+                        "Get the weather for a city",
+                        "{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"],\"additionalProperties\":false}")
+                ]),
+            CancellationToken.None);
+
+        Assert.Equal(GenerateTextFinishReasons.ToolCall, result.FinishReason);
+        using var document = JsonDocument.Parse(result.Output);
+        Assert.Equal("tool_call", document.RootElement.GetProperty("action").GetString());
+        var toolCall = Assert.Single(result.ToolCalls!);
+        Assert.Equal("legacy_function_call", toolCall.Id);
+        Assert.Equal("weather", toolCall.Name);
+    }
+
+    [Fact]
     public async Task GenerateTextAsync_ShouldInferToolCallFinishReason_WhenNativeToolCallsAreReturnedWithoutFinishReason()
     {
         using var httpClient = new HttpClient(new StubHttpMessageHandler(_ =>
