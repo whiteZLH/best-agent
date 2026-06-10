@@ -1404,6 +1404,11 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             var calls = new List<GenerateTextToolCall>();
             foreach (var toolCall in nativeToolCalls.EnumerateArray())
             {
+                if (toolCall.ValueKind != JsonValueKind.Object)
+                {
+                    throw new InvalidOperationException("Model gateway returned a native tool_calls item that is not an object.");
+                }
+
                 calls.Add(ParseNativeToolCall(toolCall, declaredTools));
             }
 

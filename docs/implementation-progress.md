@@ -33,7 +33,7 @@
 - `GenerateTextRequest` 当前也已开始支持最小 `ToolChoice`；存在工具定义时，`AgentRunLoop` 会默认向 OpenAI 兼容请求下发 `tool_choice = auto`，同时直接调用 `OpenAiCompatibleModelGateway` 且显式传入 `GenerateTextRequest.Tools` 时，若未手动覆盖 `ToolChoice`，当前也会自动补上 `tool_choice = auto`
 - OpenAI 兼容模型网关当前也已开始把响应中的最小 `reasoning_summary/reasoning` 归一到 `GenerateTextResult` 与 `model_call` 审计 payload；兼容响应若把这组字段放在 `choice` 层而不是 `message` 层，当前也会继续读取；同时 token 统计当前也已开始兼容 `usage` 中的 `prompt/completion_tokens` 与 `input/output_tokens` 两组命名，并在部分兼容网关不返回 `usage` 时继续回退读取响应顶层的平铺 token 字段
 - OpenAI 兼容模型网关当前也已开始把响应中的原生 `tool_calls` 列表与 legacy `function_call` 显式带入 `GenerateTextResult` 与 `model_call` 审计 payload；同时继续为现有 Runtime 兼容保留“单个 function tool call -> `{"action":"tool_call",...}`”的归一路径
-- OpenAI 兼容模型网关当前也已开始对原生 `tool_calls` 做最小结构校验：返回的工具名必须命中当前声明工具列表，`arguments` 也必须是可解析的 JSON 对象；若 `tool_calls` 存在但不是数组，当前也会直接拒绝；兼容网关若直接返回对象而不是 JSON 字符串，当前也会先归一后再继续校验
+- OpenAI 兼容模型网关当前也已开始对原生 `tool_calls` 做最小结构校验：返回的工具名必须命中当前声明工具列表，`arguments` 也必须是可解析的 JSON 对象；若 `tool_calls` 存在但不是数组，或数组项不是对象，当前也会直接拒绝；兼容网关若直接返回对象而不是 JSON 字符串，当前也会先归一后再继续校验
 - `ToolDefinition` 驱动优先的工具执行链路（DB-first，支持 webhook、本地 handler 与 `inline_result` 固定结果执行）
 - 已补上独立 `ToolResolver`，将工具绑定解析从 `ToolExecutor` 中拆出
 - 工具运行时输入 schema 校验 MVP：执行前按 `ToolDefinition.InputSchema` 校验 `type`、`required`、`properties`、`enum` 以及 `additionalProperties` 的布尔/对象形态
