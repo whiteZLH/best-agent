@@ -1574,30 +1574,28 @@ public class OpenAiCompatibleModelGateway : IModelGateway
         }
 
         var firstChoice = choices[0];
-        if (!firstChoice.TryGetProperty("message", out var message)
-            || message.ValueKind != JsonValueKind.Object)
-        {
-            return null;
-        }
-
         if (TryBuildNativeToolCallDecision(toolCalls, out var toolCallDecision))
         {
             return toolCallDecision;
         }
 
-        if (TryCollectText(message, out var contentText, "content", "output_text", "outputText", "text"))
+        if (firstChoice.TryGetProperty("message", out var message)
+            && message.ValueKind == JsonValueKind.Object)
         {
-            return contentText;
+            if (TryCollectText(message, out var messageText, "content", "output_text", "outputText", "text"))
+            {
+                return messageText;
+            }
+
+            if (TryCollectText(message, out var refusalText, "refusal"))
+            {
+                return refusalText;
+            }
         }
 
         if (TryCollectText(firstChoice, out var choiceText, "text", "output_text", "outputText"))
         {
             return choiceText;
-        }
-
-        if (TryCollectText(message, out var refusalText, "refusal"))
-        {
-            return refusalText;
         }
 
         return TryCollectText(firstChoice, out var choiceRefusalText, "refusal")
