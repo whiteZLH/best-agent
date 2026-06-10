@@ -1582,12 +1582,12 @@ public class OpenAiCompatibleModelGateway : IModelGateway
             return toolCallDecision;
         }
 
-        if (TryCollectText(message, out var contentText, "content"))
+        if (TryCollectText(message, out var contentText, "content", "output_text", "outputText", "text"))
         {
             return contentText;
         }
 
-        if (TryCollectText(firstChoice, out var choiceText, "text"))
+        if (TryCollectText(firstChoice, out var choiceText, "text", "output_text", "outputText"))
         {
             return choiceText;
         }
@@ -1631,20 +1631,26 @@ public class OpenAiCompatibleModelGateway : IModelGateway
     private static bool TryCollectText(JsonElement parent, out string? text, params string[] propertyNames)
     {
         text = null;
-        if (!TryGetProperty(parent, out var value, propertyNames))
+
+        foreach (var propertyName in propertyNames)
         {
-            return false;
+            if (!parent.TryGetProperty(propertyName, out var value))
+            {
+                continue;
+            }
+
+            var segments = new List<string>();
+            CollectReasoningSegments(value, segments);
+            if (segments.Count == 0)
+            {
+                continue;
+            }
+
+            text = string.Join("\n", segments);
+            return true;
         }
 
-        var segments = new List<string>();
-        CollectReasoningSegments(value, segments);
-        if (segments.Count == 0)
-        {
-            return false;
-        }
-
-        text = string.Join("\n", segments);
-        return true;
+        return false;
     }
 
     private static bool TryGetProperty(JsonElement parent, out JsonElement value, params string[] propertyNames)
